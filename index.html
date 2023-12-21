@@ -1,0 +1,522 @@
+<!DOCTYPE html>
+<html lang='en'>
+<head>
+    <meta name='viewport' content='initial-scale=1'/>
+    <style type='text/css'>
+@font-face { font-family: 'CP437'; src: url('cp437.ttf'); }
+#kbd { width: 663px; }
+#scr { background-color: black; margin-top: 10px; display: none; }
+.log_wnd { font-family: monospace; font-size: 14px; border: 1px solid black;
+           background-color: #faf9f6; padding: 8px; }
+    </style>
+    <script type='text/javascript'>
+window.onerror = function(event, source, line, col, error) {
+    const text = `Error: ${error.message} at ${source}:${line}:${col}`;
+    document.write(`<span style="color: red;">${text}</span><br/>`);
+};
+    </script>
+    <script type='text/javascript' src='js/utils.js'></script>
+    <script type='text/javascript' src='js/hardware.js'></script>
+</head>
+<body>
+    <input id='kbd' type='text'/><br/>
+    <canvas id='scr'></canvas>
+    <pre id='log'></pre>
+    <script type='text/javascript'>
+'use strict';
+
+let CPU_INSTR_CNT = 10240, // ~8.4MHz for 8080 and Z80, ~4Mhz for 8086, ~12MHz for 6502
+    HLT_STOP = true;       // stop CPU on HLT
+
+let CPU = null, memo = null;
+
+async function run() {
+    CPU.RUN = true;
+    let print = true, res;
+    do {
+        for (let i = 0; i < CPU_INSTR_CNT; i++) { // number of instructions not cycles!
+            try { res = CPU.step(); }
+            catch(exc) {
+                console.error(exc);
+                CPU.RUN = false;
+                break;
+            }
+            if (!res || (CPU.STOP >= 0 && CPU.getPC() === CPU.STOP)) {
+                CPU.STOP = -1;
+                if (res) console.info('STOP');
+                else if (!HLT_STOP) break;
+                else console.info('HALT');
+                CPU.RUN = false;
+                print = false;
+                break;
+            }
+            if (!CPU.RUN) break;
+        }
+        await delay(0);
+    } while (CPU.RUN);
+    if (print)
+        console.info('stopped');
+}
+
+function loadBin(data, start, mem = memo) {
+    const n = data.length;
+    for (let i = 0; i < n; i++)
+        mem.wr(start++, data[i]);
+    return n;
+}
+
+function loadHex(text, start, mem = memo) {
+    const lines = text.split(/[\r\n]+/);
+    let length = 0;
+    for (let i = 0, n = lines.length; i < n; i++) {
+        let line = lines[i].trim(), idx;
+        if ((idx = line.indexOf(';')) >= 0)
+            line = line.substr(0, idx).trim();
+        if (line.length === 0)
+            continue;
+        line = line.replaceAll(' ', '');
+        const code = [];
+        let count, s;
+        idx = line.indexOf(':');
+        if (idx >= 0)
+            if (idx === 0) { // intel hex
+                count = pi(line.substr(1, 2));
+                start = pi(line.substr(3, 4));
+                s = 9;       // skip fill byte
+            } else {         // list hex
+                start = pi(line.substr(0, idx));
+                s = idx + 1;
+                count = ((line.length - s) / 2) | 0;
+            }
+        else {               // plain hex
+            count = (line.length / 2) | 0;
+            s = 0;
+        }
+        for (let j = 0; j < count; j++) {
+            code.push(pi(line.substr(s, 2)));
+            s += 2;
+        }
+        length += loadBin(code, start, mem);
+        start += count;
+    }
+    return length;
+}
+
+let CPUTYPE = 0,    // CPU type (0: 8080, 1: Z80, 2: 6502, 3: 8086, 4: 80186)
+    D_SPC = '',     // display header space  (8bit CPU: empty,  16bit CPU: one space)
+    D_WDT = 4,      // display address width (8bit CPU: 4,      16bit CPU: 5)
+    D_AMS = 0xffff, // display address mask  (8bit CPU: 0xffff, 16bit CPU: 0xfffff)
+    D_CMD = 3,      // display command pad   (8bit CPU: 3,      16bit CPU: 6)
+    D_PRF = 'PC: ', // display regs prefix   (8bit CPU: 'PC: ', 16bit CPU: '\n')
+    D_STT = 0xfffe, // display stack top     (8080 and Z80: 0xfffe, 6502: 0x01fe, 8086: 0xffffe)
+    D_DCW = 300,    // display debug width   (8bit CPU: 300,    16bit CPU: 430)
+    D_DRW = 200;    // display debug rg wdth (8bit CPU: 200,    16bit CPU: 230)
+
+function setCpuType(type) {
+    CPUTYPE = type;
+    if (CPUTYPE < 3) {
+        D_SPC = ''; D_WDT = 4; D_AMS = 0xffff; D_CMD = 3; D_PRF = 'PC: ';
+        D_STT = (CPUTYPE === 2) ? 0x01fe : 0xfffe; D_DCW = 300; D_DRW = 200;
+    } else {
+        D_SPC = ' '; D_WDT = 5; D_AMS = 0xfffff; D_CMD = 6; D_PRF = '\n';
+        D_STT = 0xffffe; D_DCW = 430; D_DRW = 230;
+    }
+}
+
+function printMem(a, lines = 16, mem = memo) {
+    console.log(`Addr   ${D_SPC}0  1  2  3  4  5  6  7  8  9  A  B  C  D  E  F  ASCII           `);
+    for (let i = 0; i < lines; i++) {
+        let s = `${a.toString(16).padStart(D_WDT, '0')}: `, // addr
+            s2 = '';                                        // ascii
+        for (let j = 0; j < 16; j++) {
+            const c = mem.rd(a + j);
+            s += `${c.toString(16).padStart(2, '0')} `;
+            s2 += (c >= 0x20 && c <= 0x7f) ? String.fromCharCode(c) : '.';
+        }
+        console.log(s, s2);
+        a = (a + 16) & D_AMS;
+    }
+    return a;
+}
+
+function disassemble1(a) {
+    const r = [],
+          d = CPU.disassembleInstruction(a);
+    r.push(a.toString(16).padStart(D_WDT, '0'));
+    r.push(': ');
+    let end = d[0] - a;
+    for (let i = 0; i < end; i++)
+        r.push(memo.rd(a + i).toString(16).padStart(2, '0'));
+    while (end++ < D_CMD)
+        r.push('  ');
+    r.push(' ');
+    r.push(d[1]);
+    return [d[0], r.join('')];
+}
+
+function printAsm(a, log = console.log, count = 16) {
+    for (let i = 0; i < count; i++) {
+        const r = disassemble1(a);
+        log(r[1]);
+        a = r[0] & D_AMS;
+    }
+    return a;
+}
+
+function printRegs() {
+    const regs = CPU.cpuStatus().replaceAll('|', ' ').replaceAll('#', '\n');
+    console.log(`${regs} ${D_PRF}${disassemble1(CPU.getPC())[1]}`);
+}
+
+let dbgw = null;
+
+function debug_find(wnd, addr) {
+    addr = addr.toString(16).padStart(D_WDT, '0');
+    const nodes = wnd[0].childNodes;
+    for (let i = 0, n = nodes.length; i < n; i++) {
+        const node = nodes[i];
+        if (node.innerText.startsWith(addr))
+            return node;
+    }
+    return null;
+}
+
+function debug_asm(wnd, addr) {
+    wnd[0].innerHTML = '';
+    wnd.prevNode = undefined;
+    printAsm(addr, wnd[1], 75);
+}
+
+function debug_set(wnd) {
+    const addr = CPU.getPC();
+    let node = debug_find(wnd, addr);
+    if (node === null) {
+        debug_asm(wnd, addr);
+        node = debug_find(wnd, addr);
+    }
+    if (wnd.prevNode)
+        wnd.prevNode.style.backgroundColor = '#faf9f6';
+    node.style.backgroundColor = '#e2dfd2';
+    const inrect = node.getBoundingClientRect(),
+          outrect = wnd[0].getBoundingClientRect();
+    if (inrect.top < outrect.top)
+        node.scrollIntoView(true);
+    else if (inrect.bottom > outrect.bottom)
+        node.scrollIntoView(false);
+    wnd.prevNode = node;
+}
+
+function debug_sp(status) {
+    let addr = CPU.getSP(), s = '', i = 8, dw = false;
+    if (Array.isArray(addr)) {
+        addr = pi(`${addr[0]}:${addr[1]}`);
+        dw = true; // 16bit, double word on return stack (ip, cs)
+    }
+    while (i-- > 0) {
+        let w = memo.rd(addr++) | memo.rd(addr++) << 8;
+        if (dw) {
+            if (addr > D_STT) break;
+            w = ((memo.rd(addr++) | memo.rd(addr++) << 8) << 4) + w;
+        }
+        s += w.toString(16).padStart(D_WDT, '0') + ' ';
+        if (i % 4 === 0) s += '\n';
+        if (addr > D_STT) break;
+    }
+    return s;
+}
+
+function debug_regs(wnd) {
+    wnd[0].innerHTML = '';
+    const s = CPU.cpuStatus();
+    wnd[1](s.replaceAll('|', '\n').replaceAll('#', '\n'));
+    wnd[1]();
+    wnd[1](debug_sp(s));
+}
+
+const watches = [];
+
+function debug_watch(wnd) {
+    wnd[0].innerHTML = '';
+    for (let i = 0, n = watches.length; i < n; i++) {
+        const adr = watches[i], val = memo.rd(adr);
+        wnd[1](`${fmt(adr, D_WDT)}: ${fmt(val)} ${val.toString(2).padStart(8, '0')}`);
+    }
+}
+
+let hardware, addr = 0, scope = null, ssettings = {
+    width: 1000, maxpoints: 1000, background: '#faf9f6', configs: [
+        {'mask': 0x80, 'color': '#383838', 'width': 1}
+    ], addr: 0x0000, orig_write: null
+};
+
+async function monitor(command) {
+    const parms = command.split(/[\s\t]+/),
+          cmd = parms[0];
+    let tmp, len, adr, idx, hex;
+    switch (cmd) {
+        case '':
+            try { CPU.step(); } catch(exc) { console.error(exc); break; }
+            addr = CPU.getPC();
+            if (dbgw !== null) {
+                debug_set(dbgw);
+                debug_regs(dbgw.regs);
+                debug_watch(dbgw.watch);
+                break;
+            }
+        case 'x':
+            if (parms.length > 1 && (tmp = CPU.setRegisters(parms)).length > 0)
+                console.error(tmp);
+            else if (dbgw === null)
+                printRegs();
+            else {
+                debug_set(dbgw);
+                debug_regs(dbgw.regs);
+            }
+            break;
+        case 'g':
+            len = parms.length;
+            if (len > 1 && (tmp = parms[1]) !== '-')
+                CPU.setPC(pi(tmp));
+            if (len > 2)
+                CPU.STOP = pi(parms[2]);
+            run();
+            console.info('running...');
+            break;
+        case 'step':
+            CPU.STOP = ((parms.length > 1) ? pi(parms[1]) : disassemble1(CPU.getPC())[0]) & D_AMS;
+            if (dbgw === null)
+                run();
+            else {
+                await run();
+                debug_set(dbgw);
+                debug_regs(dbgw.regs);
+                debug_watch(dbgw.watch);
+            }
+            break;
+        case 'd':
+            if (parms.length > 1)
+                addr = pi(parms[1]);
+            addr = printMem(addr);
+            break;
+        case 'l':
+            if (parms.length > 1)
+                addr = pi(parms[1]);
+            addr = printAsm(addr);
+            break;
+        case 'm':
+            if (parms.length < 3)
+                console.error('missing: adr b [b ...]');
+            else
+                console.log(loadBin(parms.slice(2).map(i => pi(i) & 0xff), pi(parms[1]) & D_AMS));
+            break;
+        case 'r':
+            if ((len = parms.length) < 2) {
+                console.error('missing: [a=100] fn [h=0]');
+                break;
+            }
+            idx = 1;
+            try { adr = pi(parms[1]) & D_AMS; idx++; } catch(exc) { adr = 0x100; }
+            if (len < idx + 1) {
+                console.error('missing: [a=100] fn [h=0]');
+                break;
+            }
+            hex = (len > idx + 1) ? parms[idx + 1] === '1' : false;
+            tmp = await loadFile(parms[idx], hex);
+            console.log(hex ? loadHex(tmp, adr) : loadBin(tmp, adr));
+            break;
+        case 'w':
+            if (parms.length < 3) {
+                console.error('missing: a1 a2');
+                break;
+            }
+            adr = pi(parms[1]) & D_AMS;
+            len = pi(parms[2]) & D_AMS;
+            if (adr > len) {
+                console.error(`end address: ${len.toString(16)} before start: ${adr.toString(16)}`);
+                break;
+            }
+            tmp = new Uint8Array(len - adr + 1);
+            for (let i = adr, a = 0; i <= len; i++)
+                tmp[a++] = memo.rd(i);
+            downloadFile('block.bin', tmp);
+            break;
+        case 'debug':
+            if (dbgw !== null) { console.error('debug active'); break; }
+            tmp = 740 - D_DRW - 10 - D_DCW, len = memo.scope ? 454 : 524;
+            dbgw = console.open(tmp - 7, 40, D_DCW, len, '#36454f', '#faf9f6');
+            dbgw.regs = console.open(tmp + D_DCW + 10, 40, D_DRW, 124, '#36454f', '#faf9f6');
+            dbgw.watch = console.open(tmp + D_DCW + 10, 164, D_DRW, len - 124, '#36454f', '#faf9f6');
+            if (memo.scope) {
+                dbgw.scope = console.open(tmp - 7, 40 + len + 17, D_DCW + 33 + D_DRW, 524 - len);
+                tmp = dbgw.scope[0];
+                tmp.style.backgroundColor = ssettings.background;
+                tmp.style.padding = tmp.style.margin = '0px 0px 0px 0px';
+                scope = oscilloscope(tmp, memo.scope, ssettings);
+                ssettings.orig_write = memo.wr;
+                memo.wr = (a, v) => {
+                    ssettings.orig_write(a, v);
+                    if (a === ssettings.addr) scope.update(v);
+                };
+            }
+            debug_set(dbgw);
+            debug_regs(dbgw.regs);
+            debug_watch(dbgw.watch);
+            break;
+        case 'quit':
+            if (dbgw === null) { console.error('debug not active'); break; }
+            if (dbgw.scope) {
+                console.close(dbgw.scope);
+                dbgw.scope = null;
+                scope = null;
+                memo.wr = ssettings.orig_write;
+                ssettings.orig_write = null;
+            }
+            console.close(dbgw.watch);
+            dbgw.watch = null;
+            console.close(dbgw.regs);
+            dbgw.regs = null;
+            console.close(dbgw);
+            dbgw = null;
+            break;
+        case 'refresh':
+            if (dbgw === null) { console.error('debug not active'); break; }
+            dbgw[0].innerHTML = '';
+            debug_set(dbgw);
+            debug_regs(dbgw.regs);
+            debug_watch(dbgw.watch);
+            break;
+        case 'wadd':
+            if (parms.length < 2) { console.error('missing: adr [adr ...]'); break; }
+            for (let i = 1, n = parms.length; i < n; i++)
+                if (watches.indexOf(tmp = pi(parms[i])) < 0) watches.push(tmp);
+            if (dbgw !== null) debug_watch(dbgw.watch);
+            break;
+        case 'wrem':
+            if (parms.length < 2) { console.error('missing: adr [adr ...]'); break; }
+            for (let i = 1, n = parms.length; i < n; i++)
+                if ((idx = watches.indexOf(pi(parms[i]))) >= 0) watches.splice(idx, 1);
+            if (dbgw !== null) debug_watch(dbgw.watch);
+            break;
+        case 'sadr':
+            if (parms.length < 2) { console.error('missing: adr'); break; }
+            if ((adr = pi(parms[1])) !== ssettings.addr) {
+                ssettings.addr = adr;
+                if (scope !== null) scope.clear();
+            }
+            break;
+        case 'sadd':
+            if (parms.length < 2) { console.error('missing: mask [color width]'); break; }
+            tmp = pi(parms[1]);
+            if ((hex = ssettings.configs.find(e => e.mask === tmp)) === undefined) {
+                hex = {'mask': tmp}; ssettings.configs.push(hex);
+            }
+            hex.color = parms[2] ?? '#383838';
+            hex.width = (parms[3] ? pi(parms[3], false) : null) ?? 1;
+            if (scope !== null) scope.set(ssettings.configs);
+            break;
+        case 'srem':
+            if (parms.length < 2) { console.error('missing: mask'); break; }
+            tmp = pi(parms[1]);
+            if ((idx = ssettings.configs.findIndex(e => e.mask === tmp)) >= 0) {
+                ssettings.configs.splice(idx, 1);
+                if (scope !== null) scope.set(ssettings.configs);
+            }
+            else console.error(`mask: 0x${fmt(tmp)} not found`);
+            break;
+        case 'swdt':
+            if (parms.length < 2) { console.error('missing: width'); break; }
+            ssettings.width = pi(parms[1]);
+            if (scope !== null) scope.width(ssettings.width);
+            break;
+        case 'spts':
+            if (parms.length < 2) { console.error('missing: points'); break; }
+            ssettings.maxpoints = pi(parms[1]);
+            if (scope !== null) scope.points(ssettings.maxpoints);
+            break;
+        case 'cls': console.clear(); break;
+        case 'cpu':
+            if (parms.length < 2) {
+                console.log(cpuName(CPUTYPE));
+                break;
+            }
+            tmp = +parms[1];
+            if (tmp < 0 || tmp > 4) {
+                console.error(`invalid cpu: ${tmp}`);
+                break;
+            }
+            setCpuType(tmp);
+            hardware = await defaultHW('scr', URL_OPTS);
+            CPU = hardware.cpu; CPU.RUN = false; CPU.STOP = -1; CPU.reset();
+            memo = hardware.memo;
+            if (hardware.info !== undefined)
+                console.info(hardware.info);
+            break;
+        case 'stop':
+            if (parms.length >= 2) CPU.STOP = ((tmp = parms[1]) === 'none') ? -1 : pi(tmp);
+            console.log((CPU.STOP < 0) ? 'none' : fmt(CPU.STOP, D_WDT));
+            break;
+        case 'scr': hardware.toggleDisplay(); break;
+        default:
+            if (hardware.cmd === undefined || !(await hardware.cmd(cmd, parms)))
+                console.error('invalid command');
+            break;
+    }
+}
+
+const URL_OPTS = new URLSearchParams(location.search),
+      history = ['', '', '', '', '', '', ''];
+let history_index = history.length - 1;
+
+async function main() {
+    await monitor(`cpu ${CPUTYPE}`);
+    let kbd = document.getElementById('kbd');
+    kbd.onkeyup = async (ev) => {
+        try {
+            if (CPU.RUN)
+                // emulate keyboard
+                if (ev.key === 'n')
+                    // CTRL-n
+                    CPU.RUN = false;
+                else {
+                    await hardware.keyboard(ev.key, ev.keyCode, ev.target.value);
+                    ev.target.value = '';
+                }
+            else
+                if (ev.keyCode === 13) {
+                    // monitor
+                    await monitor(ev.target.value);
+                    history.push(ev.target.value);
+                    history.splice(0, 1);
+                    history_index = history.length - 1;
+                    ev.target.value = '';
+                }
+                else if (ev.key === 'w') {
+                    // CTRL-w
+                    ev.target.value = history[history_index--];
+                    if (history_index < 0)
+                        history_index = history.length - 1;
+                }
+        } catch(exc) {
+            console.error(exc.message + '\n', exc.stack);
+        }
+    };
+    kbd.onkeydown = async (ev) => {
+        try {
+            if (CPU.RUN)
+                await hardware.keyboard(ev.key, ev.keyCode, null);
+        } catch(exc) {
+            console.error(exc.message + '\n', exc.stack);
+        }
+    };
+}
+
+(async () => {
+    try {
+        await main();
+    } catch(e) {
+        console.error(e.message + '\n', e.stack);
+    }
+})();
+    </script>
+</body>
+</html>
