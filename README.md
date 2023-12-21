@@ -17,8 +17,8 @@ All processor implementations are tested and fixed to pass extensive checking, i
 
 ## Generic emulator
 
-Without adding new blocks, the emulator has following configuration:
-- default system monitor, implemented in index.html
+Without adding new blocks \(javascript files), the emulator has following configuration:
+- default system monitor, implemented in index.html and extended in hardware.js
 - CPU, implemented in hardware.js
 - VT-100 terminal with generic ANSI keyboard, implemented in hardware.js
 - 64K memory for 8-bit systems or 1M memory for 16-bit systems, implemented in hardware.js
@@ -53,6 +53,11 @@ System monitor supports following commands \(all parameters are HEX numbers, if 
 - **stop** \- show/set/clear stop point: stop \[addr], clear stop point if addr is \<none>; after stop address is
            reached it cleared automatically
 - **scr** \- show/hide terminal window: scr
+- **escs** \- send string to the terminal: escs str, where str is data to send to the terminal, for VT-100 can contain
+           special characters \(^ converted to ESC, _ converted to space, ~ converted to CRLF)
+- **tests** \- show list of available tests for processor: tests
+- **test** \- execute CPU test: test name, where name is test name/id from the list
+- **boot** \- load emulator configuration: boot name \[fnc], where name is block name, fnc is function name to call
 
 If added block\(s) requested oscillograph, the monitor supports additional commands:
 - **sadr** \- set memory address to monitor: sadr addr
@@ -62,7 +67,7 @@ If added block\(s) requested oscillograph, the monitor supports additional comma
 - **swdt** \- set graphs width: swdt num, where num is graphs width in pixels
 - **spts** \- set graphs max points: spts num, where num is max number of points to store for graphs
 
-
+[Generic emulator online]https://github.com/alex-code1234/emu8/
 
 ## Credits:
 
