@@ -29,11 +29,39 @@ Default CPU is 8080, can be changed by URL parameter cpu_type=type, where type i
 
 UI structure:
 - HTML input element to interact with system monitor \(command followed by \<CR> key)
-- canvas element for terminal \(can be hidden)
+- canvas element for the terminal \(can be hidden)
 - console logging space
 
 System monitor supports following commands \(all parameters are HEX numbers, if not specified):
 - **\<empty>** \- one step execution
+- **x** \- show/set CPU registers/flags: x \[name1 value1 ...], where name is register/flag name
+- **g** \- execute program: g \[addr]
+- **step** \- set stop point and execute program: step \[addr], if no address - stop at next instruction
+- **d** \- dump memory: d \[addr]
+- **l** \- disassemble memory: l \[addr]
+- **m** \- modify memory: m addr value1 \[value2 ...]
+- **r** \- read file into memory: r \[addr=100] fn \[hex=0], where fn is file name, hex is 0 for binary files
+        or 1 for hex files
+- **w** \- write memory to binary file block.bin: w addr1 addr2, where addr1 is start address and addr2 is
+        end address \(inclusive)
+- **debug** \- open debug window: debug, \<CR> key to execute one step
+- **quit** \- close debug window: quit
+- **refresh** \- refresh debug data: refresh, provided if something changed outside the debugger
+- **wadd** \- add watch addresses: wadd addr1 \[addr2 ...]
+- **wrem** \- remove watch addresses: wrem addr1 \[addr2 ...]
+- **cpu** \- show/set CPU type: cpu \[type], where type is 0..4
+- **stop** \- show/set/clear stop point: stop \[addr], clear stop point if addr is \<none>; after stop address is
+           reached it cleared automatically
+- **scr** \- show/hide terminal window: scr
+
+If added block\(s) requested oscillograph, the monitor supports additional commands:
+- **sadr** \- set memory address to monitor: sadr addr
+- **sadd** \- add graph to show data bit changes: sadd mask \[color width], where mask is bit extract mask 0x01..0x80,
+           color is html color and width is int number for graph line width
+- **srem** \- remove graph: srem mask
+- **swdt** \- set graphs width: swdt num, where num is graphs width in pixels
+- **spts** \- set graphs max points: spts num, where num is max number of points to store for graphs
+
 
 
 ## Credits:

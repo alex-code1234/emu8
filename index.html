@@ -425,12 +425,12 @@ async function monitor(command) {
             break;
         case 'swdt':
             if (parms.length < 2) { console.error('missing: width'); break; }
-            ssettings.width = pi(parms[1]);
+            ssettings.width = pi(parms[1], false);
             if (scope !== null) scope.width(ssettings.width);
             break;
         case 'spts':
             if (parms.length < 2) { console.error('missing: points'); break; }
-            ssettings.maxpoints = pi(parms[1]);
+            ssettings.maxpoints = pi(parms[1], false);
             if (scope !== null) scope.points(ssettings.maxpoints);
             break;
         case 'cls': console.clear(); break;
