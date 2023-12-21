@@ -19,12 +19,12 @@ All processor implementations are tested and fixed to pass extensive checking, i
 
 ## Credits:
 
-js8080 by Chris Double (http://www.bluishcoder.co.nz/js8080/)
-z80pack by Udo Munk (http://www.unix4fun.org/z80pack/)
-Stefan Tramm (http://www.tramm.li/i8080/index.html)
-6502.js by Gregory Estrade (https://github.com/Torlus/6502.js)
-Krusader (https://github.com/st3fan/krusader)
-A1 assembler (https://www.sbprojects.net/projects/apple1/a1asm.php)
-CPU testing (https://github.com/Klaus2m5/6502_65C02_functional_tests)
-UI ideas and KIM-1 image (https://github.com/maksimKorzh/KIM-1)
-KIM-1 emulator (https://github.com/wutka/kim1-emulator)
+js8080 by Chris Double (http://www.bluishcoder.co.nz/js8080/)<br>
+z80pack by Udo Munk (http://www.unix4fun.org/z80pack/)<br>
+Stefan Tramm (http://www.tramm.li/i8080/index.html)<br>
+6502.js by Gregory Estrade (https://github.com/Torlus/6502.js)<br>
+Krusader (https://github.com/st3fan/krusader)<br>
+A1 assembler (https://www.sbprojects.net/projects/apple1/a1asm.php)<br>
+CPU testing (https://github.com/Klaus2m5/6502_65C02_functional_tests)<br>
+UI ideas and KIM-1 image (https://github.com/maksimKorzh/KIM-1)<br>
+KIM-1 emulator (https://github.com/wutka/kim1-emulator)<br>
