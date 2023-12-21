@@ -98,7 +98,7 @@ async function defaultHW(scr, opts) {
                     case 4:
                         if (parms.length < 2) { console.error('missing: name'); break; }
                         if ((tmp = parms[1]) === 'codegolf') {
-                            loadBin(await loadFile('/tests/codegolf', false), 0x00000);
+                            loadBin(await loadFile('tests/codegolf', false), 0x00000);
                             CPU.reset(); CPU.setRegisters(['x', 'cs', '0000', 'ip', '0000', 'sp', '0100']);
                             CPU.memory_trap(0x08000, 0x087cf, async (w, addr, value) => {
                                 addr -= 0x08000;
