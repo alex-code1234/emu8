@@ -15,6 +15,25 @@ All processor implementations are tested and fixed to pass extensive checking, i
 - jsZ80.js \- Zilog z80 processor
 - js8086.js \- Intel 8086/8088 processor \(partial 80186 implementation)
 
+## Generic emulator
+
+Without adding new blocks, the emulator has following configuration:
+- default system monitor, implemented in index.html
+- CPU, implemented in hardware.js
+- VT-100 terminal with generic ANSI keyboard, implemented in hardware.js
+- 64K memory for 8-bit systems or 1M memory for 16-bit systems, implemented in hardware.js
+- IO system with ports or mapped memory \(depending on the CPU) to access the terminal and keyboard
+
+Default CPU is 8080, can be changed by URL parameter cpu_type=type, where type is:
+- **0**: 8080, **1**: z80, **2**: 6502, **3**: 8086, **4**: 80186
+
+UI structure:
+- HTML input element to interact with system monitor \(command followed by \<CR> key)
+- canvas element for terminal \(can be hidden)
+- console logging space
+
+System monitor supports following commands \(all parameters are HEX numbers, if not specified):
+- **\<empty>** \- one step execution
 
 
 ## Credits:
