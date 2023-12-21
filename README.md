@@ -67,7 +67,7 @@ If added block\(s) requested oscillograph, the monitor supports additional comma
 - **swdt** \- set graphs width: swdt num, where num is graphs width in pixels
 - **spts** \- set graphs max points: spts num, where num is max number of points to store for graphs
 
-[Generic emulator online](https://alex-code1234/github.io/emu8/)
+[Generic emulator online](https://alex-code1234.github.io/emu8/)
 
 ## Credits:
 
