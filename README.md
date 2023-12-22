@@ -33,10 +33,10 @@ UI structure:
 - console logging space
 
 System monitor keeps history of last 7 commands \(access by CTRL-w, implemented in index.html) and supports following
-commands \(all parameters are HEX numbers, if not specified):
+commands \(all parameters are HEX numbers, if not specified; the emulator must be stopped first with CTRL-n):
 - **\<empty>** \- one step execution
 - **x** \- show/set CPU registers/flags: x \[name1 value1 ...], where name is register/flag name
-- **g** \- execute program: g \[addr]
+- **g** \- execute program: g \[addr], if no addr then continue execution from the last stop
 - **step** \- set stop point and execute program: step \[addr], if no address - stop at next instruction
 - **d** \- dump memory: d \[addr]
 - **l** \- disassemble memory: l \[addr]
@@ -70,6 +70,30 @@ If added block\(s) requested oscillograph, the monitor supports additional comma
 
 [Generic emulator online](https://alex-code1234.github.io/emu8/)
 
+## KIM-1 emulator
+
+kim1 folder contains kim.js module \- the emulator of KIM-1 SBC, created by extending the generic emulator.
+The folder also contains:
+- KIM-1.jpg \- used to create realistic UI \(idea of Maksim Korzh), 7-segment LEDs and keys on keypad are operational
+- KIM-1_65302.bin \- original image of RIOT 002
+- KIM-1_65303.bin \- original image of RIOT 003
+- TinyBasic.ptp \- paper tape with Tiny Basic for KIM-1 \(start at 0x2000)
+- MSBasic.ptp \- paper tape witn Microsoft K9 Basic \(start at 0x4065)
+
+[The emulator](https://alex-code1234.github.io/emu8/?boot=kim1/kim) is loaded by adding boot=kim1/kim URL parameter
+to the generic emulator URL. Audio cassette and TTY interfaces are both supported.
+
+Added system monitor commands:
+- **tty** \- TTY on/off: tty num, where num is 1 to activate TTY or 0 to deactivate
+- **ptr** \- paper tape reader load tape (TTY must be active): ptr fn, where fn is ptp file name<br>
+          Before loading the tape, start the emulator, type L, stop emulator, load tape and start emulator again
+- **ptp** \- paper tape puncher load empty tape (TTY mast be active): ptp fn, where fn is ptp file name to create<br>
+          First load the tape, start the emulator, set end and start addresses and type Q (see KIM-1 manual)
+
+Experimental \(test) commands:
+- **. 8** \- load Woz monitor: . 8, emulator auto starts \(TTY must be active)
+- **. 7** \- first book programs list: . 7, \(7-segment indicators must be active)
+
 ## Credits:
 
 js8080 by Chris Double (http://www.bluishcoder.co.nz/js8080/)<br>
@@ -81,3 +105,6 @@ A1 assembler (https://www.sbprojects.net/projects/apple1/a1asm.php)<br>
 CPU testing (https://github.com/Klaus2m5/6502_65C02_functional_tests)<br>
 UI ideas and KIM-1 image (https://github.com/maksimKorzh/KIM-1)<br>
 KIM-1 emulator (https://github.com/wutka/kim1-emulator)<br>
+KIM-1 information (http://retro.hansotten.nl/6502-sbc/kim-1-manuals-and-software/)<br>
+KIM-1 manuals (https://web.archive.org/web/20220831205542/http://users.telenet.be/kim1-6502/)<br>
+KIM-1 ROMs (https://github.com/w4jbm/PAL-1-6502-SBC/tree/main)<br>
