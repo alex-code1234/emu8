@@ -217,9 +217,6 @@ function getPathName(path) {
 }
 
 async function initModule(opts, name, defaults, ...prms) {
-    const remFolder = (value) => {
-        
-    };
     let tmp = opts.get(name) ?? defaults[0];
     if (tmp)
         await loadScript(tmp);
