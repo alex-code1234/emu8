@@ -97,7 +97,7 @@ Experimental \(test) commands:
 ## Orion-128 emulator
 
 [The emulator](https://alex-code1234.github.io/emu8/?boot=orion128/orion) is loaded by adding boot=orion128/orion URL
-parameter to the generic emulator URL.
+parameter to the generic emulator URL. Start by **on** command.
 
 ## Credits:
 
