@@ -39,7 +39,7 @@ async function VT_100(screen, {
         '#000000', '#ff5555', '#55ff55', '#ffff55', '#5555ff', '#ff55ff', '#55ffff', '#ffffff'
     ],
     FONT_WIDTH = 9, FONT_HEIGHT = 16, FONT_OFFSET = 12, SCR_WIDTH = 80, SCR_HEIGHT = 25,
-    FONT_G0 = 'CP437', FONT_G1 = null
+    FONT_G0 = 'cp437', FONT_G1 = null
 } = {}) {
     await document.fonts.load(`${FONT_HEIGHT}px ${FONT_G0}`); // force font loading
     if (FONT_G1 !== null)
