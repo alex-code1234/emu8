@@ -50,7 +50,7 @@ async function defaultHW(scr, opts) {
                     case 0:
                     case 1:
                         if (parms.length < 2) { console.error('missing: name'); break; }
-                        loadBin(await loadFile('tests/' + parms[1] + '.com', false), 0x0100);
+                        loadBin(await loadFile('tests/' + parms[1].toUpperCase() + '.COM', false), 0x0100);
                         loadBin([                                                     // CP/M stub
                             0x3e,0x0a,0xd3,0x00,0x76,0x3e,0x02,0xb9,0xc2,0x0f,0x00,0x7b,0xd3,0x00,0xc9,
                             0x0e,0x24,0x1a,0xb9,0xc2,0x17,0x00,0xc9,0xd3,0x00,0x13,0xc3,0x11,0x00
@@ -63,14 +63,14 @@ async function defaultHW(scr, opts) {
                         switch (idx = pi(parms[1])) {
                             case 0:
                                 con.print('all valid opcodes test:_'); await delay(0);
-                                loadBin(await loadFile('tests/n6502test.bin', false), 0x0000);
+                                loadBin(await loadFile('tests/N6502TEST.BIN', false), 0x0000);
                                 CPU.reset(); CPU.setPC(0x400);
                                 await runTest(1200000000, 0x3469);
                                 con.print((CPU.getPC() === 0x3469) ? 'ok~' : 'error~');
                                 break;
                             case 1:
                                 con.print('extended opcodes test:~'); await delay(0);
-                                loadBin(await loadFile('tests/n6502test_ext.bin', false), 0x2000);
+                                loadBin(await loadFile('tests/N6502TEST_EXT.BIN', false), 0x2000);
                                 loadBin([0x8d, 0x00, 0xf0, 0x60], 0x2033);            // STA $F000 : RTS - print char
                                 loadBin([0x02], 0x202b);                              // KIL - stop on tests end
                                 loadBin([0x02], 0x22bf);                              // KIL - stop on test fail
@@ -79,7 +79,7 @@ async function defaultHW(scr, opts) {
                                 break;
                             case 2:
                                 con.print('interrupts test:_________'); await delay(0);
-                                loadBin(await loadFile('tests/n6502test_int.bin', false), 0x0400);
+                                loadBin(await loadFile('tests/N6502TEST_INT.BIN', false), 0x0400);
                                 CPU.reset(); CPU.setPC(0x400);
                                 do {
                                     tmp = CPU.getPC(); CPU.step();
@@ -98,7 +98,7 @@ async function defaultHW(scr, opts) {
                     case 4:
                         if (parms.length < 2) { console.error('missing: name'); break; }
                         if ((tmp = parms[1]) === 'codegolf') {
-                            loadBin(await loadFile('tests/codegolf', false), 0x00000);
+                            loadBin(await loadFile('tests/CODEGOLF', false), 0x00000);
                             CPU.reset(); CPU.setRegisters(['x', 'cs', '0000', 'ip', '0000', 'sp', '0100']);
                             CPU.memory_trap(0x08000, 0x087cf, async (w, addr, value) => {
                                 addr -= 0x08000;
@@ -115,13 +115,13 @@ async function defaultHW(scr, opts) {
                         con.print(`${tmp}:_`); await delay(0);
                         for (let i = 0; i < 1024; i++)                                // clear memory
                             memo.wr(i, 0x00);
-                        loadBin(await loadFile(`tests/${tmp}.bin`, false), 0xf0000);
+                        loadBin(await loadFile(`tests/${tmp.toUpperCase()}.BIN`, false), 0xf0000);
                         CPU.reset(); CPU.setRegisters(['x', 'cs', 'f000', 'ip', 'fff0']);
                         await runTest(CPU_INSTR_CNT);
                         if (tmp === 'jmpmov')
                             con.print(((memo.rd(0) | memo.rd(1) << 8) === 0x4001) ? 'ok~' : 'error~');
                         else {
-                            idx = await loadFile(`tests/res_${tmp}.bin`, false);
+                            idx = await loadFile(`tests/RES_${tmp.toUpperCase()}.BIN`, false);
                             len = (tmp === 'mul') ? 0x80 :                            // only OF, CF flags set
                                   (tmp === 'div') ? 0x90 :                            // flags undefined
                                   idx.length;
