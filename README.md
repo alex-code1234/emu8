@@ -57,7 +57,8 @@ commands \(all parameters are HEX numbers, if not specified; the emulator must b
 - **escs** \- send string to the terminal: escs str, where str is data to send to the terminal, for VT-100 can contain
            special characters \(^ converted to ESC, _ converted to space, ~ converted to CRLF)
 - **tests** \- show list of available tests for processor: tests
-- **test** \- execute CPU test: test name, where name is test name/id from the list
+- **test** \- execute CPU test: test name, where name is test name/id from the list<br>
+           Some tests require 64K memory with 100% R/W access, not compatible with all emulators
 - **boot** \- load emulator configuration: boot name \[fnc], where name is block name, fnc is function name to call
 
 If added block\(s) requested oscillograph, the monitor supports additional commands:
