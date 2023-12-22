@@ -211,11 +211,19 @@ function loadScript(name) {
     });
 }
 
+function getPathName(path) {
+    const slash = path.lastIndexOf('/');
+    return (slash >= 0) ? path.substr(slash + 1) : path;
+}
+
 async function initModule(opts, name, defaults, ...prms) {
+    const remFolder = (value) => {
+        
+    };
     let tmp = opts.get(name) ?? defaults[0];
     if (tmp)
         await loadScript(tmp);
-    const fncn = opts.get(`${name}_name`) ?? defaults[1] ?? tmp,
+    const fncn = opts.get(`${name}_name`) ?? defaults[1] ?? getPathName(tmp),
           fnc = window[fncn];
     if (!fnc)
         throw new Error(`function ${fncn}: not found`);
