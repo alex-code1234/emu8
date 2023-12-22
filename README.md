@@ -32,7 +32,8 @@ UI structure:
 - canvas element for the terminal \(can be hidden)
 - console logging space
 
-System monitor supports following commands \(all parameters are HEX numbers, if not specified):
+System monitor keeps history of last 7 commands \(access by CTRL-w, implemented in index.html) and supports following
+commands \(all parameters are HEX numbers, if not specified):
 - **\<empty>** \- one step execution
 - **x** \- show/set CPU registers/flags: x \[name1 value1 ...], where name is register/flag name
 - **g** \- execute program: g \[addr]
