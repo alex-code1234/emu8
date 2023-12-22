@@ -12,7 +12,7 @@ async function kim(scr) {                 // default version
 async function kim1(scr) {                // KIM-1
 //    CPU_INSTR_CNT = 3000; // set for first book examples
     const mod = await defaultHW(scr, new URLSearchParams(
-            '?cpu_type=2&mem=kim1/kim&mem_name=kim_memo&mon=js/monitor&mon_name=kim_con&kbd_name=kim_keys')),
+            '?cpu_type=2&mem_name=kim_memo&mon=js/monitor&mon_name=kim_con&kbd_name=kim_keys')),
           memo = mod.memo, cmd = mod.cmd, con = memo.con,
           testPrg1 = [0x02,0x03,0x18,0xa5,0x00,0x65,0x01,0x85,0xfa,0xa9,0x00,0x85,0xfb,0x4c,0x4f,0x1c],
           tapeData = [0xab,0x01,0x02,0x03,0x04,0x05,0x06,0x07,0x08,0x09,0x0a,0x0b,0x0c,0x0d,0x0e,0x0f],
