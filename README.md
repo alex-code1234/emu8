@@ -94,6 +94,11 @@ Experimental \(test) commands:
 - **. 8** \- load Woz monitor: . 8, emulator auto starts \(TTY must be active)
 - **. 7** \- first book programs list: . 7, \(7-segment indicators must be active)
 
+## Orion-128 emulator
+
+[The emulator](https://alex-code1234.github.io/emu8/?boot=orion128/orion) is loaded by adding boot=orion128/orion URL
+parameter to the generic emulator URL.
+
 ## Credits:
 
 js8080 by Chris Double (http://www.bluishcoder.co.nz/js8080/)<br>
