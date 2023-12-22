@@ -81,7 +81,7 @@ The folder also contains:
 - MSBasic.ptp \- paper tape witn Microsoft K9 Basic \(start at 0x4065)
 
 [The emulator](https://alex-code1234.github.io/emu8/?boot=kim1/kim) is loaded by adding boot=kim1/kim URL parameter
-to the generic emulator URL. Audio cassette and TTY interfaces are both supported.
+to the generic emulator URL. Audio cassette and TTY interfaces are both supported. Switch on by pressing \<RS> button.
 
 Added system monitor commands:
 - **tty** \- TTY on/off: tty num, where num is 1 to activate TTY or 0 to deactivate
