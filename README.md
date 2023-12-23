@@ -111,7 +111,8 @@ should create and return an object with following structure:
    - **reset** \- reset CPU: function()
    - **step** \- execute one step: function()
    - **setInterrupt** \- request interrupt: function(level)
-   - **setRegisters** \- set CPU registers/flags: function(regs), where regs is string array \[name1, value1, ...]
+   - **setRegisters** \- set CPU registers/flags: function(regs), where regs is string array
+                      \[empty, name1, value1, ...]
    - **cpuStatus** \- get CPU status string: function()
    - **setPC** \- set PC value: function(value)
    - **getPC** \- get PC value: function()
