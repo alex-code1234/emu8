@@ -109,25 +109,24 @@ name as module. The function has signature async function(scr), where scr is can
 should create and return an object with following structure:
 - **cpu** \- CPU object with properties:
    - **reset** \- reset CPU: function()
-             - **step** \- execute one step: function()
-             - **setInterrupt** \- request interrupt: function(level)
-             - **setRegisters** \- set CPU registers/flags: function(regs), where regs is string array
-                                \[name1, value1, ...]
-             - **cpuStatus** \- get CPU status string: function()
-             - **setPC** \- set PC value: function(value)
-             - **getPC** \- get PC value: function()
-             - **getSP** \- get stack pointer: function()
-             - **disassembleInstruction** \- disassemble instruction at the address: function(addr)
+   - **step** \- execute one step: function()
+   - **setInterrupt** \- request interrupt: function(level)
+   - **setRegisters** \- set CPU registers/flags: function(regs), where regs is string array \[name1, value1, ...]
+   - **cpuStatus** \- get CPU status string: function()
+   - **setPC** \- set PC value: function(value)
+   - **getPC** \- get PC value: function()
+   - **getSP** \- get stack pointer: function()
+   - **disassembleInstruction** \- disassemble instruction at the address: function(addr)
 - **memo** \- memory/IO ports/mappings object with properties:
-           - **rd** \- memory read: function(addr)
-           - **wr** \- memory write: function(addr, value)
-           - **input** \- port input: function(port), optional, if ports exist
-           - **output** \- port output: function(port, value), optional, if ports exist
-           - **size** \- memory size: value, optional
-           - **scope** \- oscilloscope getTime function: function(), optional, if provided, oscilloscope window will
-                       be available in the debugger<br>
-                       To better synchronize graph points with debugger, the function could return CPU step counter
-                       \(not provided, can be created by overriding the CPU step function)
+   - **rd** \- memory read: function(addr)
+   - **wr** \- memory write: function(addr, value)
+   - **input** \- port input: function(port), optional, if ports exist
+   - **output** \- port output: function(port, value), optional, if ports exist
+   - **size** \- memory size: value, optional
+   - **scope** \- oscilloscope getTime function: function(), optional, if provided, oscilloscope window will
+               be available in the debugger<br>
+               To better synchronize graph points with debugger, the function could return CPU step counter
+               \(not provided, can be created by overriding the CPU step function)
 - **toggleDisplay** \- show/hide terminal: function()
 - **keyboard** \- keyboard control: async function(key, code, value)
 - **info** \- HW info: string, optional
@@ -138,16 +137,16 @@ return the result. If URLSearchParams parameter is empty, the result will be gen
 returned object is possible by overriding the object's properties or replacing parts of the object by providing URL
 parameters for URLSearchParams:
 - **mon** \- create terminal: async function(scr), where scr is canvas id, returns object with properties:
-          - **con** \- actual terminal object, must have at least **print** property: function(str)
-          - **toggleDisplay** \- show/hide terminal: function()
-          - **cinfo** \- terminal info: string, optional
+   - **con** \- actual terminal object, must have at least **print** property: function(str)
+   - **toggleDisplay** \- show/hide terminal: function()
+   - **cinfo** \- terminal info: string, optional
 - **mem** \- create memory: async function(con), where con is actual terminal object, returns memory/IO
           ports/mappings object
 - **cpu** \- create CPU: async function(memo), where memo is memory/IO ports/mappings object, returns CPU object
 - **kbd** \- create keyboard: async function(con, memo), where con is actual terminal object and memo is memory/IO
           ports/mappings object, returns object with properties:
-          - **keyboard** \- keyboard control: async function(key, code, value)
-          - **kinfo** \- keyboard info: string, optional
+   - **keyboard** \- keyboard control: async function(key, code, value)
+   - **kinfo** \- keyboard info: string, optional
 
 Every URL parameter has accompaning parameter param **_name** to specify a function name to call \(not needed if the
 function name is the same as module name), while the parameter specifies a module name to load \(not needed if the
