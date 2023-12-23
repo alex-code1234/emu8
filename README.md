@@ -102,11 +102,11 @@ parameter to the generic emulator URL. Start by **on** command.
 
 ## Extending generic emulator
 
-To implement new emulator, at least one javascript module should be created and loaded by the boot=module URL parameter
-when generic emulator starts. Alternatively, the module can be loaded after starting by using **boot** command.
-The module should define a main function, which is specified by boot_name=fname URL parameter or has the same name as
-module. The function has signature async function(scr), where scr is canvas id, defined in index.html. It should
-create and return an object with following structure:
+To implement new emulator, at least one javascript module should be created and loaded by using the boot=module URL
+parameter when generic emulator starts. Alternatively, the module can be loaded after starting by using **boot**
+command. The module should define a main function, which is specified by boot_name=fname URL parameter or has the same
+name as module. The function has signature async function(scr), where scr is canvas id, defined in index.html. It
+should create and return an object with following structure:
 - **cpu** \- CPU object with properties:
              - **reset** \- reset CPU: function()
              - **step** \- execute one step: function()
