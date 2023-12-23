@@ -108,7 +108,7 @@ command. The module should define a main function, which is specified by boot_na
 name as module. The function has signature async function(scr), where scr is canvas id, defined in index.html. It
 should create and return an object with following structure:
 - **cpu** \- CPU object with properties:
-             - **reset** \- reset CPU: function()
+   - **reset** \- reset CPU: function()
              - **step** \- execute one step: function()
              - **setInterrupt** \- request interrupt: function(level)
              - **setRegisters** \- set CPU registers/flags: function(regs), where regs is string array
@@ -149,7 +149,7 @@ parameters for URLSearchParams:
           - **keyboard** \- keyboard control: async function(key, code, value)
           - **kinfo** \- keyboard info: string, optional
 
-Every URL parameter has accompaning parameter param**_name** to specify a function name to call \(not needed if the
+Every URL parameter has accompaning parameter param **_name** to specify a function name to call \(not needed if the
 function name is the same as module name), while the parameter specifies a module name to load \(not needed if the
 module is already loaded).
 
