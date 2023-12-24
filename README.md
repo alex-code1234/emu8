@@ -7,6 +7,7 @@ Core functionality is provided by following files, which serve as the extendable
 - monitor.js \- VT-100 terminal with support of ESC sequences and VGA colors by default
 - utils.js \- supporting code, implements file operations, dynamic loading, formatting and simple oscillograph
 - cp437.ttf \- terminal's font
+- disks.js \- disk drives support
 
 All processor implementations are tested and fixed to pass extensive checking, including
 8080ex1, z80exall and 6502exall tests
@@ -168,3 +169,4 @@ KIM-1 emulator (https://github.com/wutka/kim1-emulator)<br>
 KIM-1 information (http://retro.hansotten.nl/6502-sbc/kim-1-manuals-and-software/)<br>
 KIM-1 manuals (https://web.archive.org/web/20220831205542/http://users.telenet.be/kim1-6502/)<br>
 KIM-1 ROMs (https://github.com/w4jbm/PAL-1-6502-SBC/tree/main)<br>
+apple2js (https://github.com/whscullin/apple2js)
