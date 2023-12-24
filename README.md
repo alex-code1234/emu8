@@ -130,6 +130,9 @@ should create and return an object with following structure:
                be available in the debugger<br>
                To better synchronize graph points with debugger, the function could return CPU step counter
                \(not provided, can be created by overriding the CPU step function)
+   - **key** \- key preview, used by default keyboard implementation to pre-process keys before pushing them to
+             keyboard buffer: function(key), where key is key code, returns key code or null to skip the key,
+             optional
 - **toggleDisplay** \- show/hide terminal: function()
 - **keyboard** \- keyboard control: async function(key, code, value)
 - **info** \- HW info: string, optional
