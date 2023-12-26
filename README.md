@@ -102,6 +102,16 @@ Experimental \(test) commands:
 [The emulator](https://alex-code1234.github.io/emu8/?boot=orion128/orion) is loaded by adding boot=orion128/orion URL
 parameter to the generic emulator URL. Start by **on** command.
 
+## Apple I and II emulators
+
+[The emulator I](https://alex-code1234.github.io/emu8/?boot=apple/apple&boot_name=aI) has Woz monitor, Basic,
+Krusader and A1 assembler pre-loaded. Start by **on** command.
+[The emulator II](https://alex-code1234.github.io/emu8/?boot=apple/apple) supports Disk II interface on slot 6 with
+pre-loaded Dos 3.3 disk. 2 variants of Apple II emulated:
+- Apple IIe with 80-columns +64K card (80-columns not supported), start by **on e** command
+- Apple II with language card +16K, start by **on** command
+Only text mode supported.
+
 ## Extending generic emulator
 
 To implement new emulator, at least one javascript module should be created and loaded by using the boot=module URL
