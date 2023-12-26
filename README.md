@@ -105,7 +105,7 @@ parameter to the generic emulator URL. Start by **on** command.
 ## Apple I and II emulators
 
 [The emulator I](https://alex-code1234.github.io/emu8/?boot=apple/apple&boot_name=aI) has Woz monitor, Basic,
-Krusader and A1 assembler pre-loaded. Start by **on** command.
+Krusader and A1 assembler pre-loaded. Start by **on** command.<br>
 [The emulator II](https://alex-code1234.github.io/emu8/?boot=apple/apple) supports Disk II interface on slot 6 with
 pre-loaded Dos 3.3 disk. 2 variants of Apple II emulated:
 - Apple IIe with 80-columns +64K card (80-columns not supported), start by **on e** command
