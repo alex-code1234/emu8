@@ -110,6 +110,7 @@ Krusader and A1 assembler pre-loaded. Start by **on** command.
 pre-loaded Dos 3.3 disk. 2 variants of Apple II emulated:
 - Apple IIe with 80-columns +64K card (80-columns not supported), start by **on e** command
 - Apple II with language card +16K, start by **on** command
+
 Only text mode supported.
 
 ## Extending generic emulator
