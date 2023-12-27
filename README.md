@@ -113,6 +113,11 @@ pre-loaded Dos 3.3 disk. 2 variants of Apple II emulated:
 
 Only text mode supported.
 
+## UCSD-Pascal emulator
+
+[The emulator](https://alex-code1234.github.io/emu8/?boot=ucsd/ucsd) is loaded by adding boot=ucsd/ucsd URL
+parameter to the generic emulator URL. Start by **on** command.
+
 ## Extending generic emulator
 
 To implement new emulator, at least one javascript module should be created and loaded by using the boot=module URL
