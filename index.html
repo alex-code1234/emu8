@@ -130,6 +130,8 @@ function printMem(a, lines = 16, mem = memo) {
             s2 = '';                                        // ascii
         for (let j = 0; j < 16; j++) {
             const c = mem.rd(a + j);
+            if (c === undefined)
+                break;
             s += `${c.toString(16).padStart(2, '0')} `;
             s2 += (c >= 0x20 && c <= 0x7f) ? String.fromCharCode(c) : '.';
         }
@@ -145,8 +147,12 @@ function disassemble1(a) {
     r.push(a.toString(16).padStart(D_WDT, '0'));
     r.push(': ');
     let end = d[0] - a;
-    for (let i = 0; i < end; i++)
-        r.push(memo.rd(a + i).toString(16).padStart(2, '0'));
+    for (let i = 0; i < end; i++) {
+        const c = memo.rd(a + i);
+        if (c === undefined)
+            break;
+        r.push(c.toString(16).padStart(2, '0'));
+    }
     while (end++ < D_CMD)
         r.push('  ');
     r.push(' ');

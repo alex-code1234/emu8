@@ -21,7 +21,7 @@ const i82xx = {
 //     nextInt() - returns next pending interrupt or 0
 // i8253 must have:
 //     tick() - process one timer tick
-// int_handler(type) - returns true if interrupt type processed
+// int_handler(type) - async function, returns true if interrupt type processed
 // memory_trap(addr_min = null, addr_max = null, write = null, read = null)
 //     addr_min, addr_max  - memory address range
 //     write(w, addr, val) - val written to addr
@@ -136,8 +136,8 @@ function Intel8086(i8259 = i82xx, i8253 = i82xx, int_handler = null) {
         return res;
     }
 
-    function callInt(type) {
-        if (int_handler !== null && int_handler(type))
+    async function callInt(type) {
+        if (int_handler !== null && (await int_handler(type)))
             return;
         push(flags);
         setFlag(IF, false);
@@ -551,13 +551,13 @@ function Intel8086(i8259 = i82xx, i8253 = i82xx, int_handler = null) {
         return res;
     }
 
-    function step() {
+    async function step() {
         if (getFlag(TF)) {
-            callInt(1);
+            await callInt(1);
             clocks += 50;
         }
         if (getFlag(IF) && pic.hasInt()) {
-            callInt(pic.nextInt());
+            await callInt(pic.nextInt());
             clocks += 61;
         }
         os = null;
@@ -1519,12 +1519,12 @@ function Intel8086(i8259 = i82xx, i8253 = i82xx, int_handler = null) {
                 break;
             case 0xcc: // INT 3
             case 0xcd: // INT IMMED8
-                callInt(op == 0xcc ? 3 : getMem(B));
+                await callInt(op == 0xcc ? 3 : getMem(B));
                 clocks += op == 0xcc ? 52 : 51;
                 break;
             case 0xce: // INTO
                 if (getFlag(OF)) {
-                    callInt(4);
+                    await callInt(4);
                     clocks += 53;
                 } else
                     clocks += 4;
@@ -1835,13 +1835,13 @@ function Intel8086(i8259 = i82xx, i8253 = i82xx, int_handler = null) {
                 case 0b110: // DIV
                     if (src == 0) {
                         ip = ip_start;
-                        callInt(0);
+                        await callInt(0);
                     } else if (w == B) {
                         dst = ah << 8 | al;
                         const z = dst / src, m = dst % src;
                         if ((z & 0xff00) != 0) {
                             ip = ip_start;
-                            callInt(0);
+                            await callInt(0);
                         } else {
                             al = z & 0xff;
                             ah = m & 0xff;
@@ -1854,7 +1854,7 @@ function Intel8086(i8259 = i82xx, i8253 = i82xx, int_handler = null) {
                         m = m % src;
                         if ((z & 0xffff0000) != 0) {
                             ip = ip_start;
-                            callInt(0);
+                            await callInt(0);
                         } else {
                             setReg(W, AX, z & 0xffff);
                             setReg(W, DX, m & 0xffff);
@@ -1865,7 +1865,7 @@ function Intel8086(i8259 = i82xx, i8253 = i82xx, int_handler = null) {
                 case 0b111: // IDIV
                     if (src == 0) {
                         ip = ip_start;
-                        callInt(0);
+                        await callInt(0);
                     } else if (w == B) {
                         src = signconv(B, src);
                         dst = getReg(W, AX);
@@ -1873,7 +1873,7 @@ function Intel8086(i8259 = i82xx, i8253 = i82xx, int_handler = null) {
                         const z = dst / src, m = dst % src;
                         if ((z & 0xffffff00) + ((z & 0x0080) << 1) != 0) {
                             ip = ip_start;
-                            callInt(0);
+                            await callInt(0);
                         } else {
                             al = z & 0xff;
                             ah = m & 0xff;
@@ -1885,7 +1885,7 @@ function Intel8086(i8259 = i82xx, i8253 = i82xx, int_handler = null) {
                         const z = dst / src, m = dst % src;
                         if ((z & 0xffff0000) + ((z & 0x8000) << 1) != 0) {
                             ip = ip_start;
-                            callInt(0);
+                            await callInt(0);
                         } else {
                             setReg(W, AX, z & 0xffff);
                             setReg(W, DX, m & 0xffff);
@@ -1986,12 +1986,12 @@ function Intel8086(i8259 = i82xx, i8253 = i82xx, int_handler = null) {
                         res = (getMem(W, dst) << 16) >> 16;
                         if (src < res) {
                             ip = ip_start;
-                            callInt(5);
+                            await callInt(5);
                         } else {
                             res = (getMem(W, dst + 2) << 16) >> 16;
                             if (src > res) {
                                 ip = ip_start;
-                                callInt(5);
+                                await callInt(5);
                             }
                         }
                         clocks += 13;
