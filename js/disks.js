@@ -93,7 +93,7 @@ async function DOSDisk(fname, size) {
         case 10653696: cyls = 306; sects = 17; heads = 4; break;     // 10Mb harddisk
         default: throw new Error(`disk image error: ${size}`);
     }
-    const disk = Disk(cyls, sects, 512, heads, 0x10000);
+    const disk = Disk(cyls, sects, 512, heads, 0x100000);
     if (img) disk.drive.set(img, 0);
     return {
         'drive': disk.drive,

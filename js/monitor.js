@@ -262,6 +262,16 @@ async function VT_100(screen, {
             for (let i = 0, n = str.length; i < n; i++)
                 display(str.charCodeAt(i) & 0xff);
         },
-        canvas
+        canvas,
+        'output': (xx, yy, fg, bg, chr) => {             // direct output
+            x = xx; y = yy;
+            f = COLORS[fg]; b = COLORS[bg];
+            const cx = x * FONT_WIDTH + 5,
+                  cy = y * FONT_HEIGHT + 5;
+            canvas.fillStyle = b;
+            canvas.fillRect(cx, cy, FONT_WIDTH, FONT_HEIGHT);
+            canvas.fillStyle = f;
+            canvas.fillText(String.fromCharCode(chr), cx, cy + FONT_OFFSET);
+        }
     };
 }
