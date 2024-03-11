@@ -228,27 +228,45 @@ function Intel8086(i8259 = i82xx, i8253 = i82xx, int_handler = null) {
         return (flags & flag) > 0;
     }
 
-    let frm_b = null;
-    let frm_e = null;
-    let pgm_w = null;
-    let pgm_r = null;
+    let frm_b_1 = null;
+    let frm_e_1 = null;
+    let pgm_w_1 = null;
+    let pgm_r_1 = null;
+    let frm_b_2 = null;
+    let frm_e_2 = null;
+    let pgm_w_2 = null;
+    let pgm_r_2 = null;
 
     function page_mgr(frame_start, frame_end, page_mgr_write, page_mgr_read) {
-        frm_b = frame_start;
-        frm_e = frame_end;
-        pgm_w = page_mgr_write;
-        pgm_r = page_mgr_read;
+        if (frm_b_1 === null) {
+            frm_b_1 = frame_start;
+            frm_e_1 = frame_end;
+            pgm_w_1 = page_mgr_write;
+            pgm_r_1 = page_mgr_read;
+        }
+        else if (frm_b_2 === null) {
+            frm_b_2 = frame_start;
+            frm_e_2 = frame_end;
+            pgm_w_2 = page_mgr_write;
+            pgm_r_2 = page_mgr_read;
+        }
+        else
+            throw new Error('page manager: 2 max')
     }
 
     function mem_read(addr) {
-        if (pgm_r && addr >= frm_b && addr < frm_e)
-            return pgm_r(addr);
+        if (pgm_r_1 && addr >= frm_b_1 && addr < frm_e_1)
+            return pgm_r_1(addr);
+        if (pgm_r_2 && addr >= frm_b_2 && addr < frm_e_2)
+            return pgm_r_2(addr);
         return memory[addr];
     }
 
     function mem_write(addr, val) {
-        if (pgm_w && addr >= frm_b && addr < frm_e)
-            pgm_w(addr, val & 0xff);
+        if (pgm_w_1 && addr >= frm_b_1 && addr < frm_e_1)
+            pgm_w_1(addr, val & 0xff);
+        else if (pgm_w_2 && addr >= frm_b_2 && addr < frm_e_2)
+            pgm_w_2(addr, val & 0xff);
         else {
             if (addr >= ROM_START && (addr < VIDEO_START || addr >= VIDEO_END))
                 return;
