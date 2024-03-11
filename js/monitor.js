@@ -31,12 +31,12 @@
 // 0      Reset all attributes
 // 1      Bright
 // 2      Dim (default)
-// 30..37 Foreground Colors (black, red, green, yellow, blue, magenta, cyan, white)
-// 40..47 Background Colors (black, red, green, yellow, blue, magenta, cyan, white)
+// 30..37 Foreground Colors (black,  blue,   green,   cyan,   red,   magenta,   brown,  l_gray)
+// 40..47 Background Colors (d_gray, l_blue, l_green, l_cyan, l_red, l_magenta, yellow, white)
 async function VT_100(screen, {
     COLORS = [
-        '#000000', '#aa0000', '#00aa00', '#aa5500', '#0000aa', '#aa00aa', '#00aaaa', '#aaaaaa',
-        '#000000', '#ff5555', '#55ff55', '#ffff55', '#5555ff', '#ff55ff', '#55ffff', '#ffffff'
+        '#000000', '#0000aa', '#00aa00', '#00aaaa', '#aa0000', '#aa00aa', '#aa5500', '#aaaaaa',
+        '#555555', '#5555ff', '#55ff55', '#55ffff', '#ff5555', '#ff55ff', '#ffff55', '#ffffff'
     ],
     FONT_WIDTH = 9, FONT_HEIGHT = 16, FONT_OFFSET = 12, SCR_WIDTH = 80, SCR_HEIGHT = 25,
     FONT_G0 = 'CP437', FONT_G1 = null
