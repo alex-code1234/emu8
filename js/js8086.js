@@ -16,25 +16,15 @@ const i82xx = {
     tick: () => undefined
 };
 
+// m_write(addr, value) - memory write
+// m_read(addr)         - memory read, returns byte from addr
 // i8259 must have:
 //     hasInt()  - returns true if pending interrupts
 //     nextInt() - returns next pending interrupt or 0
 // i8253 must have:
 //     tick() - process one timer tick
 // int_handler(type) - returns true if interrupt type processed
-// memory_trap(addr_min = null, addr_max = null, write = null, read = null)
-//     addr_min, addr_max  - memory address range
-//     write(w, addr, val) - val written to addr
-//     read(w, addr, val)  - val read from addr
-// port_trap(port_min = null, port_max = null, write = null, read = null)
-//     port_min, port_max  - port address range
-//     write(w, port, val) - val written to port
-//     read(w, port, val)  - val read from port
-// page_mgr(frame_start, frame_end, page_mgr_write, page_mgr_read)
-//     frame_start, frame_end    - address range for paged access to memory
-//     page_mgr_write(addr, val) - write val to memory addr
-//     page_mgr_read(addr)       - read from memory addr
-function Intel8086(i8259 = i82xx, i8253 = i82xx, int_handler = null) {
+function Intel8086(m_write, m_read, i8259 = i82xx, i8253 = i82xx, int_handler = null) {
     const CF = 0x0001;
     const PF = 0x0004;
     const AF = 0x0010;
@@ -101,7 +91,6 @@ function Intel8086(i8259 = i82xx, i8253 = i82xx, int_handler = null) {
     let flags = 0x02;
 
     const queue = [0, 0, 0, 0, 0, 0];
-    const memory = new Uint8Array(0x100000);
 
     const pic = i8259;
     const pit = i8253;
@@ -228,100 +217,37 @@ function Intel8086(i8259 = i82xx, i8253 = i82xx, int_handler = null) {
         return (flags & flag) > 0;
     }
 
-    let frm_b_1 = null;
-    let frm_e_1 = null;
-    let pgm_w_1 = null;
-    let pgm_r_1 = null;
-    let frm_b_2 = null;
-    let frm_e_2 = null;
-    let pgm_w_2 = null;
-    let pgm_r_2 = null;
-
-    function page_mgr(frame_start, frame_end, page_mgr_write, page_mgr_read) {
-        if (frm_b_1 === null) {
-            frm_b_1 = frame_start;
-            frm_e_1 = frame_end;
-            pgm_w_1 = page_mgr_write;
-            pgm_r_1 = page_mgr_read;
-        }
-        else if (frm_b_2 === null) {
-            frm_b_2 = frame_start;
-            frm_e_2 = frame_end;
-            pgm_w_2 = page_mgr_write;
-            pgm_r_2 = page_mgr_read;
-        }
-        else
-            throw new Error('page manager: 2 max')
-    }
-
-    function mem_read(addr) {
-        if (pgm_r_1 && addr >= frm_b_1 && addr < frm_e_1)
-            return pgm_r_1(addr);
-        if (pgm_r_2 && addr >= frm_b_2 && addr < frm_e_2)
-            return pgm_r_2(addr);
-        return memory[addr];
-    }
-
     function mem_write(addr, val) {
-        if (pgm_w_1 && addr >= frm_b_1 && addr < frm_e_1)
-            pgm_w_1(addr, val & 0xff);
-        else if (pgm_w_2 && addr >= frm_b_2 && addr < frm_e_2)
-            pgm_w_2(addr, val & 0xff);
-        else {
-            if (addr >= ROM_START && (addr < VIDEO_START || addr >= VIDEO_END))
-                return;
-            memory[addr] = val & 0xff;
-        }
+        if (addr >= ROM_START && (addr < VIDEO_START || addr >= VIDEO_END))
+            return; // ROM is not writable
+        m_write(addr, val & 0xff);
     }
 
-    function _getMem(w, addr) {
+    function getMem(w, addr) {
         if (addr === undefined) {
             addr = getAddr(cs, ip);
-            let val = mem_read(addr);
+            let val = m_read(addr);
             if (w == W)
-                val |= mem_read(addr + 1) << 8;
+                val |= m_read(addr + 1) << 8;
             ip = ip + 1 + w & 0xffff;
             return val;
         }
-        let val = mem_read(addr);
+        let val = m_read(addr);
         if (w == W) {
             if ((addr & 0b1) == 0b1)
                 clocks += 4;
-            val |= mem_read(addr + 1) << 8;
+            val |= m_read(addr + 1) << 8;
         }
         return val;
     }
 
-    function _setMem(w, addr, val) {
+    function setMem(w, addr, val) {
         mem_write(addr, val);
         if (w == W) {
             if ((addr & 0b1) == 0b1)
                 clocks += 4;
             mem_write(addr + 1, val >>> 8);
         }
-    }
-
-    let getMem = _getMem;
-    let setMem = _setMem;
-
-    function memory_trap(amin = null, amax = null, write = null, read = null) {
-        if (write === null)
-            setMem = _setMem;
-        else
-            setMem = function(w, addr, val) {
-                _setMem(w, addr, val);
-                if ((amin === null || addr >= amin) && (amax === null || addr <= amax))
-                    write(w, addr, val);
-            };
-        if (read === null)
-            getMem = _getMem;
-        else
-            getMem = function(w, addr) {
-                const res = _getMem(w, addr);
-                if ((amin === null || addr >= amin) && (amax === null || addr <= amax))
-                    read(w, addr, res);
-                return res;
-            };
     }
 
     function getReg(w, reg) {
@@ -407,35 +333,16 @@ function Intel8086(i8259 = i82xx, i8253 = i82xx, int_handler = null) {
         return val;
     }
 
-    let p_min = null;
-    let p_max = null;
-    let port_write = null;
-    let port_read = null;
-
-    function port_trap(port_min = null, port_max = null, write = null, read = null) {
-        p_min = port_min;
-        p_max = port_max;
-        port_write = write;
-        port_read = read;
-    }
-
     function portIn(w, port) {
-        let res = 0;
         for (let i = 0; i < peripherals.length; i++) {
             const peripheral = peripherals[i];
-            if (peripheral.isConnected(port)) {
-                res = peripheral.portIn(w, port);
-                break;
-            }
+            if (peripheral.isConnected(port))
+                return peripheral.portIn(w, port);
         }
-        if (port_read !== null && (p_min === null || port >= p_min) && (p_max === null || port <= p_max))
-            port_read(w, port, res);
-        return res;
+        return 0x00;
     }
 
     function portOut(w, port, val) {
-        if (port_write !== null && (p_min === null || port >= p_min) && (p_max === null || port <= p_max))
-            port_write(w, port, val);
         for (let i = 0; i < peripherals.length; i++) {
             const peripheral = peripherals[i];
             if (peripheral.isConnected(port)) {
@@ -2167,27 +2074,27 @@ function Intel8086(i8259 = i82xx, i8253 = i82xx, int_handler = null) {
 
     function Ib(op) { //imm8
         op.addr++;
-        return memory[op.addr].toString(16).padStart(2, '0');
+        return m_read(op.addr).toString(16).padStart(2, '0');
     }
 
     function Iv(op) { //imm16
         op.addr++;
-        let o = memory[op.addr];
+        let o = m_read(op.addr);
         op.addr++;
-        o = (memory[op.addr] << 8) | o;
+        o = (m_read(op.addr) << 8) | o;
         return o.toString(16).padStart(4, '0');
     }
 
     function Jb(op) { //rel8
         op.addr++;
-        return ((op.addr + memory[op.addr] + 1) & 0xFF).toString(16).padStart(2, '0');
+        return ((op.addr + m_read(op.addr) + 1) & 0xFF).toString(16).padStart(2, '0');
     }
 
     function Jv(op) { //rel16
         op.addr++;
-        let rel = memory[op.addr];
+        let rel = m_read(op.addr);
         op.addr++;
-        rel = (memory[op.addr] << 8) | rel;
+        rel = (m_read(op.addr) << 8) | rel;
         return ((op.addr + rel + 1) & 0xFFFF).toString(16).padStart(4, '0');
     }
 
@@ -2672,7 +2579,7 @@ function Intel8086(i8259 = i82xx, i8253 = i82xx, int_handler = null) {
         op.addr = addr;
         let opcode_byte, reps = '      ', segs = null;
         prefixes: do {
-            opcode_byte = memory[op.addr];
+            opcode_byte = m_read(op.addr);
             switch (opcode_byte) {
                 case 0x26: segs = 'ES:'; break;
                 case 0x2e: segs = 'CS:'; break;
@@ -2693,7 +2600,7 @@ function Intel8086(i8259 = i82xx, i8253 = i82xx, int_handler = null) {
         const isGroup = Array.isArray(instruction[0]);
         if (isGroup || instruction[1] > 1) {
             op.addr++;
-            const opcode_addressing_byte = memory[op.addr];
+            const opcode_addressing_byte = m_read(op.addr);
             op.mod = (opcode_addressing_byte & 0xC0) >>> 6;
             op.reg = (opcode_addressing_byte & 0x38) >>> 3;
             op.rm = opcode_addressing_byte & 0x07;
@@ -2789,7 +2696,6 @@ function Intel8086(i8259 = i82xx, i8253 = i82xx, int_handler = null) {
     }
 
     return {
-        memory,
         peripherals,
         getAddr,
         step,
@@ -2803,9 +2709,6 @@ function Intel8086(i8259 = i82xx, i8253 = i82xx, int_handler = null) {
         disassembleInstruction,
         setRegisters,
         cpuStatus,
-        getSP,
-        memory_trap,
-        port_trap,
-        page_mgr
+        getSP
     };
 }

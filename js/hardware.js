@@ -100,15 +100,15 @@ async function defaultHW(scr, opts) {
                         if ((tmp = parms[1]) === 'codegolf') {
                             loadBin(await loadFile('tests/CODEGOLF', false), 0x00000);
                             CPU.reset(); CPU.setRegisters(['x', 'cs', '0000', 'ip', '0000', 'sp', '0100']);
-                            CPU.memory_trap(0x08000, 0x087cf, async (w, addr, value) => {
-                                addr -= 0x08000;
-                                const y = addr / 80 | 0, x = addr % 80;
-                                if (value === 0) value = 0x20;
-                                con.print(`^[${y + 1};${x + 1}H`); con.display(value); await delay(0);
-                            }, null);
                             con.print('^[?25l');                                      // hide cursor to stop scroll
                             await runTest(CPU_INSTR_CNT);
-                            CPU.memory_trap(null, null, null, null);
+                            for (let i = 0x08000; i <= 0x087cf; i++) {                // print screen
+                                const addr = i - 0x08000,
+                                      y = addr / 80 | 0, x = addr % 80;
+                                let value = memo.rd(i);
+                                if (value === 0) value = 0x20;
+                                con.print(`^[${y + 1};${x + 1}H`); con.display(value);
+                            }
                             con.print('^[?25h');                                      // show cursor
                             break;
                         }
@@ -168,7 +168,7 @@ async function createConsole(scr) {
 }
 
 async function createMemo(con) {
-    let ram = (CPUTYPE < 3) ? new Uint8Array(0x10000) : null;                         // 8bit: 64K, 16bit: set by CPU
+    let ram = new Uint8Array((CPUTYPE < 3) ? 0x10000 : 0x100000);                     // 8bit: 64K, 16bit: 1M
     const result = {};
     if (CPUTYPE === 2) {                                                              // memory mapped IO
         result.rd = a => (a === 0xf000) ? (con.kbd.length > 0) ? con.kbd.shift() & 0xff : 0xff : ram[a];
@@ -189,16 +189,7 @@ async function createMemo(con) {
             }
         };
     }
-    if (CPUTYPE > 2)
-        result.setCpu = cpu => {                                                      // for 8086/80186
-            ram = cpu.memory; result.size = ram.length;                               // get memory
-            cpu.peripherals.push({                                                    // enable ports
-                'isConnected': p => p === 0x00,
-                'portIn': (w, p) => result.input(p),
-                'portOut': (w, p, v) => result.output(p, v)
-            });
-        };
-    result.size = (ram ?? '').length;                                                 // optional RAM size
+    result.size = ram.length;                                                         // optional RAM size
     return result;
 }
 
@@ -212,8 +203,13 @@ async function createCpu(memo) {
             await loadScript('js/js6502.js'); return createN6502(memo);
         case 3:                                                                       // 8086
         case 4:                                                                       // 80186
-            await loadScript('js/js8086.js'); const c = new Intel8086();
-            CPU_186 = CPUTYPE - 3; memo.setCpu(c); return c;
+            await loadScript('js/js8086.js'); const c = new Intel8086(memo.wr, memo.rd);
+            c.peripherals.push({                                                      // enable ports
+                'isConnected': p => p === 0x00,
+                'portIn': (w, p) => memo.input(p),
+                'portOut': (w, p, v) => memo.output(p, v)
+            });
+            CPU_186 = CPUTYPE - 3; return c;
         default: throw new Error(`invalid cpu: ${CPUTYPE}`);
     }
 }
