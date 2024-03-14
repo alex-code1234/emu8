@@ -1,8 +1,5 @@
 'use strict';
 
-let ROM_START = 0xa0000,
-    VIDEO_START = 0xb0000,
-    VIDEO_END = 0xc0000;
 let CPU_186 = 0;
 
 // all peripherals must have:
@@ -217,12 +214,6 @@ function Intel8086(m_write, m_read, i8259 = i82xx, i8253 = i82xx, int_handler = 
         return (flags & flag) > 0;
     }
 
-    function mem_write(addr, val) {
-        if (addr >= ROM_START && (addr < VIDEO_START || addr >= VIDEO_END))
-            return; // ROM is not writable
-        m_write(addr, val & 0xff);
-    }
-
     function getMem(w, addr) {
         if (addr === undefined) {
             addr = getAddr(cs, ip);
@@ -242,11 +233,11 @@ function Intel8086(m_write, m_read, i8259 = i82xx, i8253 = i82xx, int_handler = 
     }
 
     function setMem(w, addr, val) {
-        mem_write(addr, val);
+        m_write(addr, val & 0xff);
         if (w == W) {
             if ((addr & 0b1) == 0b1)
                 clocks += 4;
-            mem_write(addr + 1, val >>> 8);
+            m_write(addr + 1, val >>> 8 & 0xff);
         }
     }
 
