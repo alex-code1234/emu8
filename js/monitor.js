@@ -93,6 +93,7 @@ async function VT_100(screen, {
         }
     },
     clearScr = (x = 0, y = 0, w = screen.width, h = screen.height) => {
+        b = COLORS[0];
         canvas.fillStyle = b;
         canvas.fillRect(x, y, w, h);
     },
