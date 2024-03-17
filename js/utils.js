@@ -229,6 +229,28 @@ async function initModule(opts, name, defaults, ...prms) {
 
 function ArrMemo(arr) { return {'rd': a => arr[a], 'wr': (a, v) => arr[a] = v}; }
 
+// paged memory implementation
+// adr_mask  - page selection (address & adr_mask)
+// def_write - function write(address, value) if page manager not found
+// def_read  - function read(address) => value if page manager not found
+// add - add page manager, function(start_adr, end_adr, write, read)
+// start_adr - page start address (result of address & adr_mask)
+// end_adr   - page end address, exclusive
+// write     - function(address, value)
+// read      - function(address) => value
+function PageManager(adr_mask, def_write, def_read) {
+    const pages = new Map();
+    let page;
+    return {
+        'add': (start_adr, end_adr, write, read) => pages.set(start_adr, {end_adr, write, read}),
+        'remove': start_adr => pages.delete(start_adr),
+        'wr': (adr, val) => ((page = pages.get(adr & adr_mask)) && adr < page.end_adr) ?
+                page.write(adr, val) : def_write(adr, val),
+        'rd': adr => ((page = pages.get(adr & adr_mask)) && adr < page.end_adr) ?
+                page.read(adr) : def_read(adr)
+    };
+}
+
 function oscilloscope(parent, time_fnc, {
     width = 1000,
     maxpoints = 1000,

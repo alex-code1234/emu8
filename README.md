@@ -118,6 +118,17 @@ Only text mode supported.
 [The emulator](https://alex-code1234.github.io/emu8/?boot=ucsd/ucsd) is loaded by adding boot=ucsd/ucsd URL
 parameter to the generic emulator URL. Start by **on** command.
 
+## IBM PC XT (5160) emulator
+
+[The emulator](https://alex-code1234.github.io/emu8/?boot=8086/ibm&boot_name=xt) is loaded by adding
+boot=8086/ibm&boot_name=xt URL parameter to the generic emulator URL. Uses only original software, no specialized ROMs.
+Start by **on** command with optional parameter (true|false) to execute BIOS tests during boot (default true).<br>
+Configuration: BIOS - IBM XT rev.1 11/08/82 (bios2.bin), IBM EGA 64K monitor (ibm_ega.bin), 2 FDC (empty) and
+pre-loaded 10M HDC.
+
+Also emulates IBM PC 5150 by removing boot_name parameter from URL.
+Configuration: BIOS - IBM rev.3 10/27/82 (bios.bin), CGA monitor and 2 FDC pre-loaded with PC DOS 3.30.
+
 ## Extending generic emulator
 
 To implement new emulator, at least one javascript module should be created and loaded by using the boot=module URL
