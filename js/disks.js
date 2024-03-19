@@ -34,9 +34,7 @@ async function CPMDisk(fname, size) {
         case 536870912: cyls = 256; sects = 16384; break;            // 512Mb harddisk
         default: throw new Error(`disk image error: ${size}`);
     }
-    const disk = Disk(cyls, sects, 128, undefined, 0x10000, (sects !== 26) ? undefined : [
-        1, 7, 13, 19, 25, 5, 11, 17, 23, 3, 9, 15, 21, 2, 8, 14, 20, 26, 6, 12, 18, 24, 4, 10, 16, 22
-    ]);
+    const disk = Disk(cyls, sects, 128, undefined, 0x10000);
     if (img) disk.drive.set(img, 0);
     return {
         'drive': disk.drive,
