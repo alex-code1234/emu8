@@ -1,0 +1,31 @@
+0000: c3 38 00    ; JMP  0038
+
+0038: f5          ; PUSH PSW
+0039: e5          ; PUSH H
+003a: 21 03 01    ; LXI  H, 0103
+003d: cd 0a 01    ; CALL 010a
+0040: e1          ; POP  H
+0041: f1          ; POP  PSW
+0042: 00          ; EI            <-- fb EI, 00 NOP
+0043: c9          ; RET
+
+0090: ed 46       ; IM   0        <-- start Z80 (46 mode 0, 56 - mode 1)
+
+0095: fb          ; EI            <-- start 8080
+
+0100: c3 14 01    ; JMP  0114
+
+0103: 74 65 73 74 0d 0a 24 ; test string
+
+010a: 7e          ; MOV  A, M
+010b: fe 24       ; CPI  '$'
+010d: c8          ; RZ
+010e: d3 01       ; OUT  01
+0110: 23          ; INX  H
+0111: c3 0a 01    ; JMP  010a
+
+0114: 76          ; HLT
+
+0200: 21 03 01    ; LXI  H, 0103  <-- test start
+0203: cd 0a 01    ; CALL 010a
+0206: c3 14 01    ; JMP  0114

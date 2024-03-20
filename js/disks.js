@@ -18,6 +18,7 @@ function Disk(cyls, sects, sect_size, heads = 1, top_dma, skew = null) {
         }
         return 0;                                                    // no(0) errors
     };
+    drive.fill(0xe5);                                                // empty image
     return {
         drive,
         transfer
