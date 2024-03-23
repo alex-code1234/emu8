@@ -29,7 +29,16 @@ async function cpm_init(scr, version) {   // CP[MP]/M init
         cputype = 0;
     const mod = await defaultHW(scr, new URLSearchParams(`?cpu_type=${cputype}&mem_name=cpm_memo`)),
           memo = mod.memo, cmd = mod.cmd,
-          nm = cpuName(CPUTYPE);
+          nm = cpuName(CPUTYPE),
+    getDisk = (pms, n, er, fg) => {       // disk IO command helper
+        if (pms.length < n) { console.error(er); return; }
+        const dn = pi(pms[1], false);
+        if (dn >= CPM_DRIVES.length) { console.error(`invalid drive num: ${dn}`); return; }
+        if (!fg) return dn;
+        const dd = CPM_DRIVES[dn];
+        if (dd === undefined || dd === null) { console.error(`invalid drive: ${dn}`); return; }
+        return dd;
+    };
     switch (version) {
         case 0:
             mod.info = `CP/M 2.2, ${nm}, VT-100, 64K memory, 4 FDC (8" IBM SD)`;
@@ -58,40 +67,46 @@ async function cpm_init(scr, version) {   // CP[MP]/M init
                 }
                 return cmd(command, parms);
             case 'disk':                  // insert disk
-                if (parms.length < 3) {
-                    console.error('missing: drv fname|size');
-                    break;
-                }
-                const disk_num = pi(parms[1], false);
-                if (disk_num >= CPM_DRIVES.length) {
-                    console.error('invalid drive num');
-                    break;
-                }
+                const disk_num = getDisk(parms, 3, 'missing: drv fname|size', false);
+                if (disk_num === undefined) break;
                 const disk_fn = parms[2],
                       disk_img = isNaN(disk_fn) ? await CPMDisk(disk_fn) : await CPMDisk(null, +disk_fn);
                 CPM_DRIVES[disk_num] = disk_img;
                 console.log(disk_img.drive.length);
                 break;
             case 'dump':                  // save disk
-                if (parms.length < 2) {
-                    console.error('missing: drv');
-                    break;
-                }
-                let d_drv;
-                const d_drive = CPM_DRIVES[d_drv = +parms[1]];
-                if (d_drive === undefined || d_drive === null) {
-                    console.error(`invalid drive: ${d_drv}`);
-                    break;
-                }
+                const d_drive = getDisk(parms, 2, 'missing: drv', true);
+                if (d_drive === undefined) break;
                 downloadFile('drive.img', d_drive.drive);
+                break;
+            case 'read':                  // read file
+                const r_drive = getDisk(parms, 3, 'missing: drv fname', true);
+                if (r_drive === undefined) break;
+                let r_fn;
+                const r_buf = r_drive.diskRW(r_fn = parms[2]);
+                if (r_buf !== null)
+                    downloadFile(r_fn.toUpperCase(), r_buf);
+                else
+                    console.log(`file ${r_fn} not found or empty`);
+                break;
+            case 'write':                 // write file
+                const w_drive = getDisk(parms, 3, 'missing: drv fname', true);
+                if (w_drive === undefined) break;
+                let w_fn, w_idx;
+                const w_buf = await loadFile(w_fn = parms[2], false);
+                if ((w_idx = w_fn.lastIndexOf('/')) >= 0)
+                    w_fn = w_fn.substring(w_idx + 1);
+                w_drive.diskRW(w_fn, w_buf);
+                console.log(w_buf.length);
                 break;
             case 'basic':                 // start 8080 MS Basic
                 loadHex(await loadFile('cpm/basic.hex', true), 0);
+                memo.reset(); HLT_STOP = true;
                 hardware.toggleDisplay();
                 CPU.reset(); CPU.setPC(0x1000); run();
                 break;
-            case 'on':                    // start emulator
-                switch (version) {
+            case 'on':                    // start emulator (false - do not load disks)
+                if (parms[1] !== 'false') switch (version) {
                     case 0:
                         CPM_DRIVES[0] = await CPMDisk('cpm/cpma.cpm');
                         CPM_DRIVES[1] = await CPMDisk('cpm/cpmb_turbo.cpm');
@@ -99,15 +114,16 @@ async function cpm_init(scr, version) {   // CP[MP]/M init
                     case 1:
                         CPM_DRIVES[0] = await CPMDisk('cpm/cpm3a.cpm');
                         CPM_DRIVES[1] = await CPMDisk('cpm/cpm3b.cpm');
-                        memo.bank(0); // bank 0 must be active
                         break;
                     default:
                         CPM_DRIVES[0] = await CPMDisk('cpm/mpma.cpm');
                         CPM_DRIVES[8] = await CPMDisk(null, 4177920);
-                        memo.bank(0); // bank 0 must be active
-                        HLT_STOP = false; // no stop on HALT (MP/M is interrupt based)
                         break;
                 }
+                memo.reset();
+                if (version > 0)
+                    memo.bank(0);       // bank 0 must be active
+                HLT_STOP = version < 2; // no stop on HALT (MP/M is interrupt based)
                 let boot_err;
                 if ((boot_err = CPM_DRIVES[0].transfer(0, 1, 0x0000, true, memo)) !== 0)
                     console.error(`boot error: ${boot_err}`);
@@ -116,31 +132,34 @@ async function cpm_init(scr, version) {   // CP[MP]/M init
                     CPU.reset(); run();
                 }
                 break;
-            case 'printer':
+            case 'printer':               // download printer device output
                 downloadFile('printer.txt', memo.printer());
                 break;
-            case 'tape':
+            case 'tape':                  // mount tape to tape reader device
+                if (version === 2) return false;
                 if (parms.length < 2) {
                     console.error('missing: file [adr len]');
                     break;
                 }
-                let tl2;
+                let tl2; // true - transfer binary file as hex file
                 const tdata = await loadFile(parms[1], !(tl2 = parms.length > 2)),
-                      haddr = tl2 ? pi(parms[2]) : 0x100,              // transfer hex files
-                      hlen = (parms.length > 3) ? pi(parms[3]) : 0x20; // transfer hex files
+                      haddr = tl2 ? pi(parms[2]) : 0x100,              // binary file address
+                      hlen = (parms.length > 3) ? pi(parms[3]) : 0x20; // hex file line length
                 memo.tape(tl2 ? toIntelHex(tdata, haddr, hlen) : tdata);
                 break;
-            case 'puncher':
+            case 'puncher':               // download tape puncher device output
+                if (version === 2) return false;
                 downloadFile('puncher.txt', memo.puncher());
                 break;
-            case 'bank':
-                if (version === 0)
-                    return false;
+            case 'bank':                  // get/set active memory bank
+                if (version === 0) return false;
                 if (parms.length < 2)
                     console.log(memo.bank());
                 else
                     memo.bank(pi(parms[1], false));
                 break;
+            case 'ccopy': console.log(memo.ccopy(parms[1])); break;
+            case 'console': console.log(memo.console()); break;
             default: return cmd(command, parms);
         }
         return true;
@@ -179,7 +198,8 @@ async function cpm_memo(con) {            // CPM system memory and IO
     let dskstat = 0, iocount = 0, drv = 0, trk = 0, sec = 0, dma = 0,
         printer = '', tape = '', tapepos = 0, puncher = '',
         TIMER_RUN = false,
-        bank = 1, clkcmd = 0, [clkdata, clktemp] = datetime();
+        bank = 1, clkcmd = 0, [clkdata, clktemp] = datetime(),
+        sconsole = '', ccopy = false;
     const timer10 = async (value) => {
         if (value !== 1) { TIMER_RUN = false; return; }
         else if (TIMER_RUN) return;
@@ -243,7 +263,10 @@ async function cpm_memo(con) {            // CPM system memory and IO
                     else if (v === 0x0d) break;
                     console.log(String.fromCharCode(v), console.NB);
                     break;
-                case 0x01: con.display(v & 0xff); break;                                // console data
+                case 0x01:                                                              // console data
+                    con.display(v & 0xff);
+                    if (ccopy) sconsole += String.fromCharCode(v & 0xff);               // keep screen data
+                    break;
                 case 0x03: printer += String.fromCharCode(v); break;                    // printer data
                 case 0x04: if (v & 0x01) tapepos = 0; break;                            // rewind tape (aux)
                 case 0x05: puncher += String.fromCharCode(v); break;                    // paper puncher (aux)
@@ -296,6 +319,21 @@ async function cpm_memo(con) {            // CPM system memory and IO
             if (value >= rams.length)
                 throw new Error(`invalid memory bank: ${value}`);
             bank = value;
+        },
+        'ccopy': flag => {
+            if (flag !== undefined) ccopy = flag === 'true';
+            sconsole = '';
+            return ccopy;
+        },
+        'console': () => sconsole,
+        'reset': () => {
+            timer10(0); // stop timer
+            ram.fill(0x00);
+            rams.length = 2; rams[0].fill(0x00);
+            dskstat = 0; iocount = 0; drv = 0; trk = 0; sec = 0; dma = 0;
+            printer = ''; tape = ''; tapepos = 0; puncher = '';
+            bank = 1; clkcmd = 0; [clkdata, clktemp] = datetime();
+            sconsole = '';
         }
     };
     return result;

@@ -130,6 +130,46 @@ pre-loaded 10M HDC.
 Also emulates IBM PC 5150 by removing boot_name parameter from URL.
 Configuration: BIOS - IBM rev.3 10/27/82 (bios.bin), CGA monitor and 2 FDC pre-loaded with PC DOS 3.30.
 
+## CP/M and MP/M emulator
+
+[The emulator](https://alex-code1234.github.io/emu8/?boot=cpm/cpm&boot_name=cpm22) is loaded by adding
+boot=cpm/cpm URL parameter to the generic emulator URL. **boot_name** parameter specifies OS to run:
+- **cpm22** \- CP/M 2.2 \(default, 64K memory, 8080 or Z80 cpu)
+- **cpm30** \- CP/M 3.0 \(160K banked memory, 8080 or Z80 cpu)
+- **mpm** \- MP/M II 2.0 \(400K banked memory, Z80 cpu)
+
+CPU can be changed by monitor command **cpu** before OS loading or by adding URL parameter **cpu_type**<br>
+All configurations support 4 256K floppy drives A:, B:, C: and D: \(with drive numbers 0..3)<br>
+MP/M also supports 4M hard drives I:, J: \(8..9) and 512M hard drive P: \(15)<br>
+
+Added system monitor commands<br>
+All versions:
+- **disk** \- mount disk: disk drv fname|size, where drv is drive number, fname is disk image file name,
+           size is disk image size \(in bytes) to specify empty disk
+           \(256256 for 0..3, 4177920 for 8..9, 536870912 for 15)
+- **dump** \- save disk image: dump drv
+- **read** \- read file from disk: read drv fname
+- **write** \- write file to disk: write drv fname
+- **basic** \- start MS 8080 Basic: basic
+- **on** \- boot OS: on true|false, where true|false is flag to auto mount drives \(default true)
+         bootable OS disk is mounted to drive A: \(cpma.cpm, cpm3a.cpm or mpma.cpm) and
+         additional software disk is mounted to drive B: \(cpmb_turbo.cpm, cpm3b.cpm)
+         or empty I: drive \(for MP/M)
+- **ccopy** \- get/set save console data flag: ccopy \[true|false]. true \- save scrolled out console data
+            \(clear previous data)
+- **console** \- show saved console data
+
+CP/M 2.2 and CP/M 3.0:
+- **printer** \- download printer device output: printer
+- **tape** \- mount tape to tape reader device: tape fname \[adr len], where fname is file name,
+           binary files can be converted to Intel HEX data with:
+           adr \- binary file address \(hex value), len \- HEX line length \(hex value, default 20)
+- **puncher** \- download tape puncher device output: puncher
+- **bank** \- get/set active memory bank: bank \[num], where num is page number \(0..2), CP/M 3.0 only
+
+MP/M:
+- **bank** \- get/set active memory bank: bank \[num], where num is page number \(0..7)
+
 ## Extending generic emulator
 
 To implement new emulator, at least one javascript module should be created and loaded by using the boot=module URL

@@ -35,19 +35,162 @@ async function CPMDisk(fname, size) {
         case 536870912: cyls = 256; sects = 16384; break;            // 512Mb harddisk
         default: throw new Error(`disk image error: ${size}`);
     }
-    const disk = Disk(cyls, sects, 128, undefined, 0x10000);
+    const disk = Disk(cyls, sects, 128, undefined, 0x10000),
+    // direct access to disk
+    SKEW = [1, 7, 13, 19, 25, 5, 11, 17, 23, 3, 9, 15, 21, 2, 8, 14, 20, 26, 6, 12, 18, 24, 4, 10, 16, 22],
+    DIRS = (sects === 26) ? 64 : (sects === 128) ? 1024 : 8192,
+    BLKS = (sects === 26) ? 8 : (sects === 128) ? 16 : 128,
+    diskBlock = (num, data = null) => {                              // read block (8 sectors)
+        num = num * BLKS;            // first block absolute sector
+        if (sects === 26) num += 52; // 2 tracks reserved for 8" IBM SD
+        let read;
+        if (read = data === null)
+            data = new Uint8Array(128 * BLKS);
+        let sec = num % sects,       // actual sector - 1
+            trk = (num / sects) | 0; // actual track
+        for (let i = 0; i < BLKS; i++) {
+            disk.transfer(trk, (sects === 26) ? SKEW[sec] : sec + 1, i * 128,
+                    {'rd': (i) => data[i], 'wr': (i, v) => data[i] = v}, read);
+            if (++sec >= sects) { trk++; sec = 0; }
+        }
+        return data;
+    },
+    diskToDir = f => {                                               // file name to directory entry
+        let t;
+        return f.toUpperCase().replace('.', ''.padStart((t = f.indexOf('.')) < 0 ? 0 : 8 - t, ' ')).padEnd(11, ' ');
+    },
+    diskFromDir = (ds, entry) => {                                   // file name from directory entry
+        return String.fromCharCode(...ds.slice(entry + 1, entry + 12));
+    },
+    diskDirsIter = fnc => {                                          // directory iterator
+        let entry = 0;
+        for (let i = 0; i < DIRS; i++) {
+            if (!fnc(entry)) break;
+            entry += 32;
+        }
+    },
+    diskAvail = (total, start, used) => {                            // available blocks
+        const all = [];
+        for (let i = start; i < total; i++) all.push(i);
+        return all.filter(x => !used.includes(x));
+    },
+    diskRW = (name, data = null) => {                                // direct disk IO
+        const sz = 32 * DIRS, bs = 128 * BLKS, buf = new Uint8Array(sz);
+        for (let i = 0, n = sz / bs | 0, offs = 0; i < n; i++, offs += bs)
+            buf.set(diskBlock(i), offs);             // read dirs block
+        name = diskToDir(name);
+        if (data === null) {                                         // read file
+            data = [];
+            let scts = 0;                            // total sectors
+            diskDirsIter(entry => {                  // scan directories
+                if (buf[entry] === 0x00 && diskFromDir(buf, entry) === name) {
+                    const recs = buf[entry + 15];
+                    scts += recs;                    // add total sectors
+                    for (let i = 0; i < 16; i++) {
+                        let al = buf[entry + 16 + i];
+                        if (sects > 26) {            // 2 bytes block numbers
+                            i++;                     // get high byte
+                            al = buf[entry + 16 + i] << 8 | al;
+                        }
+                        if (al === 0x00) break;      // not used, report EOF
+                        data.push(...diskBlock(al)); // save file block
+                    }
+                    if (recs < 0x80) return false;   // last extent (dir entry)
+                }
+                return true;                         // continue scan
+            });
+            if (data.length === 0) return null;      // file not found or empty
+            data.length = scts * 128;                // adjust length
+            const clean_data = new Uint8Array(data.length);
+            clean_data.set(data, 0);
+            return clean_data;
+        } else {                                                     // write file
+            const used_blocks = [],                  // find used blocks
+                  free_dirs = [];                    // and free dir entries
+            diskDirsIter(async entry => {            // scan directories
+                if (buf[entry] === 0x00)             // used directory entry
+                    if (diskFromDir(buf, entry) === name)
+                        free_dirs.unshift(entry);    // existing file, overwrite
+                    else
+                        for (let i = 0; i < 16; i++) {
+                            const al = buf[entry + 16 + i];
+                            if (sects > 26) {        // 2 bytes block numbers
+                                i++;                 // get high byte
+                                al = buf[entry + 16 + i] << 8 | al;
+                            }
+                            if (al !== 0x00)
+                                used_blocks.push(al); // save used block
+                        }
+                else
+                    free_dirs.push(entry);           // save free dir
+                return true;
+            });
+            let tot, len = data.length,
+                scts = len / 128 | 0,                // total sectors
+                fill = len % 128;                    // used space in last sector
+            if (fill !== 0) scts++;
+            let blocks = scts / BLKS | 0;            // total blocks
+            if (scts % 8 !== 0) blocks++;
+            if (blocks > (tot = disk.drive.length / bs | 0) - used_blocks.length)
+                throw new Error('disk is full');
+            let dirs = scts / 0x80 | 0;              // total dir entries
+            if (scts % 0x80 !== 0) dirs++;
+            if (dirs > free_dirs.length)
+                throw new Error('directory is full');
+            const avail_blocks = diskAvail(tot, sz / bs | 0, used_blocks),
+                  extc = (sects > 26) ? 8 : 16;      // extent blocks count
+            let idx = 0,                             // data offset
+                dir_idx = -1,                        // free dirs index
+                dir,                                 // current dir entry
+                al_idx = 0,                          // available blocks index
+                al_offs;                             // current al offset
+            for (let i = 0; i < blocks; i++) {       // save blocks
+                if (i % extc === 0) {                // next extent
+                    if (dir_idx >= 0) {
+                        buf[dir + 15] = 0x80;        // prev directory RC
+                        scts -= extc * BLKS;         // adjust remaining sectors
+                    }
+                    dir = free_dirs[++dir_idx];      // next directory entry
+                    buf[dir] = 0x00;                 // mark as used
+                    for (let j = 0; j < 11; j++)     // set file name
+                        buf[dir + 1 + j] = name.charCodeAt(j);
+                    buf[dir + 12] = dir_idx % 32 & 0xff;       // set extent
+                    buf[dir + 14] = (dir_idx / 32 | 0) & 0xff; // and S2
+                    al_offs = 0;                     // reset allocations offset
+                }
+                const al = avail_blocks[al_idx++];   // next available block
+                let dbuf;
+                if (i < blocks - 1)
+                    dbuf = data.slice(idx, idx + bs);
+                else {                               // last block
+                    dbuf = new Uint8Array(bs);       // adjust length
+                    const rest = data.slice(idx);
+                    dbuf.set(rest, 0);
+                    buf[dir + 15] = scts;            // set directory RC
+                    if (fill > 0) {
+                        let offs = rest.length;
+                        for (let j = 0, n = 128 - fill; j < n; j++)
+                            dbuf[offs++] = 0x1a;     // fill gap
+                    }
+                }
+                diskBlock(al, dbuf);                 // save block
+                idx += bs;
+                buf[dir + 16 + al_offs++] = al & 0xff; // save allocation
+                if (sects > 26)                      // set high byte
+                    buf[dir + 16 + al_offs++] = al >>> 8 & 0xff;
+            }
+            while (al_offs <= 15)                    // for last dir
+                buf[dir + 16 + al_offs++] = 0x00;    // clear remaining allocations
+            for (let i = 0, n = sz / bs | 0, offs = 0; i < n; i++, offs += bs)
+                diskBlock(i, buf.slice(offs, offs + bs)); // save dirs
+        }
+    };
+    // CPMDisk code
     if (img) disk.drive.set(img, 0);
     return {
         'drive': disk.drive,
-        'transfer': (cyl, sec, dma, read, mem, count = 1) => {
-            if (sec === null) {                                      // transfer block
-                count = 8;                                           // 8 sectors per block
-                cyl = cyl * 8 + sects * 2;                           // 2 tracks reserved
-                sec = cyl % 26 + 1;                                  // actual sector
-                cyl = cyl / 26 | 0;                                  // actual track
-            }
-            return disk.transfer(cyl, sec, dma, mem, read, count);
-        }
+        'transfer': (cyl, sec, dma, read, mem, count = 1) => disk.transfer(cyl, sec, dma, mem, read, count),
+        diskRW
     };
 }
 
