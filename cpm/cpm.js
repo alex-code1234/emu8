@@ -22,12 +22,12 @@ async function mpm(scr) {
 //         cpu 1 - Z80
 //     or URL parameter
 //         cpu_type=
-// MP/M supported only with Z80 cpu
 async function cpm_init(scr, version) {   // CP[MP]/M init
-    let cputype = (version === 2) ? 1 : URL_OPTS.get('cpu_type');
-    if (cputype === null || cputype > 1)
-        cputype = 0;
-    const mod = await defaultHW(scr, new URLSearchParams(`?cpu_type=${cputype}&mem_name=cpm_memo`)),
+    let urlparams = '?mem_name=cpm_memo', // support CPU switching by command or URL
+        urlcpu = URL_OPTS.get('cpu_type');
+    if (urlcpu !== null)
+        urlparams += `&cpu_type=${urlcpu}`;
+    const mod = await defaultHW(scr, new URLSearchParams(urlparams)),
           memo = mod.memo, cmd = mod.cmd,
           nm = cpuName(CPUTYPE),
     getDisk = (pms, n, er, fg) => {       // disk IO command helper
@@ -39,6 +39,8 @@ async function cpm_init(scr, version) {   // CP[MP]/M init
         if (dd === undefined || dd === null) { console.error(`invalid drive: ${dn}`); return; }
         return dd;
     };
+    if (CPUTYPE > 1)
+        throw new Error(`invalid CPU: ${nm}`);
     switch (version) {
         case 0:
             mod.info = `CP/M 2.2, ${nm}, VT-100, 64K memory, 4 FDC (8" IBM SD)`;
@@ -117,7 +119,8 @@ async function cpm_init(scr, version) {   // CP[MP]/M init
                         break;
                     default:
                         CPM_DRIVES[0] = await CPMDisk('cpm/mpma.cpm');
-                        CPM_DRIVES[8] = await CPMDisk(null, 4177920);
+                        CPM_DRIVES[1] = await CPMDisk('cpm/mpmb.cpm');
+                        CPM_DRIVES[2] = await CPMDisk(null, 256256);
                         break;
                 }
                 memo.reset();
