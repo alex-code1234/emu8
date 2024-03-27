@@ -28,6 +28,9 @@ Without adding new blocks \(javascript files), the emulator has following config
 Default CPU is 8080, can be changed by URL parameter cpu_type=type, where type is:
 - **0**: 8080, **1**: z80, **2**: 6502, **3**: 8086, **4**: 80186
 
+By default mobile soft keyboard is supported, to use hardware keyboard (or run on non mobile device) add special 
+parameter **hw_kbd=true** to the URL.
+
 UI structure:
 - HTML input element to interact with system monitor \(command followed by \<CR> key)
 - canvas element for the terminal \(can be hidden)

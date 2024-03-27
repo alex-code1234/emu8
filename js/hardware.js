@@ -227,7 +227,7 @@ async function createKeyboard(con, memo) {
                 case 37: val = 19;  break;                                            // VK_LEFT
                 case 39: val = 4;   break;                                            // VK_RIGHT
                 case 8:  val = 8;   break;                                            // VK_BACK_SPACE
-                case 89: val = 127; break;                                            // VK_DEL        ctrl-y
+                case 46: val = 127; break;                                            // VK_DEL
                 case 84: val = 9;   break;                                            // VK_TAB        ctrl-t
                 case 13: val = 13;  break;                                            // VK_ENTER
                 case 87: val = 5;   break;                                            // VK_UP         ctrl-w

@@ -473,10 +473,57 @@ const URL_OPTS = new URLSearchParams(location.search),
       history = ['', '', '', '', '', '', ''];
 let history_index = history.length - 1;
 
+// translate hardware keyboard keys to mobile soft keyboard keys
+const kbd_opt_set = (URL_OPTS.get('hw_kbd') ?? 'false') === 'true';
+let kbd_ctrl = false;
+function kbd_translate(ev, down) {
+    if (kbd_opt_set) {
+        const evc = {'key': ev.key, 'keyCode': ev.keyCode, 'target': ev.target};
+        switch (evc.key) {
+            case 'ArrowDown':
+                evc.key = 'z'; evc.keyCode = 90; break;    // ctrl-z
+            case 'ArrowLeft':
+            case 'ArrowRight': break;                      // unchanged
+            case 'ArrowUp':
+                evc.key = 'w'; evc.keyCode = 87; break;    // ctrl-w
+            case 'Backspace': break;                       // unchanged
+            case 'Control': kbd_ctrl = down; return null;  // skip processing
+            case 'Delete':
+            case 'EndCall':
+            case 'Enter': break;                           // unchanged
+            case 'Escape':
+                evc.key = '3'; evc.keyCode = 51; break;    // ctrl-4
+            case 'PageDown':
+                evc.key = 'l'; evc.keyCode = 76; break;    // ctrl-l
+            case 'PageUp':
+                evc.key = 's'; evc.keyCode = 83; break;    // ctrl-s
+            case 'Shift': return null;                     // skip processing
+            case 'Tab':
+                evc.key = 't'; evc.keyCode = 84; break;    // ctrl-t
+            default:
+                if (!kbd_ctrl) {
+                    evc.key = 'Unidentified';
+                    evc.keyCode = 229;
+                }
+                else if (evc.key >= '1' && evc.key <= '9') // Ctrl-number codes less 1
+                    evc.key = String.fromCharCode(+evc.key - 1);
+                break;
+        }
+        if (kbd_ctrl || ev.key === 'Tab' || ev.key === 'PageDown' || ev.key === 'PageUp') {
+            ev.preventDefault(); // stop browser processing special keys
+            ev.stopPropagation();
+        }
+        return evc;
+    }
+    return ev;
+}
+
 async function main() {
     await monitor(`cpu ${CPUTYPE}`);
-    let kbd = document.getElementById('kbd');
-    kbd.onkeyup = async (ev) => {
+    let kbd = document.getElementById('kbd'), evc;
+    kbd.onkeyup = (ev) => {
+        if ((evc = kbd_translate(ev, false)) === null) return;
+        (async ev => {
         try {
             if (CPU.RUN)
                 // emulate keyboard
@@ -505,14 +552,18 @@ async function main() {
         } catch(exc) {
             console.error(exc.message + '\n', exc.stack);
         }
+        })(evc);
     };
-    kbd.onkeydown = async (ev) => {
+    kbd.onkeydown = (ev) => {
+        if ((evc = kbd_translate(ev, true)) === null) return;
+        (async ev => {
         try {
             if (CPU.RUN)
                 await hardware.keyboard(ev.key, ev.keyCode, null);
         } catch(exc) {
             console.error(exc.message + '\n', exc.stack);
         }
+        })(evc);
     };
 }
 
