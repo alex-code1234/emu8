@@ -226,17 +226,26 @@ async function VT_100(screen, {
                 break;
         }
     },
+    zoomstr = URL_OPTS.get('zoom'),          // global URL parameters
+    zoom = zoomstr ?
+            (zoomstr === 'tablet') ?
+                    [1.211, 1.551, 71, 89] : // predefined tablet zoom
+                    zoomstr.split(',') :     // custom zoom
+            null,                            // not provided
+    z0 = zoom ? +zoom[0] : 1, z1 = zoom ? +zoom[1] : 1, z2 = zoom ? +zoom[2] : 0,
     setWidth = (width) => {
         SCR_WIDTH = width; screen.width = FONT_WIDTH * width + 10;
         canvas.font = `${FONT_HEIGHT}px ${FONT_G0}`;
-        let trn, mrg;
-        if (width === origWidth) { trn = null; mrg = null; }
-        else {
+        let trn = null, mrg = null, mrgt = null;
+        if (zoom) {
+            trn = `scale(${z0}, ${z1})`; mrg = `${z2}px`; mrgt = `${zoom[3]}px`;
+        }
+        if (width !== origWidth) {
             let tmp = FONT_WIDTH * (origWidth - width);
             if (tmp > 0) tmp += 10; else tmp -= 5;
-            trn = `scale(${origWidth / width}, 1)`; mrg = `${tmp / 2 | 0}px`;
+            trn = `scale(${z0 * origWidth / width}, ${z1})`; mrg = `${z2 + (tmp / 2 | 0)}px`;
         }
-        screen.style.transform = trn; screen.style.marginLeft = mrg;
+        screen.style.transform = trn; screen.style.marginLeft = mrg; screen.style.marginTop = mrgt;
         clearScr(); cursor();
     },
     setColors = (clrs) => {
