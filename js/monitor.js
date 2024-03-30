@@ -229,6 +229,8 @@ async function VT_100(screen, {
     zoom = ZOOM_OPT ?                        // zoom URL option (scale width and height, margin left and top)
             (ZOOM_OPT === 'tablet') ?
                     [1.211, 1.551, 71, 89] : // predefined tablet zoom
+            (ZOOM_OPT === 'tv') ?
+                    [1.83, 2.245, 296, 229] : // predefined TV zoom
                     ZOOM_OPT.split(',') :    // custom zoom
             null,                            // no zoom
     z0 = zoom ? +zoom[0] : 1, z1 = zoom ? +zoom[1] : 1, z2 = zoom ? +zoom[2] : 0,
