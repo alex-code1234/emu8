@@ -251,7 +251,7 @@ async function VT_100(screen, {
     },
     setColors = (clrs) => {
         for (let i = 0, n = clrs.length - 2; i <= n; i += 2)
-            COLORS[i] = clrs[i + 1];
+            COLORS[clrs[i]] = clrs[i + 1];
         x = 0; y = 0; fi = 7; bi = 0; f = COLORS[fi]; b = COLORS[bi]; bright = false;
         clearScr(); cursor();
     };
