@@ -113,7 +113,7 @@ async function CPMDisk(fname, size) {
                         free_dirs.unshift(entry);    // existing file, overwrite
                     else
                         for (let i = 0; i < 16; i++) {
-                            const al = buf[entry + 16 + i];
+                            let al = buf[entry + 16 + i];
                             if (sects > 26) {        // 2 bytes block numbers
                                 i++;                 // get high byte
                                 al = buf[entry + 16 + i] << 8 | al;
