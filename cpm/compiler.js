@@ -4,7 +4,7 @@ async function compiler(scr) {
     const mon = document.getElementById('scr'),
           txt = document.createElement('textarea');
     txt.rows = '3'; txt.cols = '83'; txt.style.marginTop = '5px'; txt.style.marginBottom = '-10px';
-txt.value = 'var a, b, c;\na = (4 + b + c + b) + (2 + c) + (b + c);';
+txt.value = 'var a, b, c;\na = b + 2 << b;';
     document.body.insertBefore(txt, mon);
     const kbd = document.getElementById('kbd');
     kbd.onfocus = ev => txt.disabled = 'true';
@@ -17,10 +17,328 @@ txt.value = 'var a, b, c;\na = (4 + b + c + b) + (2 + c) + (b + c);';
             case 'cmp':
                 const il = IL(),
                       parser = Parser(il.emit),
-                      gen = CodeGen();
-                il.init();
-                parser.parse(txt.value);
-                gen.generate(...il.code());
+                      gen = CodeGen({
+                          'regs': {
+                              'A': {'val': null, 'ref': null},
+                              'B': {'val': null, 'ref': null}, 'C': {'val': null, 'ref': null},
+                              'D': {'val': null, 'ref': null}, 'E': {'val': null, 'ref': null},
+                              'H': {'val': null, 'ref': null}, 'L': {'val': null, 'ref': null},
+                              'S': {'val': null, 'ref': null}
+                          },
+                          'acc': 'A',
+                          'mem': 'H',
+                          'work': 'BCD',
+                          'ref': 'M',
+                          'prm': 'E',
+                          'move': (dest, src) =>  `        MOV  ${dest}, ${src}\n`,
+                          'movi': (dest, val) =>  `        MVI  ${dest}, ${val}\n`,
+                          'loada': name =>        `        LDA  ${name}\n`,
+                          'loadr': (reg, name) => `        LXI  ${reg}, ${name}\n`,
+                          'savea': name =>        `        STA  ${name}\n`,
+                          'callp': name =>        `        CALL ${name}\n`,
+                          'invra': () =>          '        CMA\n',
+                          'incr': reg =>          `        INR  ${reg}\n`,
+                          'adi': val =>           `        ADI  ${val}\n`,
+                          'add': reg =>           `        ADD  ${reg}\n`,
+                          'sui': val =>           `        SUI  ${val}\n`,
+                          'sub': reg =>           `        SUB  ${reg}\n`,
+                          'xri': val =>           `        XRI  ${val}\n`,
+                          'xra': reg =>           `        XRA  ${reg}\n`,
+                          'ani': val =>           `        ANI  ${val}\n`,
+                          'ana': reg =>           `        ANA  ${reg}\n`,
+                          'ori': val =>           `        ORI  ${val}\n`,
+                          'ora': reg =>           `        ORA  ${reg}\n`,
+                          'cpi': val =>           `        CPI  ${val}\n`,
+                          'cmp': reg =>           `        CMP  ${reg}\n`,
+                          'ral': () =>            '        RAL\n',
+                          'rar': () =>            '        RAR\n',
+                          'jz': addr =>           `        JZ   ${addr}\n`,
+                          'jnz': addr =>          `        JNZ  ${addr}\n`,
+                          'jc': addr =>           `        JC   ${addr}\n`,
+                          'jnc': addr =>          `        JNC  ${addr}\n`,
+                          
+                      }),
+                      compile = prg => {
+                          il.init();
+                          parser.parse(prg);
+                          return gen.generate(...il.code());
+                      },
+                      test = (prg, res) => {
+                          const code = compile(prg);
+//                          console.clear();
+                          if (code.trim() !== res.trim())
+                              throw new Error(`program:\n${prg}\ngenerated:\n${code}\nexpected:\n${res}`);
+                      };
+                test(`
+var a, b, c; b = 19; c = 27;
+a = (4 + b + c + b) + (2 + c) + (b + c);
+                     `, `
+        LXI  H, b
+        MVI  M, 19
+        LXI  H, c
+        MVI  M, 27
+        LDA  b
+        MOV  B, A
+        ADI  4
+        ADD  M
+        ADD  B
+        MOV  C, A
+        MOV  A, M
+        MOV  D, A
+        ADI  2
+        ADD  C
+        MOV  C, A
+        MOV  A, B
+        ADD  D
+        ADD  C
+        STA  a
+                `);
+                test(`
+var a, b, c; b = 19; c = 27;
+a = (4 + (b + c) + b) + (2 + c) + (b + c);
+                `, `
+        LXI  H, b
+        MVI  M, 19
+        LXI  H, c
+        MVI  M, 27
+        LDA  b
+        MOV  B, A
+        ADD  M
+        MOV  C, A
+        ADI  4
+        ADD  B
+        MOV  B, A
+        MOV  A, M
+        ADI  2
+        ADD  B
+        ADD  C
+        STA  a
+                `);
+                test(`
+var a, b, c; b = 19 != b; c = 27;
+a = (4 + (b + c) + b) + (2 + c) + (b + c);
+                `, `
+        LDA  b
+        MOV  B, A
+        CPI  19
+        MVI  A, 1
+        JNZ  $+4
+        XRA  A
+        LXI  H, b
+        MOV  M, A
+        LXI  H, c
+        MVI  M, 27
+        ADD  M
+        MOV  C, A
+        ADI  4
+        ADD  B
+        MOV  B, A
+        MOV  A, M
+        ADI  2
+        ADD  B
+        ADD  C
+        STA  a
+                `);
+                test(`
+var a, b, c;
+a = c + b + a + b;
+                `, `
+        LDA  c
+        LXI  H, b
+        ADD  M
+        MOV  B, M
+        LXI  H, a
+        ADD  M
+        ADD  B
+        MOV  M, A
+                `);
+                test(`
+var a, b, c;
+a = (c + 2) << (b + 2);
+                `, `
+        LDA  c
+        MVI  B, 2
+        ADD  B
+        MOV  C, A
+        LDA  b
+        ADD  B
+        MOV  E, A
+        MOV  A, C
+        CALL @SHLF
+        STA  a
+                `);
+                test(`
+var a, b, c;
+a = b << (b + 2);
+                `, `
+        LDA  b
+        MOV  B, A
+        ADI  2
+        MOV  E, A
+        MOV  A, B
+        CALL @SHLF
+        STA  a
+                `);
+                test(`
+var a, b, c;
+a = 7 << (b + 2);
+                `, `
+        LDA  b
+        ADI  2
+        MOV  E, A
+        MVI  A, 7
+        CALL @SHLF
+        STA  a
+                `);
+                test(`
+var a, b, c;
+a = (b + 1) >> (b + 1);
+                `, `
+        LDA  b
+        INR  A
+        MOV  E, A
+        CALL @SHRF
+        STA  a
+                `);
+                test(`
+var a, b, c;
+a = b + b;
+                `, `
+        LDA  b
+        ADD  A
+        STA  a
+                `);
+                test(`
+var a, b, c;
+a = b << b;
+                `, `
+        LDA  b
+        MOV  E, A
+        CALL @SHLF
+        STA  a
+                `);
+                test(`
+var a, b, c;
+a = b << c;
+                `, `
+        LDA  c
+        MOV  E, A
+        LDA  b
+        CALL @SHLF
+        STA  a
+                `);
+                test(
+`var a, b, c;
+a = (b + 2) << b;
+                `, `
+        LDA  b
+        MOV  E, A
+        ADI  2
+        CALL @SHLF
+        STA  a
+                `);
+                test(`
+var a, b, c;
+a = (b + b) << b;
+                `, `
+        LDA  b
+        MOV  E, A
+        ADD  E
+        CALL @SHLF
+        STA  a
+                `);
+                test(`
+var a, b, c;
+a = b + c << b;
+                `, `
+        LDA  b
+        MOV  E, A
+        LXI  H, c
+        ADD  M
+        CALL @SHLF
+        STA  a
+                `);
+                test(`
+var a, b, c;
+a = b + 2; c = a + 1;
+                `, `
+        LDA  b
+        ADI  2
+        LXI  H, a
+        MOV  M, A
+        INR  A
+        STA  c
+                `);
+                test(`
+var a, b, c;
+a = b + 2; c = a + 1; b = 5 << c;
+                `, `
+        LDA  b
+        ADI  2
+        LXI  H, a
+        MOV  M, A
+        INR  A
+        LXI  H, c
+        MOV  M, A
+        MOV  E, A
+        MVI  A, 5
+        CALL @SHLF
+        STA  b
+                `);
+                test(`
+var a, b, c;
+a = b + 2; c = a + 1; b = c << 5;
+                `, `
+        LDA  b
+        ADI  2
+        LXI  H, a
+        MOV  M, A
+        INR  A
+        LXI  H, c
+        MOV  M, A
+        MVI  E, 5
+        CALL @SHLF
+        STA  b
+                `);
+                test(`
+var a, b, c;
+a = b; c = 7;
+                `, `
+        LDA  b
+        STA  a
+        LXI  H, c
+        MVI  M, 7
+                `);
+                test(`
+var a, b, c;
+a = b; c = a;
+                `, `
+        LXI  H, a
+        LDA  b
+        MOV  M, A
+        STA  c
+                `);
+                test(
+`var a, b, c;
+a = b; c = b;
+                `, `
+        LDA  b
+        STA  a
+        STA  c
+                `);
+                test(
+`var a, b, c, d;
+a = b; c = a; d = a + b;
+                `, `
+        LXI  H, a
+        LDA  b
+        MOV  M, A
+        STA  c
+        LXI  H, b
+        ADD  M
+        STA  d
+                `);
+                console.log(compile(txt.value));
                 break;
             default: return cmd(command, parms);
         }
@@ -152,6 +470,13 @@ function IL() {
     gen = (id, two) => {
         const triple = [o1[0], o1[1], id];
         if (two) triple.push(o2[0], o2[1]);
+if (id === 'add' && ((o1[0] === 'num' && o1[1] === 1) || (o2[0] === 'num' && o2[1] === 1))) {
+    triple[2] = 'inc';
+    if (o1[0] === 'num') {
+        triple[0] = triple[3]; triple[1] = triple[4];
+        triple[3] = undefined; triple[4] = undefined;
+    }
+}
         const trp = create(...triple);
         stack.push(['trp', trp.adr]);
     },
@@ -178,6 +503,7 @@ function IL() {
         return result;
     },
     optim = () => {       // constant folding already done
+// TODO: add math simplification (+1 -1 +0 -0 a=a)
         while (dedupe()); // duplicate code elimination
     },
     init = () => { stack.length = 0; triples.length = 0; tripleNum = 0; vars = {}; },
@@ -220,15 +546,13 @@ function IL() {
     return {init, code, emit};
 }
 
-function CodeGen() {
+function CodeGen(codec) {
     let triples,                                               // 3-address code
         vars,                                                  // variables - var: reg[reg]
         results,                                               // triplets  - adr: reg[reg]
-        consts;                                                // constants - num: reg[reg]
-    const regs = {                                             // regs      - reg: val=var|adr|num, ref=<trp,first>
-        'A': {'val': null, 'ref': null},
-        'B': {'val': null, 'ref': null}, 'C': {'val': null, 'ref': null}
-    },
+        consts,                                                // constants - num: reg[reg]
+        code;                                                  // generated assembly
+    const regs = codec.regs,                                   // regs      - reg: val=var|adr|num, ref=<trp,first>
     loc = (trp, first) => {                                    // get operand location
         const typ = first ? trp.typ1 : trp.typ2;
         switch (typ) {
@@ -250,34 +574,46 @@ function CodeGen() {
         if (s.indexOf(c) >= 0) return s;
         return s + c;
     },
+    clrloc = (rval, reg) => {                                  // clear location
+        if (isNaN(rval))
+            if (rval.charAt(0) === ':') results[rval] = rmreg(results[rval], reg);
+            else vars[rval] = rmreg(vars[rval], reg);
+        else consts[rval] = rmreg(consts[rval], reg);
+    },
     sloc = (trp, first, reg) => {                              // set operand location
         const typ = first ? trp.typ1 : trp.typ2,
               val = first ? trp.val1 : trp.val2,
-              rval = regs[reg].val;
-        if (rval !== null)                                     // clear previous location
-            if (isNaN(rval))
-                if (rval.charAt(0) === ':') results[rval] = rmreg(results[rval], reg);
-                else vars[rval] = rmreg(vars[rval], reg);
-            else consts[rval] = rmreg(consts[rval], reg);
+              rg = regs[reg],
+              rval = rg.val;
+        if (rval !== null) {
+            if (rval === val) return;                          // already set
+            clrloc(rval, reg);                                 // clear previous location
+        }
         switch (typ) {
             case 'num': consts[val] = adreg(consts[val], reg); break;
             case 'trp': results[val] = adreg(results[val], reg); break;
             case 'var': vars[val] = adreg(vars[val], reg); break;
             default: throw new Error(`unknown operand type: ${typ}`);
         }
-        const rg = regs[reg]; rg.val = val; rg.ref = [{...trp}, first];
+        rg.val = val; rg.ref = [{...trp}, first];
+    },
+    clrreg = reg => {                                          // clear register
+        const rg = regs[reg];
+        if (rg.val !== null) {
+            clrloc(rg.val, reg);                               // clear location
+            rg.val = null; rg.ref = null;
+        }
     },
     used = (trp, first, start = 1) => {                        // find operand ref forward
-        let idx = 0, cnt = 0;
+        let idx = 0, cnt = 0, t;
         while (triples[idx].adr !== trp.adr) idx++;            // skip to current triplet
-        idx += start;                                          // starting from next triplet by default
         const n = triples.length,
               typ = first ? trp.typ1 : trp.typ2,
               val = first ? trp.val1 : trp.val2;
+        idx += start;                                          // starting from next triplet by default
         while (idx < n) {
-            const t = triples[idx];
-            if ((t.typ1 === typ && t.val1 === val) || (t.typ2 === typ && t.val2 === val)) cnt++;
-            idx++;
+            t = triples[idx++];
+            if ((t.oper !== 'asg' && t.typ1 === typ && t.val1 === val) || (t.typ2 === typ && t.val2 === val)) cnt++;
         }
         return cnt;
     },
@@ -287,58 +623,160 @@ function CodeGen() {
         trp.typ2 = typ; trp.val2 = val;
     },
     inreg = (lc, reg) => lc !== null && lc.indexOf(reg) >= 0,  // check if reg in location
-    const1 = (trp, first) =>                                   // one time constant
-            (first ? trp.typ1 : trp.typ2) === 'num' && used(trp, first) === 0,
-    rgwork = () => {                                           // get best secondary register
-        let refsB, refsC;
-        if (regs['B'].val === null || (refsB = used(...regs['B'].ref)) === 0) return 'B';
-        if (regs['C'].val === null || (refsC = used(...regs['C'].ref)) === 0) return 'C';
-        if (refsB === undefined) refsB = used(...regs['B'].ref);
-        if (refsC === undefined) refsC = used(...regs['C'].ref);
-        return (refsB <= refsC) ? 'B' : 'C';
+    const1 = (trp, first) =>                                   // one time constant not in register
+            (first ? trp.typ1 : trp.typ2) === 'num' && loc(trp, first) === null && used(trp, first) === 0,
+    rgwork = (trp, rgs, mem) => {                              // get best secondary register
+        const hv = mem.val;
+        let res = null;
+        for (let i = 0, n = rgs.length; i < n; i++) {
+            const name = rgs.charAt(i), rg = regs[name];
+            if (rg.val === null) return name;                  // free
+            rg.ref[0].adr = trp.adr;                           // set start address for usage counter
+            let usg = used(...rg.ref);
+            if (usg === 0) return name;                        // not used
+            const typ = rg.ref[1] ? rg.ref[0].typ1 : rg.ref[0].typ2,
+                  val = rg.ref[1] ? rg.ref[0].val1 : rg.ref[0].val2;
+            if (typ === 'trp') continue;                       // triplet must be saved
+            if (typ === 'var')                                 // prefer to keep variables
+                usg += (hv === `*${val}`) ? 500 : 1000;        // lower priority if in H register
+            if (res === null) res = [name, usg];
+            else if (res[1] > usg) { res[0] = name; res[1] = usg; }
+        }
+        if (res === null) throw new Error('no working registers');
+if (res[1] > 0) console.log(`warning: discarded ${res}`);
+        return res[0];
     },
-    issave = (res, acc) => acc.val !== null &&                 // check if save acc (res - skip next triplet)
-            used(...acc.ref, res ? 2 : 1) > 0 && loc(...acc.ref).length < 2,
-    save = () => {
-        
+    issave = (trp, start, acc) => {                            // check if save acc (start - starting triplet to check)
+        if (acc.val === null) return false;
+        acc.ref[0].adr = trp.adr;                              // set start address for usage counter
+        return used(...acc.ref, start) > 0 && loc(...acc.ref).length < 2;
     },
-    load1 = (trp, canswap) => {                                // load primary operand
+    ttrp = (adr, typ1, val1) => { return {adr, typ1, val1}; }, // create temporary triplet
+    fndop = (lines, start, s) => {                             // find operation before current
+        for (let i = start; i >= 0; i--)
+            if (lines[i].match(s) !== null) return i;
+        return -1;
+    },
+    chgop = (lines, pattern, start, end, br = null) => {       // check if register changed
+        for (let i = start; i <= end; i++) {
+            const line = lines[i];
+            if (br !== null && line.match(br) !== null) break;
+            for (let j = 0, n = pattern.length; j < n; j++)
+                if (line.match(pattern[j]) !== null) return true;
+        }
+        return false;
+    },
+    phopt = (match, begin, ptrn, fnc = null, fw = false) => {  // peephole register optimization
+        const lines = code.split('\n');
+        let i = 0, changed = false;
+        while (i < lines.length) {
+            let oper = lines[i],
+                idx = oper.match(match), start;
+            if (idx !== null && idx.length > 0) {
+                const cnd = idx[1],
+                      bgn = begin(cnd),
+                      ptr = ptrn(cnd);
+                if (fw) {                                      // scan forward
+                    if (!chgop(lines, ptr, i + 1, lines.length - 1, bgn)) {
+                        lines.splice(i, 1);
+                        changed = true; continue;
+                    }
+                }
+                else if ((start = fndop(lines, i, bgn)) >= 0)  // scan backward
+                    if (!chgop(lines, ptr, start + 1, i - 1)) {
+                        if (fnc === null) {
+                            lines.splice(i, 1);
+                            changed = true; continue;
+                        }
+                        else if (fnc(lines, start, i, cnd)) {
+                            changed = true; continue;
+                        }
+                    }
+            }
+            i++;
+        }
+        if (changed) code = lines.join('\n');
+    },
+    save = (trp, start) => {                                   // save accumulator (start - starting triplet to check)
+        const acc = regs[codec.acc];
+        if (issave(trp, start, acc)) {
+            const slc = rgwork(trp, codec.work, regs[codec.mem]);
+            code += codec.move(slc, codec.acc);
+            sloc(...acc.ref, slc);
+        }
+    },
+    load1 = (trp, canswap, start = 1) => {                     // load primary operand
         const lc = loc(trp, true);
-        if (inreg(lc, 'A')) return;                            // already loaded
-        if (canswap && trp.typ2 !== null && inreg(loc(trp, false), 'A')) {
-            swap(trp); return;                                 // swappable and secondary already loaded
+        if (inreg(lc, codec.acc)) return;                      // already loaded
+        if (canswap && trp.typ2 !== null && inreg(loc(trp, false), codec.acc)) {
+            swap(trp); return true;                            // swappable and secondary already loaded
         }
-        const rgA = regs['A'];
-        if (/*rgA.val !== null*/issave(false, rgA)) {                                // save accumulator
-            const slc = rgwork();                              // in working register
-            console.log(`        MOV  ${slc}, A`);             // move to save
-            sloc(...rgA.ref, slc);                             // update location
-        }
+        save(trp, start);                                      // save accumulator if needed
         if (lc !== null)                                       // load from reg
-            console.log(`        MOV  A, ${lc.charAt(0)}`);
+            code += codec.move(codec.acc, lc.charAt(0));
         else switch (trp.typ1) {
             case 'num':                                        // load immediate
-                console.log(`        MVI  A, ${trp.val1}`);
+                code += codec.movi(codec.acc, trp.val1);
                 break;
             case 'var':                                        // load from mem
-                console.log(`        LDA  ${trp.val1}`);
+                const mem = regs[codec.mem];
+                if (mem.val === `*${trp.val1}`)
+                    code += codec.move(codec.acc, codec.ref);
+                else
+                    code += codec.loada(trp.val1);
+                if (used(trp, true) > 0) {                     // used forward
+                    const wr = rgwork(trp, codec.work, mem);   // get working register
+                    code += codec.move(wr, codec.acc);         // save
+                    sloc(trp, true, wr);                       // set location
+                }
                 break;
             default: throw new Error(`unknown operand type: ${trp.typ1}`);
         }
-        sloc(trp, true, 'A');                                  // set location
+        sloc(trp, true, codec.acc);                            // set location
+        return false;
     },
-    load2 = trp => {                                           // load secondary operand
+    load2 = (trp, reg = null) => {                             // load secondary operand
         let lc = loc(trp, false);
-        if (lc !== null) return lc.charAt(0);                  // already loaded
-        lc = rgwork();                                         // get working register
+        if (lc !== null) {                                     // already loaded
+            if (reg !== null) {                                // move to provided register
+                code += codec.move(reg, lc.charAt(0));
+                sloc(trp, false, reg);
+                return reg;
+            }
+            return lc.charAt(0);
+        }
+        const mem = regs[codec.mem];
+        lc = (reg === null) ? rgwork(trp, codec.work, mem) : reg; // get working register if not provided
         switch (trp.typ2) {
             case 'num':                                        // load immediate
-                console.log(`        MVI  ${lc}, ${trp.val2}`);
+                code += codec.movi(lc, trp.val2);
                 break;
-            case 'var':                                        // load from mem
-                console.log(`        LXI  H, ${trp.val2}`);
-                if (used(trp, false) === 0) return 'M';        // one time usage optimization
-                console.log(`        MOV  ${lc}, M`);
+            case 'var':                                        // load from memory
+                let res = codec.ref, rgA;                      // use from memory
+                const v = `*${trp.val2}`;
+                if (mem.val !== v)
+                    if ((rgA = regs[codec.acc]).val === null || used(...rgA.ref, 0) === 0) {
+                        res = codec.acc;                       // use from accumulator
+                        code += codec.loada(trp.val2);
+                        sloc(trp, false, codec.acc);           // set location
+                    } else {
+                        if (mem.val !== null) {                // save previous mem variable
+                            const tmp = ttrp(trp.adr, 'var', mem.val.substr(1));
+                            if (used(tmp, true) > 0) {         // if used forward
+                                if (reg !== null) lc = rgwork(trp, codec.work, mem);
+                                code += codec.move(lc, codec.ref);
+                                sloc(tmp, true, lc);           // set location
+                            }
+                        }
+                        code += codec.loadr(codec.mem, trp.val2);
+                        mem.val = v;
+                    }
+                if (reg !== null) {                            // move to provided register
+                    code += codec.move(reg, res);
+                    sloc(trp, false, reg);
+                    return reg;
+                }
+                return res;
                 break;
             default: throw new Error(`unknown operand type: ${trp.typ2}`);
         }
@@ -346,28 +784,137 @@ function CodeGen() {
         return lc;
     },
     generate = (trpls, vrs) => {
-        triples = trpls; vars = vrs; results = {}; consts = {};
+        triples = trpls; vars = vrs; results = {}; consts = {}; code = '';
         for (const p in regs) { const rg = regs[p]; rg.val = null; rg.ref = null; }
         for (let i = 0, n = triples.length; i < n; i++) {
             const trp = triples[i];
-            console.log(trp.adr, '=', trp.val1, trp.oper, trp.val2 ?? '');
             switch (trp.oper) {
-                case 'add':
-                    if (const1(trp, true)) swap(trp);          // one time usage optimization
-                    load1(trp, true);
-                    if (const1(trp, false))                    // one time usage optimization
-                        console.log(`        ADI  ${trp.val2}`);
-                    else
-                        console.log(`        ADD  ${load2(trp)}`);
-                    const t = {'adr': trp.adr, 'typ1': 'trp', 'val1': trp.adr};
-                    sloc(t, true, 'A');
-                    if (/*used(t, true, 2) > 0*/issave(true, regs['A'])) {
-                        console.log(`        MOV  D, A`);             // move to save
-                        // set location
+                case 'inv':                                    // unary operations
+                case 'inc':
+                    load1(trp, false);
+                    switch (trp.oper) {
+                        case 'inv': code += codec.invra(); break;
+                        case 'inc': code += codec.incr(codec.acc); break;
                     }
                     break;
+                case 'add': case 'sub':                        // swappable binary operations
+                case 'xor': case 'and': case 'oro':
+                case 'eql': case 'neq': case 'grt': case 'lst':
+                    let swapped = false;
+                    if (const1(trp, true)) {                   // one time usage optimization
+                        swap(trp); swapped = true;
+                    }
+                    swapped ^= load1(trp, true);
+                    let adi = codec.adi, add = codec.add, post = null;
+                    switch (trp.oper) {
+                        case 'sub':
+                            if (swapped) {                     // 2-complement (-value)
+                                code += codec.invra();
+                                code += codec.incr(codec.acc);
+                            } else {                           // operands in order
+                                adi = codec.sui; add = codec.sub;
+                            }
+                            break;
+                        case 'xor': adi = codec.xri; add = codec.xra; break;
+                        case 'and': adi = codec.ani; add = codec.ana; break;
+                        case 'oro': adi = codec.ori; add = codec.ora; break;
+                        case 'eql': case 'neq': case 'grt': case 'lst':
+                            adi = codec.cpi; add = codec.cmp;
+                            trp.swap = swapped;                // remember swap flag for post-processing
+                            break;
+                    }
+                    if (const1(trp, false))                    // one time usage optimization
+                        code += adi(trp.val2);
+                    else {
+                        const wr = load2(trp);                 // side effect - modifies code, no nesting
+                        code += add(wr);
+                    }
+                    break;
+                case 'shl': case 'shr':                        // binary operations
+                    if (trp.typ2 === 'num' && trp.val2 === 1) {
+                        load1(trp, false, 0);                  // 0 - start checking from current triplet
+                        code += codec.ora(codec.acc);          // shift 1 optimization
+                        const shlr = (trp.oper === 'shl') ? codec.ral : codec.rar;
+                        code += shlr();
+                        break;
+                    }
+                    load2(trp, codec.prm);                     // load second oper first to special register
+                    load1(trp, false, 0);                      // 0 - start checking from current triplet
+                    code += codec.callp((trp.oper === 'shl') ? '@SHLF' : '@SHRF');
+                    clrreg(codec.prm);                         // clear special register
+                    break;
+                case 'asg':                                    // assignment
+                    let prevtrp, swpf, cnd;
+                    if (i > 0 && (prevtrp = triples[i - 1]) && (swpf = prevtrp.swap) !== undefined) {
+                        code += codec.movi(codec.acc, 1);      // comparison post-processing
+                        switch (prevtrp.oper) {
+                            case 'eql': cnd = codec.jz; break;
+                            case 'neq': cnd = codec.jnz; break;
+                            case 'grt': cnd = swpf ? codec.jc : codec.jnc; break;
+                            case 'lst': cnd = swpf ? codec.jnc : codec.jc; break;
+                        }
+                        code += cnd('$+4');
+                        code += codec.xra(codec.acc);
+                    }
+                    const mem = regs[codec.mem],
+                          v = `*${trp.val1}`;
+                    if (mem.val !== v && (used(trp, true) > 0 || trp.typ2 === 'num')) {
+                        code += codec.loadr(codec.mem, trp.val1);
+                        mem.val = v;
+                    }
+                    const tmpv = ttrp(trp.adr, 'var', trp.val1);
+                    if (mem.val === v)
+                        if (trp.typ2 === 'num')
+                            code += codec.movi(codec.ref, trp.val2);
+                        else {
+                            let dest = codec.acc;
+                            if (trp.typ2 === 'var') dest = load2(trp);
+                            code += codec.move(codec.ref, dest);
+                            sloc(tmpv, true, dest);            // set location
+                        }
+                    else {
+                        if (trp.typ2 === 'var')
+                            load1(ttrp(trp.adr, 'var', trp.val2), false);
+                        code += codec.savea(trp.val1);
+                        sloc(tmpv, true, codec.acc);           // set location
+                    }
+                    break;
+                default: throw new Error(`unknown operator: ${trp.oper}`);
+            }
+            if (trp.oper !== 'asg') {                          // assignment not used in expressions
+                sloc(ttrp(trp.adr, 'trp', trp.adr), true, codec.acc);
+                save(trp, 2);                                  // save result if needed
             }
         }
+        // MOV  ?, A        begin
+        //    ---
+        // MOV  A, ?        match, remove if A and ? not changed
+        phopt('MOV  A, (.)$', cnd => `MOV  ${cnd}, A`, cnd => {
+            const pattern = ['ADI  ', 'ADD  ', 'SUI  ', 'SUB  ', 'SHR', 'SHL', 'LDA  ', 'CALL ', 'MOV  A, ', `MOV  ${cnd}, `];
+            if (cnd === 'M') pattern.push(['LXI  H, ']);
+            return pattern;
+        });
+        // MOV  ?, any      begin
+        //    ---
+        // MOV  E, ?        match if ? not M, remove if ? not changed; replace ? at begin and rename ? till MOV  ?, ... | CALL
+        phopt('MOV  E, ([^M])$', cnd => `MOV  ${cnd}, `, cnd => [`MOV  ${cnd}, `], (lines, start, i, cnd) => {
+            lines.splice(i, 1);                                                   // remove match
+            lines[start] = lines[start].replace(` ${cnd}, `, ' E, ');             // replace ? at begin
+            const regexp = new RegExp(` ${cnd}$`);
+            for (let k = start + 1, n = lines.length; k < n; k++) {               // scan from begin + 1 to end
+                const line = lines[k];
+                if (line.match(`MOV  ${cnd}, |CALL `) !== null) break;            // break if reset ? | CALL
+                lines[k] = line.replace(regexp, ' E');                            // rename ?
+            }
+            return true;
+        });
+        // MOV  ?, A        begin
+        // MOV  ?, |$       match, remove begin if ? not used
+        phopt('MOV  ([^EM]), A$', cnd => `MOV  ${cnd}, `,
+            cnd => [`ADI  ${cnd}`, `ADD  ${cnd}`, `SUI  ${cnd}`, `SUB  ${cnd}`, `MOV  ., ${cnd}`],
+            null, true
+        );
+        return code;
     };
     return {generate};
 }
