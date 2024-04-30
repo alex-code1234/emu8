@@ -4,7 +4,7 @@ async function compiler(scr) {
     const mon = document.getElementById('scr'),
           txt = document.createElement('textarea');
     txt.rows = '3'; txt.cols = '83'; txt.style.marginTop = '5px'; txt.style.marginBottom = '-10px';
-txt.value = 'var a, b, c;\na = b + 2 << b;';
+txt.value = 'var a, b, c;\na = b + c; a = a; c = b - 1;';
     document.body.insertBefore(txt, mon);
     const kbd = document.getElementById('kbd');
     kbd.onfocus = ev => txt.disabled = 'true';
@@ -56,7 +56,7 @@ txt.value = 'var a, b, c;\na = b + 2 << b;';
                           'jnz': addr =>          `        JNZ  ${addr}\n`,
                           'jc': addr =>           `        JC   ${addr}\n`,
                           'jnc': addr =>          `        JNC  ${addr}\n`,
-                          
+                          'decr': reg =>          `        DCR  ${reg}\n`
                       }),
                       compile = prg => {
                           il.init();
@@ -227,8 +227,8 @@ a = b << c;
         CALL @SHLF
         STA  a
                 `);
-                test(
-`var a, b, c;
+                test(`
+var a, b, c;
 a = (b + 2) << b;
                 `, `
         LDA  b
@@ -318,16 +318,16 @@ a = b; c = a;
         MOV  M, A
         STA  c
                 `);
-                test(
-`var a, b, c;
+                test(`
+var a, b, c;
 a = b; c = b;
                 `, `
         LDA  b
         STA  a
         STA  c
                 `);
-                test(
-`var a, b, c, d;
+                test(`
+var a, b, c, d;
 a = b; c = a; d = a + b;
                 `, `
         LXI  H, a
@@ -337,6 +337,43 @@ a = b; c = a; d = a + b;
         LXI  H, b
         ADD  M
         STA  d
+                `);
+                test(`
+var a, b;
+a = b + a - 1;
+                `, `
+        LDA  b
+        LXI  H, a
+        ADD  M
+        DCR  A
+        MOV  M, A
+                `);
+                test(`
+var a, b, c;
+a = b + c; a = a; c = b - 1;
+                `, `
+        LDA  b
+        MOV  B, A
+        LXI  H, c
+        ADD  M
+        STA  a
+        DCR  B
+        MOV  M, B
+                `);
+                test(`
+var a, b, c;
+a = b + c; a = a; c = b - 1; a = b;
+                `, `
+        LDA  b
+        MOV  B, A
+        LXI  H, c
+        ADD  M
+        STA  a
+        MOV  A, B
+        DCR  A
+        MOV  M, A
+        MOV  A, B
+        STA  a
                 `);
                 console.log(compile(txt.value));
                 break;
@@ -470,15 +507,55 @@ function IL() {
     gen = (id, two) => {
         const triple = [o1[0], o1[1], id];
         if (two) triple.push(o2[0], o2[1]);
-if (id === 'add' && ((o1[0] === 'num' && o1[1] === 1) || (o2[0] === 'num' && o2[1] === 1))) {
-    triple[2] = 'inc';
-    if (o1[0] === 'num') {
-        triple[0] = triple[3]; triple[1] = triple[4];
-        triple[3] = undefined; triple[4] = undefined;
-    }
-}
         const trp = create(...triple);
         stack.push(['trp', trp.adr]);
+    },
+    rename = (start, oldadr, newtyp, newadr) => {
+        for (let i = start, n = triples.length; i < n; i++) {
+            const t = triples[i];
+            if (t.typ1 === 'trp' && t.val1 === oldadr) { t.typ1 = newtyp; t.val1 = newadr; }
+            if (t.typ2 === 'trp' && t.val2 === oldadr) { t.typ2 = newtyp; t.val2 = newadr; }
+        }
+    },
+    arith = () => {
+        let i = 0;
+        while (i < triples.length) {           // all triples
+            const t = triples[i];              // current
+            switch (t.oper) {
+                case 'add':                    // +1 +0 optimization
+                    if ((t.typ1 === 'num' && t.val1 === 1) || (t.typ2 === 'num' && t.val2 === 1)) {
+                        t.oper = 'inc';
+                        if (t.typ1 === 'num') { t.typ1 = t.typ2; t.val1 = t.val2; }
+                        t.typ2 = undefined; t.val2 = undefined;
+                    }
+                    else if ((t.typ1 === 'num' && t.val1 === 0) || (t.typ2 === 'num' && t.val2 === 0)) {
+                        const adr = (t.typ1 === 'num') ? t.val2 : t.val1,
+                              typ = (t.typ1 === 'num') ? t.typ2 : t.typ1;
+                        triples.splice(i, 1);  // remove +0 triplet
+                        rename(i, t.adr, typ, adr);
+                        continue;
+                    }
+                    break;
+                case 'sub':                    // -1 -0 optimization
+                    if (t.typ2 === 'num' && t.val2 === 1) {
+                        t.oper = 'dec';
+                        t.typ2 = undefined; t.val2 = undefined;
+                    }
+                    else if (t.typ2 === 'num' && t.val2 === 0) {
+                        triples.splice(i, 1);  // remove -0 triplet
+                        rename(i, t.adr, t.typ1, t.val1);
+                        continue;
+                    }
+                    break;
+                case 'asg':                    // var = var optimization
+                    if (t.typ2 === 'var' && t.val2 === t.val1) {
+                        triples.splice(i, 1);  // remove var = var triplet
+                        continue;
+                    }
+                    break;
+            }
+            i++;
+        }
     },
     dedupe = () => {
         let result = false;
@@ -503,7 +580,7 @@ if (id === 'add' && ((o1[0] === 'num' && o1[1] === 1) || (o2[0] === 'num' && o2[
         return result;
     },
     optim = () => {       // constant folding already done
-// TODO: add math simplification (+1 -1 +0 -0 a=a)
+        arith();          // expressions simplification
         while (dedupe()); // duplicate code elimination
     },
     init = () => { stack.length = 0; triples.length = 0; tripleNum = 0; vars = {}; },
@@ -658,40 +735,42 @@ if (res[1] > 0) console.log(`warning: discarded ${res}`);
         return -1;
     },
     chgop = (lines, pattern, start, end, br = null) => {       // check if register changed
-        for (let i = start; i <= end; i++) {
+        let i;
+        for (i = start; i <= end; i++) {
             const line = lines[i];
             if (br !== null && line.match(br) !== null) break;
             for (let j = 0, n = pattern.length; j < n; j++)
-                if (line.match(pattern[j]) !== null) return true;
+                if (line.match(pattern[j]) !== null) return [true, i];
         }
-        return false;
+        return [false, i];
     },
     phopt = (match, begin, ptrn, fnc = null, fw = false) => {  // peephole register optimization
         const lines = code.split('\n');
         let i = 0, changed = false;
         while (i < lines.length) {
             let oper = lines[i],
-                idx = oper.match(match), start;
+                idx = oper.match(match), start, st, ed, bg;
             if (idx !== null && idx.length > 0) {
                 const cnd = idx[1],
                       bgn = begin(cnd),
                       ptr = ptrn(cnd);
-                if (fw) {                                      // scan forward
-                    if (!chgop(lines, ptr, i + 1, lines.length - 1, bgn)) {
-                        lines.splice(i, 1);
-                        changed = true; continue;
-                    }
+                if (fw) {
+                    st = i + 1; ed = lines.length - 1; bg = bgn;
+                } else {
+                    start = fndop(lines, i, bgn);
+                    st = start + 1; ed = i - 1; bg = null;
                 }
-                else if ((start = fndop(lines, i, bgn)) >= 0)  // scan backward
-                    if (!chgop(lines, ptr, start + 1, i - 1)) {
+                if (fw || start >= 0) {
+                    const [res, lid] = chgop(lines, ptr, st, ed, bg);
+                    if (!res)
                         if (fnc === null) {
                             lines.splice(i, 1);
                             changed = true; continue;
-                        }
-                        else if (fnc(lines, start, i, cnd)) {
+                        }                                      // fnc - lines, begin (fw: match), match, reg, fw: begin
+                        else if (fnc(lines, st - 1, i, cnd, lid)) {
                             changed = true; continue;
                         }
-                    }
+                }
             }
             i++;
         }
@@ -791,10 +870,12 @@ if (res[1] > 0) console.log(`warning: discarded ${res}`);
             switch (trp.oper) {
                 case 'inv':                                    // unary operations
                 case 'inc':
+                case 'dec':
                     load1(trp, false);
                     switch (trp.oper) {
                         case 'inv': code += codec.invra(); break;
                         case 'inc': code += codec.incr(codec.acc); break;
+                        case 'dec': code += codec.decr(codec.acc); break;
                     }
                     break;
                 case 'add': case 'sub':                        // swappable binary operations
@@ -890,7 +971,10 @@ if (res[1] > 0) console.log(`warning: discarded ${res}`);
         //    ---
         // MOV  A, ?        match, remove if A and ? not changed
         phopt('MOV  A, (.)$', cnd => `MOV  ${cnd}, A`, cnd => {
-            const pattern = ['ADI  ', 'ADD  ', 'SUI  ', 'SUB  ', 'SHR', 'SHL', 'LDA  ', 'CALL ', 'MOV  A, ', `MOV  ${cnd}, `];
+            const pattern = [
+                `MOV  [A${cnd}], `, `MVI  [A${cnd}], `, 'LDA  ', 'CALL ', 'CMA', `INR  [A${cnd}]`, `DCR  [A${cnd}]`,
+                'ADI  ', 'ADD  ', 'SUI  ', 'SUB  ', 'XRI  ', 'XRA  ', 'ANI  ', 'ANA  ', 'ORI  ', 'ORA  ', 'RAL', 'RAR'
+            ];
             if (cnd === 'M') pattern.push(['LXI  H, ']);
             return pattern;
         });
@@ -909,11 +993,24 @@ if (res[1] > 0) console.log(`warning: discarded ${res}`);
             return true;
         });
         // MOV  ?, A        begin
-        // MOV  ?, |$       match, remove begin if ? not used
+        // MOV  ?, any | $  match, remove begin if ? not used
         phopt('MOV  ([^EM]), A$', cnd => `MOV  ${cnd}, `,
             cnd => [`ADI  ${cnd}`, `ADD  ${cnd}`, `SUI  ${cnd}`, `SUB  ${cnd}`, `MOV  ., ${cnd}`],
             null, true
         );
+        // MOV  A, ?        begin
+        //    ---
+        // MOV  M | E, A    match, remove begin if only INR or DCR opers in --- and ? not used forward; rename A to ?
+        phopt('MOV  A, ([^EM])$', cnd => 'MOV  [EM], A$', cnd => ['^\(\(?!DCR  A|INR  A\).\)*$'],
+                (lines, start, i, cnd, end) => {
+            if (chgop(lines, [`MOV  ., ${cnd}`, `[^,]+ ${cnd}$`], end + 1, lines.length - 1, `MOV  ${cnd}, `)[0])
+                return false;                                                     // ? used forward, exit
+            lines.splice(i, 1);                                                   // remove begin
+            const regexp = new RegExp(' A$');
+            for (let k = i; k <= end; k++)
+                lines[k] = lines[k].replace(regexp, ` ${cnd}`);                   // rename A to ?
+            return true;
+        }, true);
         return code;
     };
     return {generate};
