@@ -94,7 +94,7 @@ Added system monitor commands:
 - **tty** \- TTY on/off: tty num, where num is 1 to activate TTY or 0 to deactivate
 - **ptr** \- paper tape reader load tape (TTY must be active): ptr fn, where fn is ptp file name<br>
           Before loading the tape, start the emulator, type L, stop emulator, load tape and start emulator again
-- **ptp** \- paper tape puncher load empty tape (TTY mast be active): ptp fn, where fn is ptp file name to create<br>
+- **ptp** \- paper tape puncher load empty tape (TTY must be active): ptp fn, where fn is ptp file name to create<br>
           First load the tape, start the emulator, set end and start addresses and type Q (see KIM-1 manual)
 
 Experimental \(test) commands:
@@ -139,7 +139,7 @@ Configuration: BIOS - IBM rev.3 10/27/82 (bios.bin), CGA monitor and 2 FDC pre-l
 boot=cpm/cpm URL parameter to the generic emulator URL. **boot_name** parameter specifies OS to run:
 - **cpm22** \- CP/M 2.2 \(default, 64K memory, 8080 or Z80 cpu)
 - **cpm30** \- CP/M 3.0 \(160K banked memory, 8080 or Z80 cpu)
-- **mpm** \- MP/M II 2.0 \(400K banked memory, Z80 cpu)
+- **mpm** \- MP/M II 2.0 \(400K banked memory, 8080 or Z80 cpu)
 
 CPU can be changed by monitor command **cpu** before OS loading or by adding URL parameter **cpu_type**<br>
 All configurations support 4 256K floppy drives A:, B:, C: and D: \(with drive numbers 0..3)<br>
