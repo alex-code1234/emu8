@@ -4,7 +4,7 @@ async function compiler(scr) {
     const mon = document.getElementById('scr'),
           txt = document.createElement('textarea');
     txt.rows = '3'; txt.cols = '83'; txt.style.marginTop = '5px'; txt.style.marginBottom = '-10px';
-txt.value = 'var a, b, c;\na = b + c; a = a; c = b - 1;';
+txt.value = 'word a, b, c, d; byte e, f;\na = 0;';
     document.body.insertBefore(txt, mon);
     const kbd = document.getElementById('kbd');
     kbd.onfocus = ev => txt.disabled = 'true';
@@ -56,7 +56,156 @@ txt.value = 'var a, b, c;\na = b + c; a = a; c = b - 1;';
                           'jnz': addr =>          `        JNZ  ${addr}\n`,
                           'jc': addr =>           `        JC   ${addr}\n`,
                           'jnc': addr =>          `        JNC  ${addr}\n`,
-                          'decr': reg =>          `        DCR  ${reg}\n`
+                          'decr': reg =>          `        DCR  ${reg}\n`,
+                          'shl': `
+@SHLF:  DCR  E
+        RM
+        ORA  A
+        RZ
+        RAL
+        JMP  @SHLF`,
+                          'shr': `
+@SHRF:  DCR  E
+        RM
+        ORA  A
+        RZ
+        RAR
+        JMP  @SHRF`,
+                          'peephole': base => {
+                              // MOV  ?, A   begin
+                              //    ---
+                              // MOV  A, ?   match, remove if A and ? not changed
+                              base.phopt('MOV  A, (.)$', cnd => `MOV  ${cnd}, A`, cnd => {
+                                  const pattern = [
+                                      `MOV  [A${cnd}], `, `MVI  [A${cnd}], `, 'LDA  ', 'CALL ', 'CMA', `INR  [A${cnd}]`, `DCR  [A${cnd}]`,
+                                      'ADI  ', 'ADD  ', 'SUI  ', 'SUB  ', 'XRI  ', 'XRA  ', 'ANI  ', 'ANA  ', 'ORI  ', 'ORA  ', 'RAL', 'RAR'
+                                  ];
+                                  if (cnd === 'M') pattern.push(['LXI  H, ']);
+                                  return pattern;
+                              });
+                              // MOV  ?, any begin
+                              //    ---
+                              // MOV  E, ?   match if ? not M, remove if ? not changed; repl. ? at begin and ren. ? before MOV  ?, . or CALL
+                              base.phopt('MOV  E, ([^M])$', cnd => `MOV  ${cnd}, `, cnd => [`MOV  ${cnd}, `], (lines, start, i, cnd) => {
+                                  lines.splice(i, 1);                                                   // remove match
+                                  lines[start] = lines[start].replace(` ${cnd}, `, ' E, ');             // replace ? at begin
+                                  const regexp = new RegExp(` ${cnd}$`);
+                                  for (let k = start + 1, n = lines.length; k < n; k++) {               // scan from begin + 1 to end
+                                      const line = lines[k];
+                                      if (line.match(`MOV  ${cnd}, |CALL `) !== null) break;            // break if reset ? | CALL
+                                      lines[k] = line.replace(regexp, ' E');                            // rename ?
+                                  }
+                                  return true;
+                              });
+                              // MOV  ?, A        begin
+                              //    ---
+                              // MOV  ?, any | $  match, remove begin if ? not used
+                              base.phopt('MOV  ([^HLEM]), A$', cnd => `MOV  ${cnd}, `,
+                                  cnd => [`ADI  ${cnd}`, `ADD  ${cnd}`, `SUI  ${cnd}`, `SUB  ${cnd}`, `MOV  ., ${cnd}`],
+                                  null, true
+                              );
+                              // MOV  A, ?       begin
+                              //    ---
+                              // MOV  M | E, A   match, remove begin if only INR or DCR opers in --- and ? not used forward; rename A to ?
+                              base.phopt('MOV  A, ([^EM])$', cnd => 'MOV  [EM], A$', cnd => ['^\(\(?!DCR  A|INR  A\).\)*$'],
+                                      (lines, start, i, cnd, end) => {
+                                  if (base.chgop(lines, [`MOV  ., ${cnd}`, `[^,]+ ${cnd}$`], end + 1, lines.length - 1, `MOV  ${cnd}, `)[0])
+                                      return false;                                                     // ? used forward, exit
+                                  lines.splice(i, 1);                                                   // remove begin
+                                  const regexp = new RegExp(' A$');
+                                  for (let k = i; k <= end; k++)
+                                      lines[k] = lines[k].replace(regexp, ` ${cnd}`);                   // rename A to ?
+                                  return true;
+                              }, true);
+                              // LXI  H, ?   begin
+                              // MOV  M, A   match, remove if M not used forward; replace begin with STA  ?
+                              base.phopt('LXI  H, (.+)$', cnd => 'MOV  M, A', cnd => [], (lines, start, i, cnd, end) => {
+                                  if (end !== start + 1) return false;
+                                  if (base.chgop(lines, ['MOV  ., M', '[^,]+ M$'], end + 1, lines.length - 1, 'LXI  H, ')[0])
+                                      return false;                                                     // M used forward, exit
+                                  lines[start] = lines[start].replace('LXI  H, ', 'STA  ');             // replace begin
+                                  lines.splice(end, 1);                                                 // remove match
+                                  return true;
+                              }, true);
+                              // type 1 optimizations
+                              // MOV  ?, A   begin
+                              //    ---
+                              // MOV  L, ?   match, remove begin if A and ? not changed; rename ? to A
+                              base.phopt('MOV  L, (.)$', cnd => `MOV  ${cnd}, A`, cnd => {
+                                  const pattern = [
+                                      `MOV  [A${cnd}], `, `MVI  [A${cnd}], `, 'LDA  ', 'CALL ', 'CMA', `INR  [A${cnd}]`, `DCR  [A${cnd}]`,
+                                      'ADI  ', 'ADD  ', 'SUI  ', 'SUB  ', 'XRI  ', 'XRA  ', 'ANI  ', 'ANA  ', 'ORI  ', 'ORA  ', 'RAL', 'RAR'
+                                  ];
+                                  if (cnd === 'M') pattern.push(['LXI  H, ']);
+                                  return pattern;
+                              }, (lines, start, i, cnd) => {
+                                  lines[i] = lines[i].replace(`, ${cnd}`, ', A');                       // rename ? to A
+                                  lines.splice(start, 1);                                               // remove begin
+                                  return true;
+                              });
+                              // MVI  H, 0   begin
+                              // SHLD        first match, remove preceding MVI  H, 0 if H not changed
+                              base.phopt('SHLD ', cnd => 'MVI  H, 0', cnd => [], (lines, start, i, cnd) => {
+                                  if (i !== start + 1) return false;
+                                  let top, ptrn = ['MVI  H, [^0]', 'MOV  H, ', 'LXI  H, ', 'DAD  ', 'LHLD ', 'INX  H', 'DCX  H'];
+                                  if ((top = base.fndop(lines, start - 1, 'MVI  H, 0')) < 0 ||          // previous not found
+                                          base.chgop(lines, ptrn, top + 1, start - 1)[0])               // H changed
+                                      return false;
+                                  lines.splice(start, 1);
+                              // MOV  L, ?   begin
+                              //    ---
+                              // MOV  L, ?   second match, remove if ? and L not changed
+                              // MVI  H, 0
+                              // SHLD
+                                  let mtch;
+                                  if (start > 0 && (mtch = lines[start - 1].match('MOV  L, (.+)$')) !== null) {
+                                      start--; cnd = mtch[1];
+                                      ptrn = [`MOV  L, [^${cnd}]`, 'LXI  H, ', 'DAD  ', 'LHLD ', 'INX  H', 'DCX  H'];
+                                      if (cnd === 'A') ptrn.push([
+                                          'MOV  A, ', 'MVI  A, ', 'LDA  ', 'CALL ', 'CMA', 'INR  A', 'DCR  A', 'ADI  ', 'ADD  ',
+                                          'SUI  ', 'SUB  ', 'XRI  ', 'XRA  ', 'ANI  ', 'ANA  ', 'ORI  ', 'ORA  ', 'RAL', 'RAR'
+                                      ]);
+                                      if ((top = base.fndop(lines, start - 1, `MOV  L, ${cnd}`)) < 0 || // previous not found
+                                              base.chgop(lines, ptrn, top + 1, start - 1)[0])           // L or ? changed
+                                          return true;                                                  // apply first match only
+                                      lines.splice(start, 1);                                           // apply second match
+                                  }
+                                  return true;
+                              });
+                              // SHLD ?      begin
+                              //    ---
+                              // LHLD ?      match, remove if HL not changed
+                              base.phopt('LHLD (.+)$', cnd => `SHLD ${cnd}`, cnd => [
+                                  'MVI  H, ', 'MOV  H, ', 'MOV  L, ', 'LXI  H, ', 'DAD  ', 'LHLD ', 'INX  H', 'DCX  H'
+                              ]);
+                              // LXI  H, any begin
+                              // XCHG        match, remove and rename preceding H to D
+                              base.phopt('XCHG', cnd => `LXI  H, `, cnd => ['LHLD ', 'LXI  [DH], '], (lines, start, i, cnd) => {
+                                  if (i !== start + 1) return false;
+                                  lines.splice(i, 1);                                                   // remove match
+                                  lines[start] = lines[start].replace('LXI  H, ', 'LXI  D, ');          // rename H at begin
+                                  return true;
+                              });
+                          },
+                          'accW': 'HL',
+                          'workW': 'DE',
+                          'savW': 'S',
+                          'addW': reg =>          `        DAD  ${reg}\n`,
+                          'incrW': reg =>         `        INX  ${reg}\n`,
+                          'decrW': reg =>         `        DCX  ${reg}\n`,
+                          'loadaW': name =>       `        LHLD ${name}\n`,
+                          'saveaW': name =>       `        SHLD ${name}\n`,
+                          'swapW': () =>          `        XCHG\n`,
+                          'saveW': () =>          '        PUSH H\n',
+                          'restW': reg =>         `        POP  ${reg}\n`,
+                          'subW': `
+@SUBW:  MOV  A, L
+        SUB  E
+        MOV  L, A
+        MOV  A, H
+        SBB  D
+        MOV  H, A
+        RET`
                       }),
                       compile = prg => {
                           il.init();
@@ -70,7 +219,7 @@ txt.value = 'var a, b, c;\na = b + c; a = a; c = b - 1;';
                               throw new Error(`program:\n${prg}\ngenerated:\n${code}\nexpected:\n${res}`);
                       };
                 test(`
-var a, b, c; b = 19; c = 27;
+byte a, b, c; b = 19; c = 27;
 a = (4 + b + c + b) + (2 + c) + (b + c);
                      `, `
         LXI  H, b
@@ -85,7 +234,8 @@ a = (4 + b + c + b) + (2 + c) + (b + c);
         MOV  C, A
         MOV  A, M
         MOV  D, A
-        ADI  2
+        INR  A
+        INR  A
         ADD  C
         MOV  C, A
         MOV  A, B
@@ -94,7 +244,7 @@ a = (4 + b + c + b) + (2 + c) + (b + c);
         STA  a
                 `);
                 test(`
-var a, b, c; b = 19; c = 27;
+byte a, b, c; b = 19; c = 27;
 a = (4 + (b + c) + b) + (2 + c) + (b + c);
                 `, `
         LXI  H, b
@@ -109,13 +259,14 @@ a = (4 + (b + c) + b) + (2 + c) + (b + c);
         ADD  B
         MOV  B, A
         MOV  A, M
-        ADI  2
+        INR  A
+        INR  A
         ADD  B
         ADD  C
         STA  a
                 `);
                 test(`
-var a, b, c; b = 19 != b; c = 27;
+byte a, b, c; b = 19 != b; c = 27;
 a = (4 + (b + c) + b) + (2 + c) + (b + c);
                 `, `
         LDA  b
@@ -124,8 +275,7 @@ a = (4 + (b + c) + b) + (2 + c) + (b + c);
         MVI  A, 1
         JNZ  $+4
         XRA  A
-        LXI  H, b
-        MOV  M, A
+        STA  b
         LXI  H, c
         MVI  M, 27
         ADD  M
@@ -134,13 +284,14 @@ a = (4 + (b + c) + b) + (2 + c) + (b + c);
         ADD  B
         MOV  B, A
         MOV  A, M
-        ADI  2
+        INR  A
+        INR  A
         ADD  B
         ADD  C
         STA  a
                 `);
                 test(`
-var a, b, c;
+byte a, b, c;
 a = c + b + a + b;
                 `, `
         LDA  c
@@ -153,45 +304,48 @@ a = c + b + a + b;
         MOV  M, A
                 `);
                 test(`
-var a, b, c;
+byte a, b, c;
 a = (c + 2) << (b + 2);
                 `, `
         LDA  c
-        MVI  B, 2
-        ADD  B
-        MOV  C, A
-        LDA  b
-        ADD  B
-        MOV  E, A
-        MOV  A, C
-        CALL @SHLF
-        STA  a
-                `);
-                test(`
-var a, b, c;
-a = b << (b + 2);
-                `, `
-        LDA  b
+        INR  A
+        INR  A
         MOV  B, A
-        ADI  2
+        LDA  b
+        INR  A
+        INR  A
         MOV  E, A
         MOV  A, B
         CALL @SHLF
         STA  a
                 `);
                 test(`
-var a, b, c;
+byte a, b, c;
+a = b << (b + 2);
+                `, `
+        LDA  b
+        MOV  B, A
+        INR  A
+        INR  A
+        MOV  E, A
+        MOV  A, B
+        CALL @SHLF
+        STA  a
+                `);
+                test(`
+byte a, b, c;
 a = 7 << (b + 2);
                 `, `
         LDA  b
-        ADI  2
+        INR  A
+        INR  A
         MOV  E, A
         MVI  A, 7
         CALL @SHLF
         STA  a
                 `);
                 test(`
-var a, b, c;
+byte a, b, c;
 a = (b + 1) >> (b + 1);
                 `, `
         LDA  b
@@ -201,7 +355,7 @@ a = (b + 1) >> (b + 1);
         STA  a
                 `);
                 test(`
-var a, b, c;
+byte a, b, c;
 a = b + b;
                 `, `
         LDA  b
@@ -209,7 +363,7 @@ a = b + b;
         STA  a
                 `);
                 test(`
-var a, b, c;
+byte a, b, c;
 a = b << b;
                 `, `
         LDA  b
@@ -218,7 +372,7 @@ a = b << b;
         STA  a
                 `);
                 test(`
-var a, b, c;
+byte a, b, c;
 a = b << c;
                 `, `
         LDA  c
@@ -228,17 +382,18 @@ a = b << c;
         STA  a
                 `);
                 test(`
-var a, b, c;
+byte a, b, c;
 a = (b + 2) << b;
                 `, `
         LDA  b
         MOV  E, A
-        ADI  2
+        INR  A
+        INR  A
         CALL @SHLF
         STA  a
                 `);
                 test(`
-var a, b, c;
+byte a, b, c;
 a = (b + b) << b;
                 `, `
         LDA  b
@@ -248,7 +403,7 @@ a = (b + b) << b;
         STA  a
                 `);
                 test(`
-var a, b, c;
+byte a, b, c;
 a = b + c << b;
                 `, `
         LDA  b
@@ -259,49 +414,47 @@ a = b + c << b;
         STA  a
                 `);
                 test(`
-var a, b, c;
+byte a, b, c;
 a = b + 2; c = a + 1;
                 `, `
         LDA  b
-        ADI  2
-        LXI  H, a
-        MOV  M, A
+        INR  A
+        INR  A
+        STA  a
         INR  A
         STA  c
                 `);
                 test(`
-var a, b, c;
+byte a, b, c;
 a = b + 2; c = a + 1; b = 5 << c;
                 `, `
         LDA  b
-        ADI  2
-        LXI  H, a
-        MOV  M, A
         INR  A
-        LXI  H, c
-        MOV  M, A
+        INR  A
+        STA  a
+        INR  A
+        STA  c
         MOV  E, A
         MVI  A, 5
         CALL @SHLF
         STA  b
                 `);
                 test(`
-var a, b, c;
+byte a, b, c;
 a = b + 2; c = a + 1; b = c << 5;
                 `, `
         LDA  b
-        ADI  2
-        LXI  H, a
-        MOV  M, A
         INR  A
-        LXI  H, c
-        MOV  M, A
+        INR  A
+        STA  a
+        INR  A
+        STA  c
         MVI  E, 5
         CALL @SHLF
         STA  b
                 `);
                 test(`
-var a, b, c;
+byte a, b, c;
 a = b; c = 7;
                 `, `
         LDA  b
@@ -310,7 +463,7 @@ a = b; c = 7;
         MVI  M, 7
                 `);
                 test(`
-var a, b, c;
+byte a, b, c;
 a = b; c = a;
                 `, `
         LXI  H, a
@@ -319,7 +472,7 @@ a = b; c = a;
         STA  c
                 `);
                 test(`
-var a, b, c;
+byte a, b, c;
 a = b; c = b;
                 `, `
         LDA  b
@@ -327,7 +480,7 @@ a = b; c = b;
         STA  c
                 `);
                 test(`
-var a, b, c, d;
+byte a, b, c, d;
 a = b; c = a; d = a + b;
                 `, `
         LXI  H, a
@@ -339,7 +492,7 @@ a = b; c = a; d = a + b;
         STA  d
                 `);
                 test(`
-var a, b;
+byte a, b;
 a = b + a - 1;
                 `, `
         LDA  b
@@ -349,7 +502,7 @@ a = b + a - 1;
         MOV  M, A
                 `);
                 test(`
-var a, b, c;
+byte a, b, c;
 a = b + c; a = a; c = b - 1;
                 `, `
         LDA  b
@@ -361,7 +514,7 @@ a = b + c; a = a; c = b - 1;
         MOV  M, B
                 `);
                 test(`
-var a, b, c;
+byte a, b, c;
 a = b + c; a = a; c = b - 1; a = b;
                 `, `
         LDA  b
@@ -374,6 +527,244 @@ a = b + c; a = a; c = b - 1; a = b;
         MOV  M, A
         MOV  A, B
         STA  a
+                `);
+                test(`
+word a, b, c, d; byte e, f;
+e = 2 + f; d = f + 2; c = f + 2;
+                `, `
+        LDA  f
+        INR  A
+        INR  A
+        STA  e
+        MOV  L, A
+        MVI  H, 0
+        SHLD d
+        SHLD c
+                `);
+                test(`
+word a, b, c, d; byte e, f;
+e = 2 + f; d = f + 2; c = f + 2; a = f;
+                `, `
+        LDA  f
+        MOV  B, A
+        INR  A
+        INR  A
+        STA  e
+        MOV  L, A
+        MVI  H, 0
+        SHLD d
+        SHLD c
+        MOV  L, B
+        SHLD a
+                `);
+                test(`
+word a, b, c, d; byte e, f;
+e = 2 + f; d = f + 2; c = f + 2; a = e;
+                `, `
+        LDA  f
+        INR  A
+        INR  A
+        STA  e
+        MOV  L, A
+        MVI  H, 0
+        SHLD d
+        SHLD c
+        SHLD a
+                `);
+                test(`
+word a, b, c, d; byte e, f;
+e = 2 + f; d = f + 2; c = f + 2; a = c;
+                `, `
+        LDA  f
+        INR  A
+        INR  A
+        STA  e
+        MOV  L, A
+        MVI  H, 0
+        SHLD d
+        SHLD c
+        SHLD a
+                `);
+                test(`
+word a, b, c, d; byte e, f;
+e = 2 + f; d = f + 2; c = f + 2; a = d;
+                `, `
+        LDA  f
+        INR  A
+        INR  A
+        STA  e
+        MOV  L, A
+        MVI  H, 0
+        SHLD d
+        SHLD c
+        SHLD a
+                `);
+                test(`
+word a, b, c, d; byte e, f;
+a = 3 + (7 + ((b + c) + (d + 4) + (c + 6) + 5));
+                `, `
+        LHLD b
+        XCHG
+        LHLD c
+        DAD  D
+        PUSH H
+        LHLD d
+        LXI  D, 4
+        DAD  D
+        POP  D
+        DAD  D
+        PUSH H
+        LHLD c
+        LXI  D, 6
+        DAD  D
+        POP  D
+        DAD  D
+        LXI  D, 5
+        DAD  D
+        LXI  D, 7
+        DAD  D
+        INX  H
+        INX  H
+        INX  H
+        SHLD a
+                `);
+                test(`
+word a, b; byte c, d, e, f;
+a = 3 + (7 + ((b + c) + (d + 4) + (c + 6) + 5));
+                `, `
+        LHLD b
+        LDA  c
+        MOV  E, A
+        MVI  D, 0
+        DAD  D
+        LDA  d
+        ADI  4
+        MOV  E, A
+        MVI  D, 0
+        DAD  D
+        LDA  c
+        ADI  6
+        MOV  E, A
+        MVI  D, 0
+        DAD  D
+        LXI  D, 5
+        DAD  D
+        LXI  D, 7
+        DAD  D
+        INX  H
+        INX  H
+        INX  H
+        SHLD a
+                `);
+                test(`
+word a, b, c, d;
+d = b + c - 8 - (a + 7 + b);
+                `, `
+        LHLD b
+        XCHG
+        LHLD c
+        DAD  D
+        LXI  D, 8
+        CALL @SUBW
+        PUSH H
+        LHLD a
+        LXI  D, 7
+        DAD  D
+        XCHG
+        LHLD b
+        DAD  D
+        POP  D
+        XCHG
+        CALL @SUBW
+        SHLD d
+                `);
+                test(`
+word a, b, c, d;
+d = b + c - 2 - (a + b + 7);
+                `, `
+        LHLD b
+        XCHG
+        LHLD c
+        DAD  D
+        DCX  H
+        DCX  H
+        PUSH H
+        LHLD a
+        DAD  D
+        LXI  D, 7
+        DAD  D
+        POP  D
+        XCHG
+        CALL @SUBW
+        SHLD d
+                `);
+                test(`
+word a, c; byte b, d; word e, f;
+a = 1234; c = 5678; b = 12; d = 56;
+a = c + b; c = a - d; e = a + c; f = a - c;
+                `, `
+        LXI  H, 1234
+        SHLD a
+        LXI  H, 5678
+        SHLD c
+        LXI  H, b
+        MVI  M, 12
+        LXI  H, d
+        MVI  M, 56
+        LHLD c
+        LDA  b
+        MOV  E, A
+        MVI  D, 0
+        DAD  D
+        SHLD a
+        LDA  d
+        MOV  E, A
+        MVI  D, 0
+        CALL @SUBW
+        SHLD c
+        XCHG
+        DAD  D
+        SHLD e
+        LHLD c
+        XCHG
+        CALL @SUBW
+        SHLD f
+                `);
+                test(`
+word a, b, c, d; byte e, f;
+a = 5 + b + b + 1;
+                `, `
+        LXI  D, 5
+        LHLD b
+        DAD  D
+        XCHG
+        LHLD b
+        DAD  D
+        INX  H
+        SHLD a
+                `);
+                test(`
+word a, b, c, d; byte e, f;
+a = b + 5 + b;
+                `, `
+        LHLD b
+        LXI  D, 5
+        DAD  D
+        XCHG
+        LHLD b
+        DAD  D
+        SHLD a
+                `);
+                test(`
+word a, b, c, d; byte e, f;
+a = b + c + b;
+                `, `
+        LHLD b
+        XCHG
+        LHLD c
+        DAD  D
+        DAD  D
+        SHLD a
                 `);
                 console.log(compile(txt.value));
                 break;
@@ -462,16 +853,17 @@ function Parser(emit) {
             else { match('|'); exp1(); emit('oro'); }
     },
     // <dvar> ::= <id>
-    // <decl> ::= 'var' <dvar> [ , <dvar> ]* ;
+    // <decl> ::= 'byte' | 'word' <dvar> [ , <dvar> ]* ;
     // <asgn> ::= <id> '=' <expr> ;
-    dvar = () => { name(); emit('vdc', token); },
+    dvar = typ => { name(); emit('vdc', [token, typ]); },
     parse = prg => {
         text = prg; index = 0; token = ''; pb_idx = 0;
         getch(); spskip();
         while (look !== '') {
             name();
-            if (token === 'var') {
-                dvar(); while (look === ',') { match(','); dvar(); } match(';');
+            if (token === 'byte' || token === 'word') {
+                const typ = (token === 'byte') ? 0 : 1;
+                dvar(typ); while (look === ',') { match(','); dvar(typ); } match(';');
             }
             else if (look === '=') {
                 emit('var', token);
@@ -499,9 +891,30 @@ function IL() {
         }
         stack.push(['num', o1]);
     },
-    create = (typ1, val1, oper, typ2 = null, val2 = null) => {
-        const trp = {'adr': `:${tripleNum++}`, typ1, val1, oper, typ2, val2};
-        triples.push(trp);
+    findtrp = adr => {
+        for (let i = triples.length - 1; i >= 0; i--) {
+            const trp = triples[i];
+            if (trp.adr === adr) return trp;
+        }
+        throw new Error(`TAC not found: ${adr}`);
+    },
+    typW = (typ, val) => {
+        if (typ === null || val === null) return false;
+        if ('num var trp'.indexOf(typ) < 0) throw new Error(`unknown operand type: ${typ}`);
+        return (typ === 'num' && (val < -128 || val > 255)) || // word number
+                (typ === 'var' && vars[val].typ === 1) ||      // word variable
+                (typ === 'trp' && findtrp(val).typ === 1);     // word triplet
+    },
+    rentrp = (trp, oldadr, newtyp, newadr) => {
+        let changed = false;
+        if (trp.typ1 === 'trp' && trp.val1 === oldadr) { trp.typ1 = newtyp; trp.val1 = newadr; changed = true; }
+        if (trp.typ2 === 'trp' && trp.val2 === oldadr) { trp.typ2 = newtyp; trp.val2 = newadr; changed = true; }
+        if (changed) trp.typ = (typW(trp.typ1, trp.val1) || typW(trp.typ2, trp.val2)) ? 1 : 0;
+    },
+    create = (typ1, val1, oper, typ2 = null, val2 = null, push = true) => {
+        const typ = (typW(typ1, val1) || typW(typ2, val2)) ? 1 : 0,
+              trp = {'adr': `:${tripleNum++}`, typ1, val1, oper, typ2, val2, typ};
+        if (push) triples.push(trp);
         return trp;
     },
     gen = (id, two) => {
@@ -511,22 +924,22 @@ function IL() {
         stack.push(['trp', trp.adr]);
     },
     rename = (start, oldadr, newtyp, newadr) => {
-        for (let i = start, n = triples.length; i < n; i++) {
-            const t = triples[i];
-            if (t.typ1 === 'trp' && t.val1 === oldadr) { t.typ1 = newtyp; t.val1 = newadr; }
-            if (t.typ2 === 'trp' && t.val2 === oldadr) { t.typ2 = newtyp; t.val2 = newadr; }
-        }
+        for (let i = start, n = triples.length; i < n; i++)
+            rentrp(triples[i], oldadr, newtyp, newadr);
     },
     arith = () => {
         let i = 0;
         while (i < triples.length) {           // all triples
             const t = triples[i];              // current
             switch (t.oper) {
-                case 'add':                    // +1 +0 optimization
-                    if ((t.typ1 === 'num' && t.val1 === 1) || (t.typ2 === 'num' && t.val2 === 1)) {
+                case 'add':                    // +3 +2 +1 +0 optimization
+                    if ((t.typ1 === 'num' && t.val1 > 0) || (t.typ2 === 'num' && t.val2 > 0)) {
+                        const nm = (t.typ1 === 'num') ? t.val1 : t.val2,
+                              mx = (t.typ === 1) ? 3 : 2;
+                        if (nm > mx) break;
                         t.oper = 'inc';
                         if (t.typ1 === 'num') { t.typ1 = t.typ2; t.val1 = t.val2; }
-                        t.typ2 = undefined; t.val2 = undefined;
+                        t.typ2 = undefined; t.val2 = (nm === 1) ? undefined : nm;
                     }
                     else if ((t.typ1 === 'num' && t.val1 === 0) || (t.typ2 === 'num' && t.val2 === 0)) {
                         const adr = (t.typ1 === 'num') ? t.val2 : t.val1,
@@ -536,10 +949,12 @@ function IL() {
                         continue;
                     }
                     break;
-                case 'sub':                    // -1 -0 optimization
-                    if (t.typ2 === 'num' && t.val2 === 1) {
+                case 'sub':                    // -3 -2 -1 -0 optimization
+                    if (t.typ2 === 'num' && t.val2 > 0) {
+                        const mxd = (t.typ === 1) ? 3 : 2;
+                        if (t.val2 > mxd) break;
                         t.oper = 'dec';
-                        t.typ2 = undefined; t.val2 = undefined;
+                        t.typ2 = undefined; if (t.val2 === 1) t.val2 = undefined;
                     }
                     else if (t.typ2 === 'num' && t.val2 === 0) {
                         triples.splice(i, 1);  // remove -0 triplet
@@ -571,8 +986,7 @@ function IL() {
                     for (let k = j, n = triples.length; k < n; k++) { // replace removed with current
                         const t3 = triples[k];
                         if (t3.adr === t2.adr) break loop;            // removed re-assigned, stop replace
-                        if (t3.typ1 === 'trp' && t3.val1 === t2.adr) t3.val1 = t1.adr;
-                        if (t3.typ2 === 'trp' && t3.val2 === t2.adr) t3.val2 = t1.adr;
+                        rentrp(t3, t2.adr, 'trp', t1.adr);
                     }
                 }
             }
@@ -596,8 +1010,8 @@ function IL() {
                 stack.push([id, value]);
                 break;
             case 'vdc':
-                if (vars[value] !== undefined) throw new Error(`duplicate var: ${value}`);
-                vars[value] = null;
+                if (vars[value[0]] !== undefined) throw new Error(`duplicate var: ${value[0]}`);
+                vars[value[0]] = {'typ': value[1], 'val': null};
                 break;
             case 'num': stack.push([id, value | 0]); break;
             case 'inv':
@@ -625,7 +1039,7 @@ function IL() {
 
 function CodeGen(codec) {
     let triples,                                               // 3-address code
-        vars,                                                  // variables - var: reg[reg]
+        vars,                                                  // variables - var: val=reg[reg], typ=0|1
         results,                                               // triplets  - adr: reg[reg]
         consts,                                                // constants - num: reg[reg]
         code;                                                  // generated assembly
@@ -635,7 +1049,7 @@ function CodeGen(codec) {
         switch (typ) {
             case 'num': return consts[first ? trp.val1 : trp.val2] ?? null;
             case 'trp': return results[first ? trp.val1 : trp.val2] ?? null;
-            case 'var': return vars[first ? trp.val1 : trp.val2] ?? null;
+            case 'var': return vars[first ? trp.val1 : trp.val2].val ?? null;
             default: throw new Error(`unknown operand type: ${typ}`);
         }
     },
@@ -652,9 +1066,11 @@ function CodeGen(codec) {
         return s + c;
     },
     clrloc = (rval, reg) => {                                  // clear location
-        if (isNaN(rval))
+        if (isNaN(rval)) {
+            if (rval.startsWith('*')) return;                  // variable reference, skip
             if (rval.charAt(0) === ':') results[rval] = rmreg(results[rval], reg);
-            else vars[rval] = rmreg(vars[rval], reg);
+            else vars[rval].val = rmreg(vars[rval].val, reg);
+        }
         else consts[rval] = rmreg(consts[rval], reg);
     },
     sloc = (trp, first, reg) => {                              // set operand location
@@ -669,7 +1085,7 @@ function CodeGen(codec) {
         switch (typ) {
             case 'num': consts[val] = adreg(consts[val], reg); break;
             case 'trp': results[val] = adreg(results[val], reg); break;
-            case 'var': vars[val] = adreg(vars[val], reg); break;
+            case 'var': vars[val].val = adreg(vars[val].val, reg); break;
             default: throw new Error(`unknown operand type: ${typ}`);
         }
         rg.val = val; rg.ref = [{...trp}, first];
@@ -728,7 +1144,7 @@ if (res[1] > 0) console.log(`warning: discarded ${res}`);
         acc.ref[0].adr = trp.adr;                              // set start address for usage counter
         return used(...acc.ref, start) > 0 && loc(...acc.ref).length < 2;
     },
-    ttrp = (adr, typ1, val1) => { return {adr, typ1, val1}; }, // create temporary triplet
+    ttrp = (adr, typ1, val1, typ = 0) => { return {adr, typ1, val1, typ}; }, // create temporary triplet
     fndop = (lines, start, s) => {                             // find operation before current
         for (let i = start; i >= 0; i--)
             if (lines[i].match(s) !== null) return i;
@@ -867,15 +1283,20 @@ if (res[1] > 0) console.log(`warning: discarded ${res}`);
         for (const p in regs) { const rg = regs[p]; rg.val = null; rg.ref = null; }
         for (let i = 0, n = triples.length; i < n; i++) {
             const trp = triples[i];
-            switch (trp.oper) {
+            if (trp.typ !== 0) { generateW(trp); continue; }   // type 1 generation
+            switch (trp.oper) {                                // type 0 generation
                 case 'inv':                                    // unary operations
                 case 'inc':
                 case 'dec':
                     load1(trp, false);
                     switch (trp.oper) {
                         case 'inv': code += codec.invra(); break;
-                        case 'inc': code += codec.incr(codec.acc); break;
-                        case 'dec': code += codec.decr(codec.acc); break;
+                        case 'inc':
+                        case 'dec':
+                            const op = (trp.oper === 'inc') ? codec.incr : codec.decr;
+                            code += op(codec.acc);
+                            if (trp.val2 === 2) code += op(codec.acc);
+                            break;
                     }
                     break;
                 case 'add': case 'sub':                        // swappable binary operations
@@ -967,51 +1388,361 @@ if (res[1] > 0) console.log(`warning: discarded ${res}`);
                 save(trp, 2);                                  // save result if needed
             }
         }
-        // MOV  ?, A        begin
-        //    ---
-        // MOV  A, ?        match, remove if A and ? not changed
-        phopt('MOV  A, (.)$', cnd => `MOV  ${cnd}, A`, cnd => {
-            const pattern = [
-                `MOV  [A${cnd}], `, `MVI  [A${cnd}], `, 'LDA  ', 'CALL ', 'CMA', `INR  [A${cnd}]`, `DCR  [A${cnd}]`,
-                'ADI  ', 'ADD  ', 'SUI  ', 'SUB  ', 'XRI  ', 'XRA  ', 'ANI  ', 'ANA  ', 'ORI  ', 'ORA  ', 'RAL', 'RAR'
-            ];
-            if (cnd === 'M') pattern.push(['LXI  H, ']);
-            return pattern;
-        });
-        // MOV  ?, any      begin
-        //    ---
-        // MOV  E, ?        match if ? not M, remove if ? not changed; replace ? at begin and rename ? till MOV  ?, ... | CALL
-        phopt('MOV  E, ([^M])$', cnd => `MOV  ${cnd}, `, cnd => [`MOV  ${cnd}, `], (lines, start, i, cnd) => {
-            lines.splice(i, 1);                                                   // remove match
-            lines[start] = lines[start].replace(` ${cnd}, `, ' E, ');             // replace ? at begin
-            const regexp = new RegExp(` ${cnd}$`);
-            for (let k = start + 1, n = lines.length; k < n; k++) {               // scan from begin + 1 to end
-                const line = lines[k];
-                if (line.match(`MOV  ${cnd}, |CALL `) !== null) break;            // break if reset ? | CALL
-                lines[k] = line.replace(regexp, ' E');                            // rename ?
-            }
-            return true;
-        });
-        // MOV  ?, A        begin
-        // MOV  ?, any | $  match, remove begin if ? not used
-        phopt('MOV  ([^EM]), A$', cnd => `MOV  ${cnd}, `,
-            cnd => [`ADI  ${cnd}`, `ADD  ${cnd}`, `SUI  ${cnd}`, `SUB  ${cnd}`, `MOV  ., ${cnd}`],
-            null, true
-        );
-        // MOV  A, ?        begin
-        //    ---
-        // MOV  M | E, A    match, remove begin if only INR or DCR opers in --- and ? not used forward; rename A to ?
-        phopt('MOV  A, ([^EM])$', cnd => 'MOV  [EM], A$', cnd => ['^\(\(?!DCR  A|INR  A\).\)*$'],
-                (lines, start, i, cnd, end) => {
-            if (chgop(lines, [`MOV  ., ${cnd}`, `[^,]+ ${cnd}$`], end + 1, lines.length - 1, `MOV  ${cnd}, `)[0])
-                return false;                                                     // ? used forward, exit
-            lines.splice(i, 1);                                                   // remove begin
-            const regexp = new RegExp(' A$');
-            for (let k = i; k <= end; k++)
-                lines[k] = lines[k].replace(regexp, ` ${cnd}`);                   // rename A to ?
-            return true;
-        }, true);
+        codec.peephole({fndop, chgop, phopt});                 // peephole optimization
         return code;
+    },
+    inregW = (lc, reg) => inreg(lc, reg.charAt(0)) && inreg(lc, reg.charAt(1)),
+    slocW = (trp, first, reg) => { sloc(trp, first, reg.charAt(0)); sloc(trp, first, reg.charAt(1)); },
+    saveW = trp => {
+        const rv0 = regs[codec.accW.charAt(0)], rv1 = regs[codec.accW.charAt(1)];
+        if (rv0.val === null || rv1.val === null || rv0.val !== rv1.val) return;
+        rv0.ref[0].adr = trp.adr;                              // set start address for usage counter
+        if (used(...rv0.ref, 1) <= 0) return;                  // not used
+if (regs[codec.savW].val !== null) throw new Error(`can't save acc value at: ${trp.adr}`);
+        code += codec.saveW();                                 // save accumulator
+        sloc(...rv0.ref, codec.savW);                          // set location
+    },
+    swapW = () => {
+        code += codec.swapW();
+        const acc = regs[codec.accW.charAt(0)].ref,
+              wrk = regs[codec.workW.charAt(0)].ref;
+        if (acc !== null) slocW(...acc, codec.workW);
+        else { clrreg(codec.workW.charAt(0)); clrreg(codec.workW.charAt(1)); }
+        if (wrk !== null) slocW(...wrk, codec.accW);
+        else { clrreg(codec.accW.charAt(0)); clrreg(codec.accW.charAt(1)); }
+    },
+    loadW = (trp, first, reg, lc = null) => {
+        const typ = first ? trp.typ1 : trp.typ2,
+              val = first ? trp.val1 : trp.val2;
+        let swap = false;
+        switch (typ) {
+            case 'num': code += codec.loadr(reg.charAt(0), val); break;
+            case 'var':
+                if (vars[val].typ === 1) {                     // type 1 variable
+                    if (reg !== codec.accW) {                  // need to swap
+                        swapW();                               // swap working and accumulator regs
+                        reg = codec.accW; swap = true;
+                    }
+                    code += codec.loadaW(val);                 // load to accumulator
+                } else {                                       // type 0 variable
+                    if (lc === null) {
+                        code += codec.loada(val);              // load to 8-bit accumulator
+                        lc = codec.acc;
+                    }
+                    code += codec.move(reg.charAt(1), lc.charAt(0));
+                    code += codec.movi(reg.charAt(0), '0');    // move to reg
+                }
+                break;
+            case 'trp':
+                if (inreg(lc, codec.savW)) {                   // saved
+                    code += codec.restW(reg.charAt(0));        // restore
+                    clrreg(codec.savW);                        // clear save register
+                } else {                                       // type 0 result
+                    code += codec.move(reg.charAt(1), lc.charAt(0));
+                    code += codec.movi(reg.charAt(0), '0');    // move to reg
+                }
+                break;
+            default: throw new Error(`unknown operand type: ${typ}`);
+        }
+        slocW(trp, first, reg);                                // set location
+        return swap;
+    },
+    generateW = trp => {
+        switch (trp.oper) {
+            case 'inc':                                        // unary operations
+            case 'dec':
+                if (trp.typ1 === 'var') {                      // load variable
+                    saveW(trp);                                // save accumulator if needed
+                    loadW(trp, true, codec.accW, loc(trp, true));
+                }
+                const op = (trp.oper === 'inc') ? codec.incrW : codec.decrW;
+                code += op(codec.accW.charAt(0));
+                if (trp.val2 >= 2) code += op(codec.accW.charAt(0));
+                if (trp.val2 > 2) code += op(codec.accW.charAt(0));
+                break;
+            case 'add':                                        // binary operations
+            case 'sub':
+                saveW(trp);                                    // save accumulator if needed
+                const o1lc = loc(trp, true), o2lc = loc(trp, false);
+                let b0 = inregW(o1lc, codec.accW) ? 1 : inregW(o1lc, codec.workW) ? -1 : 0,
+                    b1 = inregW(o2lc, codec.workW) ? 1 : inregW(o2lc, codec.accW) ? -1 : 0,
+                    b2 = (b0 < 0 || b1 < 0) ? 1 : 0,
+                    swap = false, rg = codec.workW.charAt(0);
+                if (b0 < 0 && b1 < 0) { b0 = 0; b1 = 0; }
+                else if (b0 === 1 && inregW(o1lc, codec.workW)) { b2 = 1; b1 = 1; b0 = 1; }
+                else { if (b0 < 0) b0 = 1; if (b1 < 0) b1 = 1; }
+                switch (b2 << 2 | b1 << 1 | b0) {              // possible operand combinations
+                    case 0:                                                                  // none none   000
+                        loadW(trp, true, codec.accW, o1lc);    // load first
+                        if (o2lc === loc(trp, false))          // different second, load
+                            swap = loadW(trp, false, codec.workW, o2lc);
+                        else rg = codec.accW.charAt(0);        // same second, 111 case
+                        break;
+                    case 1: swap = loadW(trp, false, codec.workW, o2lc); break;              // 1    none   001
+                    case 2: loadW(trp, true, codec.accW, o1lc); break;                       // none 2      010
+                    case 3: break;                                                           // 1    2      011
+                    case 4: swap = true; break;                                              // 2    1      100
+                    case 5: loadW(trp, false, codec.accW, o2lc); swap = true; break;         // none 1      101
+                    case 6: swap = loadW(trp, true, codec.workW, o1lc); swap = !swap; break; // 2    none   110
+                    default: rg = codec.accW.charAt(0); break;                               // 1    1      111
+                }
+                switch (trp.oper) {
+                    case 'add': code += codec.addW(rg); break;
+                    case 'sub':
+                        if (swap) swapW();
+                        else if (rg === codec.accW.charAt(0)) { // 111 case
+                            code += codec.move(codec.workW.charAt(1), codec.accW.charAt(1)); // copy to working reg
+                            code += codec.move(codec.workW.charAt(0), codec.accW.charAt(0));
+                            slocW(trp, true, codec.workW);                                   // set location
+                        }
+                        code += codec.callp('@SUBW');
+                        break;
+                    default: throw new Error(`unknown operator: ${trp.oper}`);
+                }
+                break;
+            case 'asg':                                        // assignment
+                if (vars[trp.val1].typ !== 1) throw new Error(`illegal assignment: ${trp.val1}`);
+                const vlc = loc(trp, false);
+                if (!inregW(vlc, codec.accW)) loadW(trp, false, codec.accW, vlc);
+                code += codec.saveaW(trp.val1);
+                break;
+            default: throw new Error(`illegal operation: ${trp.oper}`);
+        }
+        if (trp.oper !== 'asg') {                              // assignment not used in expressions
+            const trpr = ttrp(trp.adr, 'trp', trp.adr, 1);
+            slocW(trpr, true, codec.accW);
+        }
     };
     return {generate};
 }
+
+// var a: word, b: byte, c: word, d: byte, e, f: word;
+// a = 1234; c = 5678; b = 12; d = 56;
+// a = c + b; c = a - d; e = a + c; f = a - c;
+//
+//       LXI  H, 04d2    LXI  H, 1234
+//       SHLD 01e8       SHLD a
+//       LXI  H, 162e    LXI  H, 5678
+//       SHLD 01eb       SHLD c
+//       LXI  H, 01ea    LXI  H, b
+//       MVI  M, 0c      MVI  M, 12
+//       LXI  H, 01ed    LXI  H, d
+//       MVI  M, 38      MVI  M, 56
+//       LDA  01ea       LHLD c
+//       LXI  D, 01eb    LDA  b
+//       CALL 0163       MOV  E, A
+//                       MVI  D, 0
+//                       DAD  D
+//       SHLD 01e8       SHLD a
+//       INX  D          LDA  d
+//       LDAX D          MOV  E, A
+//       XCHG            MVI  D, 0
+//       CALL 017a       CALL @SUBW
+//       SHLD 01eb       SHLD c
+//                       XCHG
+//       DAD  D          DAD  D
+//       SHLD 01ee       SHLD e
+//       LHLD 01eb       LHLD c
+//                       XCHG
+//       CALL 0173       CALL @SUBW
+//       SHLD 01f0       SHLD f
+//
+// 0163: XCHG
+//       MOV  E, A
+//       MVI  D, 00
+//       XCHG
+//       LDAX D
+//       ADD  L
+//       MOV  L, A
+//       INX  D
+//       LDAX D
+//       ADC  H
+//       MOV  H, A
+//       RET
+//
+// 0170: MOV  E, A
+//       MVI  D, 00
+// 0173: MOV  A, E
+//       SUB  L
+//       MOV  L, A
+//       MOV  A, D
+//       SBB  H
+//       MOV  H, A
+//       RET
+//
+// 017a: MOV  C, A
+//       MVI  B, 00
+//       MOV  A, E
+//       SUB  C
+//       MOV  L, A
+//       MOV  A, D
+//       SBB  B
+//       MOV  H, A
+//       RET
+//
+// word a, b, c, d;
+// d = b + c - 2 - (a + b + 7);
+//
+//       LHLD c          LHLD b
+//       XCHG            XCHG
+//       LHLD b          LHLD c
+//       DAD  D          DAD  D
+//       DCX  H          DCX  H
+//       DCX  H          DCX  H
+//       PUSH H          PUSH H
+//       LHLD b
+//       XCHG
+//       LHLD a          LHLD a
+//       DAD  D          DAD  D
+//       LXI  D, 0007    LXI  D, 7
+//       DAD  D          DAD  D
+//       POP  D          POP  D
+//                       XCHG
+//       CALL 014c       CALL @SUBW
+//       SHLD d          SHLD d
+//
+// 014c: MOV  A, E
+//       SUB  L
+//       MOV  L, A
+//       MOV  A, D
+//       SBB  H
+//       MOV  H, A
+//       RET
+//
+// word a, b, c, d;
+// d = b + c - 8 - (a + 7 + b);
+//
+//       LHLD c          LHLD b
+//       XCHG            XCHG
+//       LHLD b          LHLD c
+//       DAD  D          DAD  D
+//       XCHG
+//       MVI  A, 08      LXI  D, 8
+//       CALL 0158       CALL @SUBW
+//       LXI  D, 0007    PUSH H
+//       PUSH H          LHLD a
+//       LHLD a          LXI  D, 7
+//       DAD  D          DAD  D
+//       PUSH H
+//                       XCHG
+//       LHLD b          LHLD b
+//       POP  B
+//       DAD  B          DAD  D
+//       POP  D          POP  D
+//                       XCHG
+//       CALL 0151       CALL @SUBW
+//       SHLD d          SHLD d
+//
+// 014e: MOV  E, A
+//       MVI  D, 00
+// 0151: MOV  A, E
+//       SUB  L
+//       MOV  L, A
+//       MOV  A, D
+//       SBB  H
+//       MOV  H, A
+//       RET
+//
+// 0158: MOV  C, A
+//       MVI  B, 00
+// 015b: MOV  A, E
+//       SUB  C
+//       MOV  L, A
+//       MOV  A, D
+//       SBB  B
+//       MOV  H, A
+//       RET
+//
+// word a, b, c, d; byte e, f;
+// a = 3 + (7 + ((b + c) + (d + 4) + (c + 6) + 5));
+//
+//      LHLD 01bd        LHLD b
+//      XCHG             XCHG
+//      LHLD 01bb        LHLD c
+//      DAD  D           DAD  D
+//      LXI  D, 0004     PUSH H
+//      PUSH H           LHLD d
+//      LHLD 01bf        LXI  D, 4
+//      DAD  D           DAD  D
+//      POP  B           POP  D
+//      DAD  B           DAD  D
+//      LXI  D, 0006     PUSH H
+//      PUSH H           LHLD c
+//      LHLD 01bd        LXI  D, 6
+//      DAD  D           DAD  D
+//      POP  B           POP  D
+//      DAD  B           DAD  D
+//      LXI  D, 0005     LXI  D, 5
+//      DAD  D           DAD  D
+//      LXI  B, 0007     LXI  D, 7
+//      DAD  B           DAD  D
+//      INX  H           INX  H
+//      INX  H           INX  H
+//      INX  H           INX  H
+//      SHLD 01b9        SHLD a
+//
+// word a, b; byte c, d, e, f;
+// a = 3 + (7 + ((b + c) + (d + 4) + (c + 6) + 5));
+//
+//      LDA  01c9        LHLD b
+//      LXI  D, 01c7     LDA  c
+//      CALL 0154        MOV  E, A
+//                       MVI  D, 0
+//                       DAD  D
+//      LDA  01ca        LDA  d
+//      ADI  04          ADI  4
+//      MOV  E, A        MOV  E, A
+//      MVI  D, 00       MVI  D, 0
+//      DAD  D           DAD  D
+//      LDA  01c9        LDA  c
+//      ADI  06          ADI  6
+//      MOV  E, A        MOV  E, A
+//      MVI  D, 00       MVI  D, 0
+//      DAD  D           DAD  D
+//      LXI  D, 0005     LXI  D, 5
+//      DAD  D           DAD  D
+//      LXI  B, 0007     LXI  D, 7
+//      DAD  B           DAD  D
+//      INX  H           INX  H
+//      INX  H           INX  H
+//      INX  H           INX  H
+//      SHLD 01c5        SHLD a
+//
+// 0154:XCHG
+//      MOV  E, A
+//      MVI  D, 00
+//      XCHG
+//      LDAX D
+//      ADD  L
+//      MOV  L, A
+//      INX  D
+//      LDAX D
+//      ADC  H
+//      MOV  H, A
+//      RET
+//
+// word a, b, c, d; byte e, f;
+// a = 5 + b + b + 1;
+//
+//      LHLD 01a2        LXI  D, 5
+//      LXI  B, 0005     LHLD b
+//      DAD  B           DAD  D
+//      PUSH H           XCHG
+//      LHLD 01a2        LHLD b
+//      POP  B
+//      DAD  B           DAD  D
+//      INX  H           INX  H
+//      SHLD 01a0        SHLD a
+//
+// word a, b, c, d; byte e, f;
+// a = b + 5 + b;
+//
+//      LXI  D, 0005     LHLD b
+//      LHLD 01a1        LXI  D, 5
+//      DAD  D           DAD  D
+//      PUSH H           XCHG
+//      LHLD 01a1        LHLD b
+//      POP  B
+//      DAD  B           DAD  D
+//      SHLD 019f        SHLD a
+//
