@@ -11,6 +11,46 @@ txt.value = 'word a, b, c, d; byte e, f;\na = 0;';
     kbd.onblur = ev => txt.disabled = '';
     await loadScript('cpm/cpm.js');
     const hw = await cpm22(scr);
+    let out_dat = null;                                   // [match, error, tmp1, tmp2, timeout ref, resolve ref, reject ref]
+    const out_org = hw.memo.output,                       // original ports output
+          tmoutf = () => clearf(6, new Error('timeout')), // timeout function
+          clearf = (num, val) => {                        // clear processing function, num - handler to call
+              clearTimeout(out_dat[4]);                   // clear timeout
+              hw.memo.output = out_org;                   // restore original handler
+              const handler = out_dat[num];               // resolve or reject ref
+              out_dat = null;                             // clear data
+              handler(val);                               // call handler
+          },
+          waitos = (s, e = null, t = 60) => {             // wait for OS output - s to match, e to error match, t timeout in sec
+              hw.memo.output = out_new;                   // install interceptor
+              return new Promise((res, rej) => out_dat = [s, e, '', '', setTimeout(tmoutf, t * 1000), res, rej]);
+          },
+          out_new = (p, v) => {                           // intercept ports output
+              out_org(p, v);                              // normal processing
+              if (p === 0x01) {                           // console output
+                  const chr = String.fromCharCode(v & 0xff);
+                  out_dat[2] += chr;
+                  if (out_dat[2].length > out_dat[0].length) out_dat[2] = out_dat[2].substring(1);
+                  if (out_dat[2] === out_dat[0]) clearf(5, true);
+                  else if (out_dat[1] !== null) {
+                      out_dat[3] += chr;
+                      if (out_dat[3].length > out_dat[1].length) out_dat[3] = out_dat[3].substring(1);
+                      if (out_dat[3] === out_dat[1]) clearf(6, new Error(out_dat[1]));
+                  }
+              }
+          },
+          execcmd = async (cmd, expect, error = null, t = 20) => {
+              run();                                      // start emulation
+              for (let i = 0, n = cmd.length; i < n; i++) // enter command
+                  hw.keyboard('', 229, cmd.charAt(i));
+              await delay(300);                           // time to process input
+              const p = waitos(expect, error, t);         // start listening
+              hw.keyboard('', 13, '');                    // execute command
+              let res;
+              try { await p; res = null; } catch(e) { res = e; }
+              CPU.RUN = false;                            // stop emulation
+              if (res !== null) throw res;
+          };
     const cmd = hw.cmd;
     hw.cmd = async (command, parms) => {
         switch (command) {
@@ -767,6 +807,10 @@ a = b + c + b;
         SHLD a
                 `);
                 console.log(compile(txt.value));
+                break;
+            case 'test':
+                await execcmd('b:', 'B>');
+                await execcmd('dir', 'B>');
                 break;
             default: return cmd(command, parms);
         }
