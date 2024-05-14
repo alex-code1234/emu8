@@ -102,8 +102,8 @@ async function cpm_init(scr, version) {   // CP[MP]/M init
                 console.log(w_buf.length);
                 break;
             case 'basic':                 // start 8080 MS Basic
-                loadHex(await loadFile('cpm/basic.hex', true), 0);
                 memo.reset(); HLT_STOP = true;
+                loadHex(await loadFile('cpm/basic.hex', true), 0);
                 hardware.toggleDisplay();
                 CPU.reset(); CPU.setPC(0x1000); run();
                 break;
