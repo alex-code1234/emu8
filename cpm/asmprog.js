@@ -21,8 +21,10 @@ async function asmprog(scr) {
     hw.cmd = async (command, parms) => {
         switch (command) {
             case 'asm':
-                const [code, cycles] = Assembler().assemble(txt.value);
+                const [code, cycles, , cref] = Assembler().assemble(txt.value, 0x100, true);
                 console.log(loadBin(code, 0x100), `[${cycles}]`);
+                console.log(cref);
+                SIM_DEBUG = cref;
                 break;
             case 'lda':
                 txt.value = await loadFile(parms[1], true);
@@ -128,17 +130,39 @@ function Assembler(extrns = {}) {
     getLabel = label => {
         let result = names[label];
         if (result === undefined) {
-            result = [-1, []];     // address, refs: [[offset, data length], ...]
+            result = [-1, []];     // address, refs: [[offset, data length, arith], ...]
             names[label] = result;
         }
         return result;
     },
-    handleLabel = (label, len) => {
+    getOffs = str => {                   // address arithmetic
+        const m = str.match('^(.+)([+-])(.+)$');
+        if (m !== null) {
+            const value = m[3].trim();
+            if (isNaNext(value)) throw new Error(`invalid expression: ${str}`);
+            const sign = (m[2] === '+') ? 1 : -1,
+                  offs = +`0x${value}` * sign;
+            m[0] = m[1].trim();          // clean name
+            m[1] = offs;                 // offset
+            m.length = 2;
+        }
+        return m;
+    },
+    handleLabel = (label, len, org) => {
+        const arith = getOffs(label),
+              offs = (arith !== null) ? arith[1] : 0;
+        if (label.charAt(0) === '$') {   // special variable $
+            if (len < 2) throw new Error(`invalid expression length: ${label}`);
+            code.push(...toCode(org + code.length + offs, len));
+            return;
+        }
+        if (arith !== null) label = arith[0];
         const nm = getLabel(label);
         let ref = nm[0];
         if (ref < 0) {
-            nm[1].push([code.length, len]); ref = 0;
+            nm[1].push([code.length, len, offs]); ref = 0;
         }
+        else ref += offs;
         code.push(...toCode(ref, len));
     },
     resolveRefs = () => {
@@ -146,18 +170,24 @@ function Assembler(extrns = {}) {
             const [ref, refs] = names[prop];
             if (ref < 0) throw new Error(`undefined reference: ${prop}`);
             for (let i = 0, n = refs.length; i < n; i++) {
-                let [pos, len] = refs[i];
-                const bytes = toCode(ref, len);
+                let [pos, len, offs] = refs[i];
+                const bytes = toCode(ref + offs, len);
                 for (let j = 0; j < len; j++) code[pos++] = bytes[j];
             }
         }
     },
-    handleEqu = oper => {
-        const name = oper[1].trim(), value = oper[2].trim();
-        if (isNaNext(value)) throw new Error(`invalid value: ${value} for ${name}`);
+    handleEqu = (oper, org) => {
+        const name = oper[1].trim();
+        let value = oper[2].trim();
+        if (isNaNext(value)) {
+            if (value.charAt(0) !== '$') throw new Error(`invalid value: ${value} for ${name}`);
+            const arith = getOffs(value),
+                  offs = (arith !== null) ? arith[1] : 0;
+            value = (org + code.length + offs).toString(16);
+        }
         getLabel(name)[0] = +`0x${value}`;
     },
-    handleDbDw = oper => {
+    handleDbDw = (oper, org) => {
         const op = oper[0],
               len = (op.indexOf('DB ') >= 0) ? 1 : 2,
               values = oper[1].trim().split(',');
@@ -181,7 +211,7 @@ function Assembler(extrns = {}) {
                 for (let j = 1, m = value.length - 1; j < m; j++)
                     code.push(...toCode(+`0x${value.charCodeAt(j).toString(16)}`, len));
             }
-            else if (isNaNext(value)) handleLabel(value, len);
+            else if (isNaNext(value)) handleLabel(value, len, org);
             else code.push(...toCode(+`0x${value}`, len));
         }
     },
@@ -194,20 +224,42 @@ function Assembler(extrns = {}) {
         else value = +`0x${name}`;
         for (let i = 0; i < value; i++) code.push(0x00);
     },
-    assemble = (txt, org = 0x100) => {
-        code.length = 0; names = {...extrns}; // initialize
+    genRefs = () => {
+        const alns = [], nlns = [];
+        let ares = '', nres = '';
+        for (const prop in names) {
+            const value = names[prop];
+            alns.push(prop.padEnd(8, ' ') + ': ' + value[0].toString(16).padStart(4, '0'));
+            nlns.push(value[0].toString(16).padStart(4, '0') + ': ' + prop.padEnd(8, ' '));
+        }
+        alns.sort(); nlns.sort();
+        let p = 0;
+        for (let i = 1, n = alns.length; i < n; i++) {
+            if (alns[p].length > 0) { alns[p] += '    '; nlns[p] += '    '; }
+            alns[p] += alns[i]; nlns[p] += nlns[i];
+            if (alns[p].length >= 80) {
+                alns[p] = alns[p].trim(); nlns[p] = nlns[p].trim();
+                ares += alns[p] + '\n'; nres += nlns[p] + '\n';
+                p++; alns[p] = ''; nlns[p] = '';
+            }
+        }
+        if (alns[p] !== '') { ares += alns[p] + '\n'; nres += nlns[p] + '\n'; }
+        return ares + '\n\n' + nres;
+    },
+    assemble = (txt, org = 0x100, cref = false) => {
+        code.length = 0; names = {...extrns};    // initialize
         const prg = txt.split('\n');
         let cycles = 0, oper;
         for (let i = 0, n = prg.length; i < n; i++) {
-            let stmt = prg[i].trim();         // process line
-            const comm = stmt.indexOf(';');   // is comment?
+            let stmt = prg[i].trim();            // process line
+            const comm = stmt.indexOf(';');      // is comment?
             if (comm >= 0) stmt = stmt.substring(0, comm).trim();
-            if (stmt.length === 0) continue;  // skip empty line
+            if (stmt.length === 0) continue;     // skip empty line
             if ((oper = stmt.match('(.+) EQU (.+)')) !== null) {
-                handleEqu(oper); continue;    // handle EQU
+                handleEqu(oper, org); continue;  // handle EQU
             }
-            const col = stmt.indexOf(':');    // is label?
-            if (col >= 0) {                   // handle label
+            const col = stmt.indexOf(':');       // is label?
+            if (col >= 0) {                      // handle label
                 const label = stmt.substring(0, col).trim();
                 if (label.length === 0) throw new Error(`invalid label at: ${stmt}`);
                 const nm = getLabel(label);
@@ -216,22 +268,22 @@ function Assembler(extrns = {}) {
                 stmt = stmt.substring(col + 1).trim();
             }
             if ((oper = stmt.match('D[BW] (.+)')) !== null) {
-                handleDbDw(oper); continue;   // handle DB and DW
+                handleDbDw(oper, org); continue; // handle DB and DW
             }
             if ((oper = stmt.match('DS (.+)')) !== null) {
-                handleDs(oper); continue;     // handle DS
+                handleDs(oper); continue;        // handle DS
             }
-            const cmd = findCode(stmt);       // processor opcode
+            const cmd = findCode(stmt);          // processor opcode
             code.push(cmd[0]); cycles += cmd[4];
             const prmlen = cmd[2];
-            if (prmlen > 0) {                 // opcode parameter(s)
+            if (prmlen > 0) {                    // opcode parameter(s)
                 const prm = stmt.substring(cmd[1].length).trim();
                 if (!isNaNext(prm) || prm.charAt(0) === '"') code.push(...toBytes(prm, prmlen));
-                else handleLabel(prm, prmlen);
+                else handleLabel(prm, prmlen, org);
             }
         }
-        resolveRefs();                        // resolve forward references
-        return [code, cycles, names];
+        resolveRefs();                           // resolve forward references
+        return [code, cycles, names, cref ? genRefs() : null];
     };
     return {assemble};
 }
