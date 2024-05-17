@@ -26,7 +26,8 @@ window.onerror = function(event, source, line, col, error) {
 'use strict';
 
 let CPU_INSTR_CNT = 10240, // ~8.4MHz for 8080 and Z80, ~4Mhz for 8086, ~12MHz for 6502
-    HLT_STOP = true;       // stop CPU on HLT
+    HLT_STOP = true,       // stop CPU on HLT
+    SIM_DEBUG = null;      // address - name assoc. string (addr: name[ \n])
 
 let CPU = null, memo = null;
 
@@ -163,7 +164,12 @@ function disassemble1(a) {
 function printAsm(a, log = console.log, count = 16) {
     for (let i = 0; i < count; i++) {
         const r = disassemble1(a);
-        log(r[1]);
+        let sim = '', m;
+        if (SIM_DEBUG !== null) {
+            m = SIM_DEBUG.match(`${a.toString(16).padStart(D_WDT, '0')}: (.+?)[ \n]`);
+            if (m !== null) sim = `${' '.padStart(28 - r[1].length, ' ')}<b>${m[1]}</b>`;
+        }
+        log(r[1] + sim);
         a = r[0] & D_AMS;
     }
     return a;
