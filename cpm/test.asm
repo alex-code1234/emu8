@@ -588,7 +588,7 @@ _conb3: DW   tpop
         DW   _nbufr
         DW   tret       ; str
 
-_d42:   DW   _d43
+_d42:   DW   _d51
         DB   3, "axb", 00
 conaxb: DW   tcall      ; str
         DW   dup, first           ; get str length
@@ -617,7 +617,13 @@ _caxb3: DW   tpop, tpop, tpop     ; drop length, str pointer and digit
 
 cflag:  DW   var, 0000            ; compile flag
 phere:  DW   var, 0000            ; saved here pointer
+
+_d51:   DW   _d52
+        DB   5, "const", 00
 conadd: DW   const, const         ; constant reference
+
+_d52:   DW   _d43
+        DB   3, "var", 00
 varadd: DW   const, var           ; variable reference
 
 _d43:   DW   _d44
@@ -665,4 +671,4 @@ colon:  DW   tcall      ; none
 _d48:   DW   _d50
         DB   4, "here", 00
 here:   DW   var, _d50  ; top of memory variable
-_d50:   DW   0000       ; _d51 next
+_d50:   DW   0000       ; _d53 next
