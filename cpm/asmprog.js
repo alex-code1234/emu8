@@ -246,14 +246,25 @@ function Assembler(extrns = {}) {
         if (alns[p] !== '') { ares += alns[p] + '\n'; nres += nlns[p] + '\n'; }
         return ares + '\n\n' + nres;
     },
+    inStr = (str, pos) => {
+        let quotes = 0;                          // check if inside string
+        for (let k = pos - 1; k >= 0; k--) if (str.charAt(k) === '"') quotes++;
+        return (quotes & 0x01) !== 0;            // odd - inside string
+    },
     assemble = (txt, org = 0x100, cref = false) => {
         code.length = 0; names = {...extrns};    // initialize
         const prg = txt.split('\n');
         let cycles = 0, oper;
         for (let i = 0, n = prg.length; i < n; i++) {
-            let stmt = prg[i].trim();            // process line
-            const comm = stmt.indexOf(';');      // is comment?
-            if (comm >= 0) stmt = stmt.substring(0, comm).trim();
+            let stmt = prg[i].trim(),            // process line
+                comm = stmt.indexOf(';');        // is comment?
+            while (comm >= 0) {                  // check if in string
+                if (inStr(stmt, comm)) comm = stmt.indexOf(';', comm + 1);
+                else {                           // found, remove comment
+                    stmt = stmt.substring(0, comm).trim();
+                    break;                       // done processing comments
+                }
+            }
             if (stmt.length === 0) continue;     // skip empty line
             if ((oper = stmt.match('(.+) EQU (.+)')) !== null) {
                 handleEqu(oper, org); continue;  // handle EQU
