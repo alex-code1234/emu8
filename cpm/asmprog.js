@@ -258,14 +258,15 @@ function Assembler(extrns = {}) {
             if ((oper = stmt.match('(.+) EQU (.+)')) !== null) {
                 handleEqu(oper, org); continue;  // handle EQU
             }
-            const col = stmt.indexOf(':');       // is label?
-            if (col >= 0) {                      // handle label
-                const label = stmt.substring(0, col).trim();
+            const col = stmt.match('^([^ "]+) *:(.*)$');
+            if (col !== null) {                  // handle label
+                const label = col[1];
                 if (label.length === 0) throw new Error(`invalid label at: ${stmt}`);
                 const nm = getLabel(label);
                 if (nm[0] !== -1) throw new Error(`duplicate label: ${label}`);
                 nm[0] = org + code.length;
-                stmt = stmt.substring(col + 1).trim();
+                stmt = col[2].trim();
+                if (stmt.length === 0) continue; // label only, skip
             }
             if ((oper = stmt.match('D[BW] (.+)')) !== null) {
                 handleDbDw(oper, org); continue; // handle DB and DW
