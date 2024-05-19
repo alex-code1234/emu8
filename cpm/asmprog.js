@@ -195,8 +195,8 @@ function Assembler(extrns = {}) {
         while (i < n) {
             let value = values[i++].trim();
             if (value.length === 0) throw new Error(`invalid statement: ${op}`);
-            if (value.charAt(0) === '"') {
-                while (i < n && !value.endsWith('"')) {               // string beginning
+            if (value.charAt(0) === '"') {                            // string beginning
+                while (i < n && (value.length === 1 || !value.endsWith('"'))) {
                     value += ',';                                     // restore ',' inside string
                     const prev = value.length;                        // save look back limit
                     value += values[i++];                             // add string part after ','
