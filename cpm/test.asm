@@ -80,7 +80,8 @@ next:   LHLD pc         ; inner interpreter, pc -> word+1
         PCHL            ; jump to word, DE -> (word)+1
 
 names:  DW   _d1        ; dictionary start, reference to next entry
-        DB   8, "constant", 00
+        DB   5, "const", 00
+        DW   const, const         ; constant reference
 const:  PUSH B          ; CONSTANT word, DE -> (word)+1
         XCHG
         INX  H          ; HL -> constant
@@ -90,7 +91,8 @@ const:  PUSH B          ; CONSTANT word, DE -> (word)+1
         JMP  next       ; back to inner interpreter
 
 _d1:    DW   _d2
-        DB   8, "variable", 00
+        DB   3, "var", 00
+        DW   const, var           ; variable reference
 var:    PUSH B          ; VARIABLE word, DE -> (word)+1
         XCHG
         INX  H          ; HL -> variable
@@ -588,7 +590,7 @@ _conb3: DW   tpop
         DW   _nbufr
         DW   tret       ; str
 
-_d42:   DW   _d51
+_d42:   DW   _d43
         DB   3, "axb", 00
 conaxb: DW   tcall      ; str
         DW   dup, first           ; get str length
@@ -618,14 +620,6 @@ _caxb3: DW   tpop, tpop, tpop     ; drop length, str pointer and digit
 cflag:  DW   var, 0000            ; compile flag
 phere:  DW   var, 0000            ; saved here pointer
 
-_d51:   DW   _d52
-        DB   5, "const", 00
-conadd: DW   const, const         ; constant reference
-
-_d52:   DW   _d43
-        DB   3, "var", 00
-varadd: DW   const, var           ; variable reference
-
 _d43:   DW   _d44
         DB   1, ",", 00
 cmplw:  DW   tcall      ; word
@@ -654,18 +648,34 @@ _d45:   DW   _d47
         DB   1, ";", 01           ; immediate
 semi:   DW   tcall      ; none
         DW   tpush, tret, cmplw   ; compile ret
-        DW   here, peekw, dup     ; load here location
         DW   zero, cflag, pokew   ; store 0000 to compile flag
-        DW   zero, swap, pokew    ; and to location of here
-        DW   phere, peekw, pokew  ; store location of here to previous link in dictionary
+        DW   ext                  ; finalize directory entry
         DW   tret       ; none
 
-_d47:   DW   _d48
+_d47:   DW   _d51
         DB   1, ":", 00
 colon:  DW   tcall      ; none
         DW   one, cflag, pokew    ; store 0001 to compile flag
         DW   getwrd, enter        ; get and store name
         DW   tpush, tcall, cmplw  ; compile docol
+        DW   tret       ; none
+
+_d51:   DW   _d52
+        DB   4, "exit", 00
+ext:    DW   tcall      ; none
+        DW   here, peekw, dup     ; load here location
+        DW   zero, swap, pokew    ; store 0000 to location of here
+        DW   phere, peekw, pokew  ; store location of here to previous link in dictionary
+        DW   tret       ; none
+
+_d52:   DW   _d48
+        DB   9, "immediate", 00
+immed:  DW   tcall      ; none
+        DW   phere, peekw         ; get saved address of current entry
+        DW   inc, inc             ; name start
+        DW   dup, peekb           ; get name length
+        DW   tadd, inc            ; add length + 1 - address of immediate flag
+        DW   one, swap, pokeb     ; set to 01
         DW   tret       ; none
 
 _d48:   DW   _d50
