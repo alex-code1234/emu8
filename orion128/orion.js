@@ -64,7 +64,7 @@ async function o128memo(con) {
     let bank = 0,
         rom_addr = 0,                     // ROM access address
         rom_addr_high = 0,                // ROM access address high byte
-        cmod = 0, fg = '#00a000', bg = '#000000', scrAdr = 0xc000, endAdr = 0xefff;
+        cmod = 0, scrAdr = 0xc000;
     result.con = con;
     result.rd = a => {
         if (a >= 0xf000) {
@@ -93,23 +93,19 @@ async function o128memo(con) {
                 case 0xf501: rom_addr = v; break;
                 case 0xf502: rom_addr = v << 8 | rom_addr; break;
             }
-            else if (a >= 0xf800 && a < 0xf900) {
-                cmod = v & 0x07;
-                if (cmod === 0) { fg = '#00a000'; bg = '#000000'; }
-                else if (cmod === 1) { fg = '#ffff00'; bg = '#0000ff'; }
-            }
+            else if (a >= 0xf800 && a < 0xf900) cmod = v & 0x07;
             else if (a >= 0xf900 && a < 0xfa00) bank = v & 0x03;
             else if (a >= 0xfa00 && a < 0xfb00) switch (v & 0x03) {
-                case 0: scrAdr = 0xc000; endAdr = 0xefff; break;
-                case 1: scrAdr = 0x8000; endAdr = 0xafff; break;
-                case 2: scrAdr = 0x4000; endAdr = 0x6fff; break;
-                case 3: scrAdr = 0x0000; endAdr = 0x2fff; break;
+                case 0: scrAdr = 0xc000; break;
+                case 1: scrAdr = 0x8000; break;
+                case 2: scrAdr = 0x4000; break;
+                case 3: scrAdr = 0x0000; break;
             }
             else if (a >= 0xfe00 && a < 0xff00) rom_addr_high = v;
         }
         else switch (bank) {
-            case 0: ram[a] = v; if (a >= scrAdr && a <= endAdr) result.updscr(a, v); break;
-            case 1: ram1[a] = v; if (a >= scrAdr && a <= endAdr) result.updscr(a, undefined, v); break;
+            case 0: ram[a] = v; break;
+            case 1: ram1[a] = v; break;
             case 2: ram2[a] = v; break;
             case 3: ram3[a] = v; break;
         }
@@ -126,30 +122,76 @@ async function o128memo(con) {
     result.input = p => result.rd(p << 8 | p);
     result.output = (p, v) => result.wr(p << 8 | p, v);
     const canvas = con.canvas, scx = 1.9, scy = 1.9;
-    result.updscr = (a, v, v1) => {
-        if (v === undefined) v = ram[a];
-        else if (v1 === undefined) v1 = ram1[a];
-        if (cmod > 5) { fg = Screen_16_table[v1 & 0x0F]; bg = Screen_16_table[v1 >> 4]; }
-        let x = (a - scrAdr >> 8) * 8 * scx, y = (a & 0xff) * scy;
-        for (let mask = 0x80; mask > 0; mask >>= 1) {
-            const dot = (v & mask) ? 1 : 0;
-            canvas.fillStyle =
-                    (cmod == 4 || cmod == 5) ? Screen_4_table[(dot << 1) | ((v1 & mask) ? 1 : 0)] :
-                    dot ? fg : bg;
-            canvas.fillRect(x, y, scx, scy);
-            x += scx;
-        }
-    };
     canvas.canvas.width = 384 * scx;
     canvas.canvas.height = 256 * scy;
+    let grun = true,     // graphic monitor state
+        currcmod,        // current graphic mode
+        data,            // active data loading func
+        color,           // active color detection func
+        paloffs,         // color index offset for graphic mode 4 and 5
+        val, col,        // data and color values
+        fg, bg,          // current foreground and background colors
+        adr;             // current memory address
+    const d01 = () => val = ram[adr++],
+          c0167 = mask => (val & mask) ? fg : bg,
+    d45 = () => { col = ram1[adr]; val = ram[adr++]; },
+    c45 = mask => {
+        const num = ((val & mask) ? 0x10 : 0x00) | ((col & mask) ? 0x01 : 0x00);
+        return Screen_4_table[num + paloffs];
+    },
+    d67 = () => {
+        col = ram1[adr]; val = ram[adr++];
+        fg = Screen_16_table[col & 0x0f]; bg = Screen_16_table[col >> 4];
+    },
+    draw = pixs => {     // update graphic monitor
+        let xstart = 0, x, y, pre;
+        adr = scrAdr;
+        if (currcmod !== cmod) {
+            switch (cmod) {
+                case 1:  // monochrome palette 2
+                    fg = Screen_16_table[15]; bg = Screen_16_table[9];
+                    data = d01; color = c0167; break;
+                case 4:  // 4 colors palette 1
+                    paloffs = 0; data = d45; color = c45; break;
+                case 5:  // 4 colors palette 2
+                    paloffs = 4; data = d45; color = c45; break;
+                case 6:  // 16 colors per 8 pixels
+                case 7: data = d67; color = c0167; break;
+                default: // monochrome palette 1
+                    fg = Screen_16_table[2]; bg = Screen_16_table[0];
+                    data = d01; color = c0167; break;
+            }
+            currcmod = cmod;
+        }
+        for (let i = 0; i < 48; i++) {
+            y = 0;
+            for (let j = 0; j < 256; j++) {
+                x = xstart; pre = 384 * y;
+                data();
+                for (let b = 0x80; b > 0; b >>= 1)
+                    pixs[pre + x++] = color(b);
+                y++;
+            }
+            xstart += 8;
+        }
+    };
+    const gmon = GMonitor(canvas, 384, 256, draw),
+          ctoggle = con.toggle;
+    con.toggle = () => { // override to start/stop graphic monitor
+        ctoggle();
+        if (grun) gmon.start(); else gmon.stop();
+        grun = !grun;
+    };
     return result;
 }
 
 const Screen_16_table = [
-    '#000000', '#0000FF', '#008000', '#00CED1', '#FF0000', '#800080', '#A52A2A', '#D3D3D3',
-    '#000000', '#ADD8E6', '#90EE90', '#40E0D0', '#FFC0CB', '#9370DB', '#FFFF00', '#FFFFFF'
+    0xff000000, 0xffff0000, 0xff008000, 0xffd1ce00, 0xff0000ff, 0xff800080, 0xff2a2aa5, 0xffd3d3d3,
+    0xff000000, 0xffe6d8ad, 0xff90ee90, 0xffd0e040, 0xffcbc0ff, 0xffdb7093, 0xff00ffff, 0xffffffff
 ],
-Screen_4_table = ['#000000', '#FF0000', '#008000', '#0000FF'],
+Screen_4_table = [
+    0xff000000, 0xff0000ff, 0xff008000, 0xffff0000, 0xff000000, 0xffcbc0ff, 0xff90ee90, 0xffe6d8ad
+],
 Keyboard_key_table = {
       5: [ 0xFE, 0xFE ], // \\   ctrl+h
       6: [ 0xFE, 0xFD ], // CTP  ctrl+e
