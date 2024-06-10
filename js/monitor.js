@@ -286,3 +286,36 @@ async function VT_100(screen, {
         }
     };
 }
+
+// graphic monitor emulation
+// canvas        - context2d to use, view size specified for the element
+// width, height - actual graphic resolution
+// draw          - function(pixels), pixels - uint32 array width x height
+// rate          - screen refresh rate frames/sec
+function GMonitor(canvas, width, height, draw, rate = 24) {
+    const elem = canvas.canvas;
+    elem.style.width = elem.width + 'px';   // requested view size
+    elem.style.height = elem.height + 'px'; // specified for canvas element
+    elem.width = width;                     // actual resolution
+    elem.height = height;
+    const idata = canvas.getImageData(0, 0, width, height),
+          pixs = new Uint32Array(idata.data.buffer),
+          frameRate = 1000.0 / rate,
+    render = nts => {
+        if (!running) return;
+        requestAnimationFrame(render);
+        const elapsed = nts - ts;
+        if (elapsed >= frameRate) {
+            ts = nts - elapsed % frameRate;
+            draw(pixs);
+            canvas.putImageData(idata, 0, 0);
+        }
+    },
+    start = () => {                         // start rendering
+        running = true;
+        requestAnimationFrame(render);
+    },
+    stop = () => running = false;           // stop rendering
+    let ts = 0, running;
+    return {start, stop};
+}
