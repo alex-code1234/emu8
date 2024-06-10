@@ -31,6 +31,9 @@ Default CPU is 8080, can be changed by URL parameter cpu_type=type, where type i
 By default mobile soft keyboard is supported, to use hardware keyboard (or run on non mobile device) add special 
 parameter **hw_kbd=true** to the URL.
 
+There is special parameter **zoom** to enlarge emulated display to 100%. 4 comma delimited numbers are
+passed: scale_x, scale_y, margin_left, margin_top. 2 predefined values are **tablet** and **tv**.
+
 UI structure:
 - HTML input element to interact with system monitor \(command followed by \<CR> key)
 - canvas element for the terminal \(can be hidden)
