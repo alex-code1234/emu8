@@ -27,8 +27,10 @@ async function o128(scr) {
                 // ROMDISK.ROM   - ORDOS ROM disk
                 // ROMDISK.BIN   - DSDOS ROM disk 3.9
                 // ROMDSK512.BIN - DSDOS ROM disk 3.9 512K
-                loadBin(await loadFile('orion128/BIOS.ROM', false), 0xf800);
-                loadROM(await loadFile('orion128/ROMDISK.BIN', false));
+                if (parms.length < 2 || parms[1] !== 'false') {
+                    loadBin(await loadFile('orion128/BIOS.ROM', false), 0xf800);
+                    loadROM(await loadFile('orion128/ROMDISK.BIN', false));
+                }
                 hardware.toggleDisplay();
                 CPU.reset(); CPU.setRegisters(['x', 'pc', 'f800']); run();
                 break;
@@ -45,6 +47,10 @@ async function o128(scr) {
                     if (origoutput !== null) memo.output = origoutput;
                     con.print('^[?25l');
                 }
+                break;
+            case 'ro':   // load ROM disk
+                if (parms.length < 2) console.error('missing: fname');
+                else loadROM(await loadFile(parms[1], false));
                 break;
             default: return cmd(command, parms);
         }
