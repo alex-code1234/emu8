@@ -15,10 +15,20 @@ function loadROM(data) {
     loadBin(data, 0x10000);
 }
 
+async function loadDisk(fname, num = null) {
+    const disk = await ODIDisk(fname);
+    if (num !== null) {
+        num = +num;
+        if (num < 0 || num >= memo.disks.length) num = null;
+    }
+    if (num === null) memo.disks.push(disk);
+    else memo.disks[num] = disk;
+}
+
 async function o128(scr) {
     const mod = await defaultHW(scr, new URLSearchParams('?cpu_type=0&mem_name=o128memo&kbd_name=o128keyboard')),
           memo = mod.memo, cmd = mod.cmd, con = memo.con;
-    mod.info = `Orion-128 (8080), 256K memory, 1M ROM disk, color screen`;
+    mod.info = `Orion-128 (8080), 256K memory, 1M ROM disk, FDC, color screen`;
     mod.cmd = async (command, parms) => {
         switch (command) {
             case 'on':
@@ -29,7 +39,8 @@ async function o128(scr) {
                 // ROMDSK512.BIN - DSDOS ROM disk 3.9 512K
                 if (parms.length < 2 || parms[1] !== 'false') {
                     loadBin(await loadFile('orion128/BIOS.ROM', false), 0xf800);
-                    loadROM(await loadFile('orion128/ROMDISK.BIN', false));
+                    loadROM(await loadFile('roms/ROMDISK.ROM', false));
+                    await loadDisk('roms/disk1.odi');
                 }
                 hardware.toggleDisplay();
                 CPU.reset(); CPU.setRegisters(['x', 'pc', 'f800']); run();
@@ -52,6 +63,14 @@ async function o128(scr) {
                 if (parms.length < 2) console.error('missing: fname');
                 else loadROM(await loadFile(parms[1], false));
                 break;
+            case 'bank': // switch memory bank
+                if (parms.length > 1) memo.bank(pi(parms[1]));
+                console.log(memo.bank());
+                break;
+            case 'rd':   // insert or replace disk
+                if (parms.length < 2) console.error('missing: fname [0..3]');
+                else await loadDisk(parms[1], parms[2]);
+                break;
             default: return cmd(command, parms);
         }
         return true;
@@ -66,6 +85,7 @@ async function o128memo(con) {
           ram2 = new Uint8Array(0xf000),
           ram3 = new Uint8Array(0xf000),
           rom = new Uint8Array(0x100000), // ROM disk 1M
+          wd1793 = WD1793(),              // WD1793
           result = {};
     let bank = 0,
         rom_addr = 0,                     // ROM access address
@@ -79,6 +99,9 @@ async function o128memo(con) {
                 case 0xf401: return con.kbd.translateKey();
                 case 0xf402: return con.kbd.kmod;
                 case 0xf500: return rom[rom_addr_high << 16 | rom_addr];
+                case 0xf700: case 0xf701: case 0xf702: case 0xf703:
+                case 0xf710: case 0xf711: case 0xf712: case 0xf713:
+                    return wd1793.read(a & 0x03);
                 default: return 0x00;
             }
             return ram[a];
@@ -98,6 +121,11 @@ async function o128memo(con) {
                 case 0xf400: con.kbd.kscn = v; break;
                 case 0xf501: rom_addr = v; break;
                 case 0xf502: rom_addr = v << 8 | rom_addr; break;
+                case 0xf700: case 0xf701: case 0xf702: case 0xf703:
+                case 0xf710: case 0xf711: case 0xf712: case 0xf713:
+                    wd1793.write(a & 0x03, v); break;
+                case 0xf704: case 0xf714: case 0xf708:
+                case 0xf720: wd1793.write(0xf720 & 0x23, v); break;
             }
             else if (a >= 0xf800 && a < 0xf900) cmod = v & 0x07;
             else if (a >= 0xf900 && a < 0xfa00) bank = v & 0x03;
@@ -127,6 +155,8 @@ async function o128memo(con) {
     };
     result.input = p => result.rd(p << 8 | p);
     result.output = (p, v) => result.wr(p << 8 | p, v);
+    result.bank = num => (num === undefined) ? bank : bank = num & 0x03;
+    result.disks = wd1793.disks;
     const canvas = con.canvas, scx = 1.9, scy = 1.9;
     canvas.canvas.width = 384 * scx;
     canvas.canvas.height = 256 * scy;
@@ -356,4 +386,123 @@ async function o128keyboard(con, memo) {
             }
         }
     };
+}
+
+async function ODIDisk(fname) {
+    const img = fname ? await loadFile(fname, false) : null,
+          cyls = 80, sects = 5, heads = 2, ssize = 1024,
+          size = img ? img.length : cyls * sects * ssize * heads,
+          data = new Uint8Array(size),
+    seek = (trk, sect, head, len) => {
+        if (trk < 0 || trk >= cyls || sect < 1 || sect > sects || head < 0 || head > 1)
+            return [null, 0, 0];
+        const idx = ((trk * heads + head) * sects + sect - 1) * ssize;
+        return [data, idx, ssize * (len ? sects - sect + 1 : 1)];
+    };
+    if (size !== 819200)
+        throw new Error(`disk image error: ${size}`);
+    if (img) data.set(img, 0);
+    return {seek};
+}
+
+function WD1793() {
+    let cmd = 0xd0, disk = 0, side = 0, buf = null, idx = 0, len = 0, step = 0;
+    const R = [0, 0, 0, 0], disks = [],
+    read = num => {
+        switch (num) {
+            case 0x00:
+                let a = R[0];
+                if (disk >= disks.length) a |= 0x80;
+                if (cmd < 0x80 || cmd & 0xf0 === 0xd0)
+                    R[0] = (R[0] ^ 0x02) & (0x02 | 0x01 | 0x80 | 0x40 | 0x04);
+                else
+                    R[0] = R[0] & (0x01 | 0x80 | 0x40 | 0x02);
+                return a;
+                break;
+            case 0x01: return R[1];
+            case 0x02: return R[2];
+            case 0x03:
+                if (len) {
+                    R[3] = buf[idx++];
+                    if (--len) {
+                        if (len % 1024 === 0) R[2]++;
+                    }
+                    else R[0] = R[0] & ~(0x01 | 0x02);
+                }
+                return R[3];
+                break;
+        }
+        return 0xff;
+    },
+    write = (num, v) => {
+        switch (num) {
+            case 0x00:
+                if (R[0] & 0x01 && v & 0xf0 !== 0xd0) break;
+                cmd = v;
+                switch (cmd & 0xf0) {
+                    case 0x00:
+                        R[1] = 0;
+                        R[0] = 0x02 | 0x04 | ((v & 0x08) ? 0x20 : 0x00);
+                        break;
+                    case 0x10:
+                        buf = null; idx = 0; len = 0; R[1] = R[3];
+                        R[0] = 0x02 | (R[1] ? 0x00 : 0x04) | ((v & 0x08) ? 0x20 : 0x00);
+                        break;
+                    case 0x20: case 0x30: case 0x40:
+                    case 0x50: case 0x60: case 0x70:
+                        if (v & 0x40) step = v & 0x20; else v = (v & ~0x20) | step;
+                        if (v & 0x20) { if (R[1]) R[1]--; } else R[1]++;
+                        R[0] = 0x02 | (R[1] ? 0x00 : 0x04);
+                        break;
+                    case 0x80: case 0x90:
+                    case 0xa0: case 0xb0:
+                        [buf, idx, len] = (disk >= disks.length) ? [null, 0, 0] :
+                                disks[disk].seek(R[1], R[2], side, v & 0x10);
+                        R[0] = (buf === null) ? (R[0] & ~0x18) | 0x10 : R[0] | 0x01 | 0x02;
+                        break;
+                    case 0xc0:
+                        [buf, idx, len] = (disk >= disks.length) ? [null, 0, 0] :
+                                disks[disk].seek(R[1], 1, side);
+                        if (buf === null) R[0] |= 0x10;
+                        else {
+                            buf = [R[1], side, 1, 3, 0xff, 0x00]; idx = 0; len = 6;
+                            R[0] |= 0x01 | 0x02;
+                        }
+                        break;
+                    case 0xd0:
+                        buf = null; idx = 0; len = 0;
+                        R[0] = (R[0] & 0x01) ? R[0] & ~0x01 : 0x02 | (R[1] ? 0x00 : 0x04);
+                        break;
+                    case 0xe0: break;
+                    case 0xf0:
+                        [buf, idx, len] = (disk >= disks.length) ? [null, 0, 0] :
+                                disks[disk].seek(R[1], 1, 0);
+                        if (buf === null) R[0] |= 0x10;
+                        else {
+                            const d = new Uint8Array(5 * 1024); d.fill(0xe5);
+                            buf.set(d, idx);
+                            [buf, idx, len] = disks[disk].seek(R[1], 1, 1);
+                            buf.set(d, idx);
+                        }
+                        break;
+                }
+                break;
+            case 0x01: if ((R[0] & 0x01) === 0) R[1] = v; break;
+            case 0x02: if ((R[0] & 0x01) === 0) R[2] = v; break;
+            case 0x03:
+                if (len) {
+                    buf[idx++] = v;
+                    if (--len) {
+                        if (len % 1024 === 0) R[2]++;
+                    }
+                    else R[0] = R[0] & ~(0x01 | 0x02);
+                }
+                R[3] = v;
+                break;
+            case 0x20:
+                if ((R[0] & 0x01) === 0) { disk = v & 0x03; side = v >> 4 & 0x01 ^ 0x01; }
+                break;
+        }
+    };
+    return {read, write, disks};
 }
