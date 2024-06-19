@@ -102,6 +102,8 @@ async function o128memo(con) {
                 case 0xf700: case 0xf701: case 0xf702: case 0xf703:
                 case 0xf710: case 0xf711: case 0xf712: case 0xf713:
                     return wd1793.read(a & 0x03);
+                case 0xf704:
+                    return wd1793.read(0x00) >> 1;
                 default: return 0x00;
             }
             return ram[a];
@@ -124,7 +126,8 @@ async function o128memo(con) {
                 case 0xf700: case 0xf701: case 0xf702: case 0xf703:
                 case 0xf710: case 0xf711: case 0xf712: case 0xf713:
                     wd1793.write(a & 0x03, v); break;
-                case 0xf704: case 0xf714: case 0xf708:
+                case 0xf708: v = (v & 0x02) >> 1 | (v & 0x01) << 4;
+                case 0xf714:
                 case 0xf720: wd1793.write(0xf720 & 0x23, v); break;
             }
             else if (a >= 0xf800 && a < 0xf900) cmod = v & 0x07;
