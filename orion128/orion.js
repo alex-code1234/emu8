@@ -160,7 +160,8 @@ async function o128memo(con) {
     result.output = (p, v) => result.wr(p << 8 | p, v);
     result.bank = num => (num === undefined) ? bank : bank = num & 0x03;
     result.disks = wd1793.disks;
-    const canvas = con.canvas, scx = 1.9, scy = 1.9;
+    const canvas = con.canvas, scx = 1.9, scy = 1.9,
+          cp0 = new Uint32Array(384 * 256), cp1 = new Uint32Array(cp0.length);
     canvas.canvas.width = 384 * scx;
     canvas.canvas.height = 256 * scy;
     let grun = true,     // graphic monitor state
@@ -171,19 +172,36 @@ async function o128memo(con) {
         val, col,        // data and color values
         fg, bg,          // current foreground and background colors
         adr;             // current memory address
-    const d01 = () => val = ram[adr++],
-          c0167 = mask => (val & mask) ? fg : bg,
-    d45 = () => { col = ram1[adr]; val = ram[adr++]; },
+    const d01 = () => {
+        val = ram[adr];
+        const dirty = cp0[adr] !== val;
+        if (dirty) cp0[adr] = val;
+        adr++;
+        return dirty;
+    },
+    c0167 = mask => (val & mask) ? fg : bg,
+    d45 = () => {
+        col = ram1[adr]; val = ram[adr];
+        const dirty0 = cp0[adr] !== val;
+        if (dirty0) cp0[adr] = val;
+        const dirty1 = cp1[adr] !== col;
+        if (dirty1) cp1[adr] = col;
+        adr++;
+        return dirty0 || dirty1;
+    },
     c45 = mask => {
         const num = ((val & mask) ? 0x10 : 0x00) | ((col & mask) ? 0x01 : 0x00);
         return Screen_4_table[num + paloffs];
     },
     d67 = () => {
-        col = ram1[adr]; val = ram[adr++];
-        fg = Screen_16_table[col & 0x0f]; bg = Screen_16_table[col >> 4];
+        const dirty = d45();
+        if (dirty) {
+            fg = Screen_16_table[col & 0x0f]; bg = Screen_16_table[col >> 4];
+        }
+        return dirty;
     },
     draw = pixs => {     // update graphic monitor
-        let xstart = 0, x, y, pre;
+        let xstart = 0, x, y, pre, drt, dirty = false;
         adr = scrAdr;
         if (currcmod !== cmod) {
             switch (cmod) {
@@ -200,19 +218,26 @@ async function o128memo(con) {
                     fg = Screen_16_table[2]; bg = Screen_16_table[0];
                     data = d01; color = c0167; break;
             }
-            currcmod = cmod;
+            currcmod = cmod;                // display mode changed,
+            cp0.fill(0xff); cp1.fill(0xff); // invalidate cache
         }
         for (let i = 0; i < 48; i++) {
             y = 0;
             for (let j = 0; j < 256; j++) {
-                x = xstart; pre = 384 * y;
-                data();
-                for (let b = 0x80; b > 0; b >>= 1)
-                    pixs[pre + x++] = color(b);
+                x = xstart;
+                drt = data();
+                if (drt) {
+                    dirty = true;
+                    pre = 384 * y;
+                    for (let b = 0x80; b > 0; b >>= 1)
+                        pixs[pre + x++] = color(b);
+                }
+                else x += 8;
                 y++;
             }
             xstart += 8;
         }
+        return dirty;
     };
     const gmon = GMonitor(canvas, 384, 256, draw),
           ctoggle = con.toggle;

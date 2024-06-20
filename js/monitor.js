@@ -307,8 +307,8 @@ function GMonitor(canvas, width, height, draw, rate = 24) {
         const elapsed = nts - ts;
         if (elapsed >= frameRate) {
             ts = nts - elapsed % frameRate;
-            draw(pixs);
-            canvas.putImageData(idata, 0, 0);
+            if (draw(pixs))
+                canvas.putImageData(idata, 0, 0);
         }
     },
     start = () => {                         // start rendering
