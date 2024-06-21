@@ -425,7 +425,7 @@ async function ODIDisk(fname) {
         if (trk < 0 || trk >= cyls || sect < 1 || sect > sects || head < 0 || head > 1)
             return [null, 0, 0];
         const idx = ((trk * heads + head) * sects + sect - 1) * ssize;
-        return [data, idx, ssize * (len ? sects - sect + 1 : 1)];
+        return [data, idx, ssize * (len ? sects - sect + 1 : 1), ssize, sects];
     };
     if (size !== 819200)
         throw new Error(`disk image error: ${size}`);
@@ -434,7 +434,8 @@ async function ODIDisk(fname) {
 }
 
 function WD1793() {
-    let cmd = 0xd0, disk = 0, side = 0, buf = null, idx = 0, len = 0, step = 0;
+    let cmd = 0xd0, disk = 0, side = 0, step = 0,
+        buf = null, idx = 0, len = 0, ss = 0, sc = 0;
     const R = [0, 0, 0, 0], disks = [],
     read = num => {
         switch (num) {
@@ -453,7 +454,7 @@ function WD1793() {
                 if (len) {
                     R[3] = buf[idx++];
                     if (--len) {
-                        if (len % 1024 === 0) R[2]++;
+                        if (len % ss === 0) R[2]++;
                     }
                     else R[0] = R[0] & ~(0x01 | 0x02);
                 }
@@ -484,12 +485,14 @@ function WD1793() {
                         break;
                     case 0x80: case 0x90:
                     case 0xa0: case 0xb0:
-                        [buf, idx, len] = (disk >= disks.length) ? [null, 0, 0] :
+                        [buf, idx, len, ss, sc] = (disk >= disks.length) ?
+                                [null, 0, 0, 0, 0] :
                                 disks[disk].seek(R[1], R[2], side, v & 0x10);
                         R[0] = (buf === null) ? (R[0] & ~0x18) | 0x10 : R[0] | 0x01 | 0x02;
                         break;
                     case 0xc0:
-                        [buf, idx, len] = (disk >= disks.length) ? [null, 0, 0] :
+                        [buf, idx, len, ss, sc] = (disk >= disks.length) ?
+                                [null, 0, 0, 0, 0] :
                                 disks[disk].seek(R[1], 1, side);
                         if (buf === null) R[0] |= 0x10;
                         else {
@@ -503,13 +506,14 @@ function WD1793() {
                         break;
                     case 0xe0: break;
                     case 0xf0:
-                        [buf, idx, len] = (disk >= disks.length) ? [null, 0, 0] :
+                        [buf, idx, len, ss, sc] = (disk >= disks.length) ?
+                                [null, 0, 0, 0, 0] :
                                 disks[disk].seek(R[1], 1, 0);
                         if (buf === null) R[0] |= 0x10;
                         else {
-                            const d = new Uint8Array(5 * 1024); d.fill(0xe5);
+                            const d = new Uint8Array(sc * ss); d.fill(0xe5);
                             buf.set(d, idx);
-                            [buf, idx, len] = disks[disk].seek(R[1], 1, 1);
+                            [buf, idx] = disks[disk].seek(R[1], 1, 1);
                             buf.set(d, idx);
                         }
                         break;
@@ -521,7 +525,7 @@ function WD1793() {
                 if (len) {
                     buf[idx++] = v;
                     if (--len) {
-                        if (len % 1024 === 0) R[2]++;
+                        if (len % ss === 0) R[2]++;
                     }
                     else R[0] = R[0] & ~(0x01 | 0x02);
                 }
