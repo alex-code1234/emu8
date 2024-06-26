@@ -72,11 +72,11 @@ async function o128(scr) {
                     loadBin(await loadFile('orion128/BIOS.ROM', false), 0xf800);
                     loadROM(await loadFile('roms/ROMDISK.ROM', false));
                     if (o_kbd_gelay === 1)        // OS-DOS 2.3
-                        await loadDisk('roms/disk1.odi');
+                        await loadDisk('roms/DISK1.ODI');
                     else if (o_scr_width === 384) // OS-DOS 2.41
-                        await loadDisk('roms/disk2.odi');
+                        await loadDisk('roms/DISK2.ODI');
                     else                          // OS-DOS 3.60
-                        await loadDisk('roms/tp128.odi');
+                        await loadDisk('roms/TP128.ODI');
                 }
                 hardware.toggleDisplay();
                 CPU.reset(); CPU.setRegisters(['x', 'pc', 'f800']); run();
