@@ -1,15 +1,36 @@
 'use strict';
 
 async function orion(scr) {
-    const origLoadBin = loadBin; // override loadBin for banked memory
-    loadBin = (data, start) => {
-        const origwr = memo.wr;
-        memo.wr = memo.bwr;
-        try { return origLoadBin(data, start); }
-        finally { memo.wr = origwr; }
-    };
+    return await orion230(scr);
+}
+
+async function orion230(scr) {
+    o_kbd_gelay = 1; o_scr_scale = 1.9; o_scr_width = 384; o_scr_bytes = 48;
     return await o128(scr);
 }
+
+async function orion241(scr) {
+    o_kbd_gelay = 3; o_scr_scale = 1.9; o_scr_width = 384; o_scr_bytes = 48;
+    return await o128(scr);
+}
+
+async function orion360(scr) {
+    o_kbd_gelay = 3; o_scr_scale = 1.82; o_scr_width = 400; o_scr_bytes = 50;
+    return await o128(scr);
+}
+
+let o_kbd_gelay = 1,   // keyboard delay,     default 1;   for OS-DOS 2.41 and up set to 3
+    o_scr_scale = 1.9, // screen scale x,     default 1.9; for 400x256 set to 1.82
+    o_scr_width = 384, // screen width pixs,  default 384; for 400x256 set to 400
+    o_scr_bytes = 48;  // screen width bytes, default 48;  for 400x256 set to 50
+
+const origLoadBin = loadBin; // override loadBin for banked memory
+loadBin = (data, start) => {
+    const origwr = memo.wr;
+    memo.wr = memo.bwr;
+    try { return origLoadBin(data, start); }
+    finally { memo.wr = origwr; }
+};
 
 function loadROM(data) {
     loadBin(data, 0x10000);
@@ -25,22 +46,37 @@ async function loadDisk(fname, num = null) {
     else memo.disks[num] = disk;
 }
 
+// MON.ROM       - Monitor with R command to load from ROM disk (broken char-set and scr)
+// BIOS.ROM      - Monitor with auto-loading from ROM disk
+// ROMDISK.ROM   - ORDOS 4.03 ROM disk
+// ROMDISK.BIN   - DSDOS 3.9  ROM disk
+// ROMDSK512.BIN - DSDOS 3.9  ROM disk 512k
+// DISK1.ODI - OS-DOS48k 2.3
+// --------------------------------- keyboard delay 3
+// DISK2.ODI - OS-DOS48k 2.41 (win.com)
+// DISK4.ODI - OS-DOS48k 2.41 (socoban.com)
+// --------------------------------- + screen 400x256
+// CI.ODI    - OS-DOS60k 3.60 (BDS-C cc.com, CP/M 3.60 drivers required)
+// TP128.ODI - OS-DOS60k 3.60 (TP3.01 turbo.com for Z80, CP/M 3.60 drivers drv.com and drv7.com)
+// CP/M 3.60 drivers - http://rdk.regionsv.ru/orion128-soft-cpm80-v360-drv.htm
+// 400x256 screen    - http://rdk.regionsv.ru/orion128-soft-cpm80-v360-drv-01.htm
 async function o128(scr) {
-    const mod = await defaultHW(scr, new URLSearchParams('?cpu_type=0&mem_name=o128memo&kbd_name=o128keyboard')),
+    const mod = await defaultHW(scr, new URLSearchParams(
+            '?cpu_type=0&mem_name=o128memo&kbd_name=o128keyboard')),
           memo = mod.memo, cmd = mod.cmd, con = memo.con;
     mod.info = `Orion-128 (8080), 256K memory, 1M ROM disk, FDC, color screen`;
     mod.cmd = async (command, parms) => {
         switch (command) {
             case 'on':
-                // MON.ROM       - Monitor with R command to load from ROM disk (broken char-set and screen width)
-                // BIOS.ROM      - Monitor with auto-loading from ROM disk
-                // ROMDISK.ROM   - ORDOS ROM disk
-                // ROMDISK.BIN   - DSDOS ROM disk 3.9
-                // ROMDSK512.BIN - DSDOS ROM disk 3.9 512K
                 if (parms.length < 2 || parms[1] !== 'false') {
                     loadBin(await loadFile('orion128/BIOS.ROM', false), 0xf800);
                     loadROM(await loadFile('roms/ROMDISK.ROM', false));
-                    await loadDisk('roms/disk1.odi');
+                    if (o_kbd_gelay === 1)        // OS-DOS 2.3
+                        await loadDisk('roms/disk1.odi');
+                    else if (o_scr_width === 384) // OS-DOS 2.41
+                        await loadDisk('roms/disk2.odi');
+                    else                          // OS-DOS 3.60
+                        await loadDisk('roms/tp128.odi');
                 }
                 hardware.toggleDisplay();
                 CPU.reset(); CPU.setRegisters(['x', 'pc', 'f800']); run();
@@ -70,6 +106,10 @@ async function o128(scr) {
             case 'rd':   // insert or replace disk
                 if (parms.length < 2) console.error('missing: fname [0..3]');
                 else await loadDisk(parms[1], parms[2]);
+                break;
+            case 'kbd':  // push key code
+                if (parms.length >= 2) con.kbd.keys.push(+parms[1]);
+                console.log(con.kbd.keys);
                 break;
             default: return cmd(command, parms);
         }
@@ -103,7 +143,7 @@ async function o128memo(con) {
                 case 0xf710: case 0xf711: case 0xf712: case 0xf713:
                     return wd1793.read(a & 0x03);
                 case 0xf704:
-                    return wd1793.read(0x00) >> 1;
+                    return wd1793.read(0x00) >> 1 | wd1793.IRQ();
                 default: return 0x00;
             }
             return ram[a];
@@ -160,9 +200,9 @@ async function o128memo(con) {
     result.output = (p, v) => result.wr(p << 8 | p, v);
     result.bank = num => (num === undefined) ? bank : bank = num & 0x03;
     result.disks = wd1793.disks;
-    const canvas = con.canvas, scx = 1.9, scy = 1.9,
-          cp0 = new Uint32Array(384 * 256), cp1 = new Uint32Array(cp0.length);
-    canvas.canvas.width = 384 * scx;
+    const canvas = con.canvas, scx = o_scr_scale, scy = 1.9,
+          cp0 = new Uint32Array(o_scr_width * 256), cp1 = new Uint32Array(cp0.length);
+    canvas.canvas.width = o_scr_width * scx;
     canvas.canvas.height = 256 * scy;
     let grun = true,     // graphic monitor state
         currcmod,        // current graphic mode
@@ -221,14 +261,14 @@ async function o128memo(con) {
             currcmod = cmod;                // display mode changed,
             cp0.fill(0xff); cp1.fill(0xff); // invalidate cache
         }
-        for (let i = 0; i < 48; i++) {
+        for (let i = 0; i < o_scr_bytes; i++) {
             y = 0;
             for (let j = 0; j < 256; j++) {
                 x = xstart;
                 drt = data();
                 if (drt) {
                     dirty = true;
-                    pre = 384 * y;
+                    pre = o_scr_width * y;
                     for (let b = 0x80; b > 0; b >>= 1)
                         pixs[pre + x++] = color(b);
                 }
@@ -239,7 +279,7 @@ async function o128memo(con) {
         }
         return dirty;
     };
-    const gmon = GMonitor(canvas, 384, 256, draw),
+    const gmon = GMonitor(canvas, o_scr_width, 256, draw),
           ctoggle = con.toggle;
     con.toggle = () => { // override to start/stop graphic monitor
         ctoggle();
@@ -377,10 +417,10 @@ async function o128keyboard(con, memo) {
             }
             const key = Keyboard_key_table[kbd.keys[0]], key0 = key[0];
             let ch = 0xff;
-            if (key0 == 0x00 || key0 == kbd.kscn) {
+            if (key0 == 0x00 || key0 == kbd.kscn || kbd.kscn === 0x00) {
                 ch = key[1];
                 if (key.length > 2) kbd.kmod = key[2];
-                const delay = (key0 == 0x00) ? 9 : 1;
+                const delay = (key0 == 0x00) ? 9 : o_kbd_gelay;
                 kbd.key_delay++;
                 if (kbd.key_delay > delay) {
                     kbd.key_delay = 0;
@@ -434,7 +474,7 @@ async function ODIDisk(fname) {
 }
 
 function WD1793() {
-    let cmd = 0xd0, disk = 0, side = 0, step = 0,
+    let cmd = 0xd0, disk = 0, side = 0, step = 0, irq = 0x00,
         buf = null, idx = 0, len = 0, ss = 0, sc = 0;
     const R = [0, 0, 0, 0], disks = [],
     read = num => {
@@ -455,8 +495,10 @@ function WD1793() {
                     R[3] = buf[idx++];
                     if (--len) {
                         if (len % ss === 0) R[2]++;
+                    } else {
+                        R[0] = R[0] & ~(0x01 | 0x02);
+                        irq = 0x80;
                     }
-                    else R[0] = R[0] & ~(0x01 | 0x02);
                 }
                 return R[3];
                 break;
@@ -467,21 +509,24 @@ function WD1793() {
         switch (num) {
             case 0x00:
                 if (R[0] & 0x01 && v & 0xf0 !== 0xd0) break;
-                cmd = v;
+                cmd = v; irq = 0x00;
                 switch (cmd & 0xf0) {
                     case 0x00:
                         R[1] = 0;
                         R[0] = 0x02 | 0x04 | ((v & 0x08) ? 0x20 : 0x00);
+                        irq = 0x80;
                         break;
                     case 0x10:
                         buf = null; idx = 0; len = 0; R[1] = R[3];
                         R[0] = 0x02 | (R[1] ? 0x00 : 0x04) | ((v & 0x08) ? 0x20 : 0x00);
+                        irq = 0x80;
                         break;
                     case 0x20: case 0x30: case 0x40:
                     case 0x50: case 0x60: case 0x70:
                         if (v & 0x40) step = v & 0x20; else v = (v & ~0x20) | step;
                         if (v & 0x20) { if (R[1]) R[1]--; } else R[1]++;
                         R[0] = 0x02 | (R[1] ? 0x00 : 0x04);
+                        irq = 0x80;
                         break;
                     case 0x80: case 0x90:
                     case 0xa0: case 0xb0:
@@ -489,13 +534,16 @@ function WD1793() {
                                 [null, 0, 0, 0, 0] :
                                 disks[disk].seek(R[1], R[2], side, v & 0x10);
                         R[0] = (buf === null) ? (R[0] & ~0x18) | 0x10 : R[0] | 0x01 | 0x02;
+                        if (buf === null) irq = 0x80;
                         break;
                     case 0xc0:
                         [buf, idx, len, ss, sc] = (disk >= disks.length) ?
                                 [null, 0, 0, 0, 0] :
                                 disks[disk].seek(R[1], 1, side);
-                        if (buf === null) R[0] |= 0x10;
-                        else {
+                        if (buf === null) {
+                            R[0] |= 0x10;
+                            irq = 0x80;
+                        } else {
                             buf = [R[1], side, 1, 3, 0xff, 0x00]; idx = 0; len = 6;
                             R[0] |= 0x01 | 0x02;
                         }
@@ -503,6 +551,7 @@ function WD1793() {
                     case 0xd0:
                         buf = null; idx = 0; len = 0;
                         R[0] = (R[0] & 0x01) ? R[0] & ~0x01 : 0x02 | (R[1] ? 0x00 : 0x04);
+                        if (v & 0x08) irq = 0x80;
                         break;
                     case 0xe0: break;
                     case 0xf0:
@@ -526,8 +575,10 @@ function WD1793() {
                     buf[idx++] = v;
                     if (--len) {
                         if (len % ss === 0) R[2]++;
+                    } else {
+                        R[0] = R[0] & ~(0x01 | 0x02);
+                        irq = 0x80;
                     }
-                    else R[0] = R[0] & ~(0x01 | 0x02);
                 }
                 R[3] = v;
                 break;
@@ -536,5 +587,5 @@ function WD1793() {
                 break;
         }
     };
-    return {read, write, disks};
+    return {read, write, disks, "IRQ": () => irq};
 }
