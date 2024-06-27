@@ -417,7 +417,7 @@ async function o128keyboard(con, memo) {
             }
             const key = Keyboard_key_table[kbd.keys[0]], key0 = key[0];
             let ch = 0xff;
-            if (key0 == 0x00 || key0 == kbd.kscn || kbd.kscn === 0x00) {
+            if (key0 == 0x00 || ((~key0 & 0xff) & (~kbd.kscn & 0xff)) !== 0) {
                 ch = key[1];
                 if (key.length > 2) kbd.kmod = key[2];
                 const delay = (key0 == 0x00) ? 9 : o_kbd_gelay;
