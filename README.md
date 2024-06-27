@@ -40,7 +40,8 @@ UI structure:
 - console logging space
 
 System monitor keeps history of last 7 commands \(access by CTRL-w, implemented in index.html) and supports following
-commands \(all parameters are HEX numbers, if not specified; the emulator must be stopped first with CTRL-n):
+commands \(all parameters are HEX numbers, if not specified; the emulator must be stopped first with CTRL-n
+(default) or CTRL-s (if hardware keyboard used)):
 - **\<empty>** \- one step execution
 - **x** \- show/set CPU registers/flags: x \[name1 value1 ...], where name is register/flag name
 - **g** \- execute program: g \[addr], if no addr then continue execution from the last stop

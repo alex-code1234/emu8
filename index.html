@@ -482,7 +482,7 @@ let history_index = history.length - 1;
 
 // translate hardware keyboard keys to mobile soft keyboard keys
 const kbd_opt_set = (URL_OPTS.get('hw_kbd') ?? 'false') === 'true';
-let kbd_ctrl = false;
+let kbd_ctrl = false, stop_char = kbd_opt_set ? 's' : 'n';
 function kbd_translate(ev, down) {
     if (kbd_opt_set) {
         const evc = {'key': ev.key, 'keyCode': ev.keyCode, 'target': ev.target};
@@ -534,8 +534,8 @@ async function main() {
         try {
             if (CPU.RUN)
                 // emulate keyboard
-                if (ev.key === 'n') {
-                    // CTRL-n
+                if (ev.key === stop_char) {
+                    // CTRL-n or CTRL-s (stop emulation)
                     CPU.RUN = false;
                     if (ZOOM_OPT) {            // monitor mode, show keyboard
                         kbd.style.position = 'relative'; kbd.style.zIndex = '10';
