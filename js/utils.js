@@ -33,44 +33,55 @@ const console = {
         return (...args) => {
             if (console._log === null)
                 console._log = document.getElementById('log');
-            const length = console._log.innerHTML.length;
+            const nl = document.createElement('span');
+            nl.style.color = color;
+            if (bgcolor !== null)
+                nl.style.background = bgcolor;
+            console._log.appendChild(nl);
             console.log(...args);
-            const bg = (bgcolor === null) ? '' : ` background-color: ${bgcolor};`;
-            console._log.innerHTML = console._log.innerHTML.substr(0, length) +
-                    `<span style="color: ${color};${bg}">` +
-                    console._log.innerHTML.substr(length,
-                            console._log.innerHTML.length).replaceAll(' ', '&nbsp;') +
-                    '</span>';
         };
     },
     CLEAR: [],
     DELIMITER: ' ',
-    NB: [], // no break, must be last parameter
+    NB: [],            // no break, must be last parameter
+    MAX_LENGTH: 10000, // circular log buffer size - 1
     log: (...args) => {
         if (console._log === null)
             console._log = document.getElementById('log');
-        let length = args.length, lf = true;
-        if (length > 0) {
-            if (args[length - 1] === console.NB) {
+        console.___log(console, ...args);
+    },
+    ___log: (prms, ...args) => {
+        let len = args.length, lf = true, clog = prms._log, parent = clog,
+            lc = parent.lastChild, s = '', n;
+        if (lc !== null && lc.nodeType !== Node.TEXT_NODE && !lc.hasChildNodes())
+            parent = lc;
+        if (len > 0) {
+            if (args[len - 1] === console.NB) {
                 lf = false;
-                length--;
+                len--;
             }
-            for (let i = 0; i < length; i++) {
+            for (let i = 0; i < len; i++) {
                 let data = args[i];
                 if (data === console.CLEAR) {
-                    console._log.innerHTML = '';
+                    prms._log.innerHTML = '';
                     continue;
                 }
                 data = (Array.isArray(data) || ArrayBuffer.isView(data)) ?
                         console._strarr(data) :
                         console._strobj(data);
-                console._log.innerHTML += data;
-                if (i < length - 1)
-                    console._log.innerHTML += console.DELIMITER;
+                s += data;
+                if (i < len - 1)
+                    s += console.DELIMITER;
             }
         }
         if (lf)
-            console._log.innerHTML += '<br/>';
+            s += '\n';
+        if (clog.childNodes.length > prms.MAX_LENGTH &&
+                (n = clog.removeChild(clog.firstChild)).nodeType === Node.TEXT_NODE)
+            n.nodeValue = s;
+        else
+            n = document.createTextNode(s);
+        parent.appendChild(n);
     },
     assert: (exp, em, sm = null) => (!exp) ? console.error(em) : console.info(sm ? sm : em),
     clear: () => console.log(console.CLEAR)
@@ -79,12 +90,13 @@ console.warn = console._logwrapper('yellow');
 console.error = console._logwrapper('red');
 console.info = console._logwrapper('green');
 console.open = function(x, y, w, h, fg = null, bckg = null) {
-    const wnd = document.createElement('div');
+    const wnd = document.createElement('pre');
     x = (x > 0.0 && x <= 1.0) ? (x * 100 | 0) + '%' : x + 'px';
     y = (y > 0.0 && y <= 1.0) ? (y * 100 | 0) + '%' : y + 'px';
     w = (w > 0.0 && w <= 1.0) ? (w * 100 | 0) + '%' : w + 'px';
     h = (h > 0.0 && h <= 1.0) ? (h * 100 | 0) + '%' : h + 'px';
-    wnd.setAttribute('style', `position:absolute;left:${x};top:${y};width:${w};height:${h};overflow:auto;`);
+    wnd.setAttribute('style',
+            `margin:0px;position:absolute;left:${x};top:${y};width:${w};height:${h};overflow:auto;`);
     wnd.className = 'log_wnd';
     return [
         document.body.appendChild(wnd),
