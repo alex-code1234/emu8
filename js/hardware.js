@@ -7,7 +7,7 @@ async function defaultHW(scr, opts) {
     const {con, toggleDisplay, cinfo} = await initModule(opts, 'mon', ['js/monitor.js', 'createConsole'], scr),
           memo = await initModule(opts, 'mem', ['', 'createMemo'], con),
           cpu = await initModule(opts, 'cpu', ['', 'createCpu'], memo),
-          {keyboard, kinfo} = await initModule(opts, 'kbd', ['', 'createKeyboard'], con, memo),
+          {keyboard, kinfo, keyboardFS} = await initModule(opts, 'kbd', ['', 'createKeyboard'], con, memo),
           info = `${cinfo ?? 'Unknown'} monitor with ${kinfo ?? 'unknown'} keyboard\n` +
                   `CPU: ${cpuName(CPUTYPE)}, memory: ${memo.size ? memo.size / 1024 : '???'}K, ` +
                   ((CPUTYPE === 2) ?
@@ -154,7 +154,8 @@ async function defaultHW(scr, opts) {
         toggleDisplay,                                                                // console visibility
         keyboard,                                                                     // keyboard
         info,                                                                         // optional HW info
-        cmd                                                                           // optional command processor
+        cmd,                                                                          // optional command processor
+        keyboardFS                                                                    // full screen keyboard
     };
 }
 
@@ -244,6 +245,50 @@ async function createKeyboard(con, memo) {
                 con.kbd.push(val);
             }
         },
-        'kinfo': 'ANSI'                                                               // optional info
+        'kinfo': 'ANSI',                                                              // optional info
+        'keyboardFS': con => (shft, ctrl, alt, txt) => {                              // full screen keyboard
+            let val = null;
+            switch (txt) {
+                case 'Esc': val = 27; break;
+                case 'F1':
+                case 'F2':
+                case 'F3':
+                case 'F4':
+                case 'F5':
+                case 'F6':
+                case 'F7':
+                case 'F8':
+                case 'F9':
+                case 'F10':
+                case 'F11':
+                case 'F12': break;
+                case 'Backspace': val = 8; break;
+                case 'Tab': val = 9; break;
+                case 'Enter': val = 13; break;
+                case 'Space': val = 32; break;
+                case 'Insert': break;
+                case 'Home': break;
+                case 'PgUp': val = 18; break;
+                case 'Del': val = 127; break;
+                case 'End': break;
+                case 'PgDn': val = 3; break;
+                case '\u8592': val = 19; break;
+                case '\u8593': val = 5; break;
+                case '\u8594': val = 4; break;
+                case '\u8595': val = 24; break;
+                default:
+                    if (txt.length > 1) val = txt.charCodeAt(shft ? 0 : 1);
+                    else {
+                        if (!shft) txt = txt.toLowerCase();
+                        val = txt.charCodeAt(0);
+                    }
+                    break;
+            }
+            if (val !== null) {
+                val &= 0xff;
+                if (ctrl && val > 96) val -= 96;
+                con.kbd.push(val);
+            }
+        }
     };
 }
