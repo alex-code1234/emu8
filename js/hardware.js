@@ -266,16 +266,16 @@ async function createKeyboard(con, memo) {
                 case 'Tab': val = 9; break;
                 case 'Enter': val = 13; break;
                 case 'Space': val = 32; break;
-                case 'Insert': break;
-                case 'Home': break;
+                case 'Insert': val = 15; break;
                 case 'PgUp': val = 18; break;
                 case 'Del': val = 127; break;
-                case 'End': break;
+                case 'Home':
+                case 'End': val = 2; break;
                 case 'PgDn': val = 3; break;
-                case '\u8592': val = 19; break;
-                case '\u8593': val = 5; break;
-                case '\u8594': val = 4; break;
-                case '\u8595': val = 24; break;
+                case '\u2190': val = 19; break;
+                case '\u2191': val = 5; break;
+                case '\u2192': val = 4; break;
+                case '\u2193': val = 24; break;
                 default:
                     if (txt.length > 1) val = txt.charCodeAt(shft ? 0 : 1);
                     else {
@@ -286,7 +286,10 @@ async function createKeyboard(con, memo) {
             }
             if (val !== null) {
                 val &= 0xff;
-                if (ctrl && val > 96) val -= 96;
+                if (ctrl) {
+                    if (val >= 0x60) val -= 0x60;
+                    if (val >= 0x40) val -= 0x40;
+                }
                 con.kbd.push(val);
             }
         }
