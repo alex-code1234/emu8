@@ -1,5 +1,7 @@
 'use strict';
 
+let con, cono, confs;
+
 async function cpm(scr) {                 // default version
     return await cpm22(scr);
 }
@@ -108,6 +110,7 @@ async function cpm_init(scr, version) {   // CP[MP]/M init
                 CPU.reset(); CPU.setPC(0x1000); run();
                 break;
             case 'on':                    // start emulator (false - do not load disks)
+            case 'onfs':                  // run full screen with soft keyboard
                 if (parms[1] !== 'false') switch (version) {
                     case 0:
                         CPM_DRIVES[0] = await CPMDisk('cpm/cpma.cpm');
@@ -131,7 +134,11 @@ async function cpm_init(scr, version) {   // CP[MP]/M init
                 if ((boot_err = CPM_DRIVES[0].transfer(0, 1, 0x0000, true, memo)) !== 0)
                     console.error(`boot error: ${boot_err}`);
                 else {
-                    hardware.toggleDisplay();
+                    if (command === 'on') hardware.toggleDisplay();
+                    else {
+                        con = confs;
+                        showFS();
+                    }
                     CPU.reset(); run();
                 }
                 break;
@@ -167,6 +174,20 @@ async function cpm_init(scr, version) {   // CP[MP]/M init
         }
         return true;
     };
+    const elem = document.getElementById('scrfs'),
+          style = getComputedStyle(elem);
+    confs = await VT_100(elem, {COLORS: [
+        style.getPropertyValue('background-color'),
+        '#0000aa', '#00aa00', '#00aaaa', '#aa0000', '#aa00aa', '#aa5500',
+        style.getPropertyValue('color'),
+        '#555555', '#5555ff', '#55ff55', '#55ffff', '#ff5555', '#ff55ff', '#ffff55', '#ffffff'
+    ]});
+    mod.resetFS = () => confs.setColors([
+        0, style.getPropertyValue('background-color'),
+        7, style.getPropertyValue('color')
+    ]);
+    mod.exitFS = () => con = cono;
+    mod.keyboardFS = mod.keyboardFS(confs);
     return mod;
 }
 
@@ -190,7 +211,8 @@ const CPM_DRIVES = [          // available in:
     null  // P: (512Mb harddisk)                     MP/M
 ];
 
-async function cpm_memo(con) {            // CPM system memory and IO
+async function cpm_memo(tmp) {            // CPM system memory and IO
+    con = cono = tmp;
     await loadScript('js/disks.js'); // use disks
     const ram = new Uint8Array(65536),
           SEG = 49152, rams = [new Uint8Array(SEG), ram],
