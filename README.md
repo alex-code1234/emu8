@@ -213,6 +213,16 @@ should create and return an object with following structure:
 - **info** \- HW info: string, optional
 - **cmd** \- command processor: async function(command, parms), optional
 
+To support full screen mode with soft keyboard the object must have:
+- **resetFS** \- reset full screen mode theme: function()
+- **exitFS** \- exit full screen mode: function()
+- **keyboardFS** \- soft keyboard control: function(shift, ctrl, alt, txt), where shift, ctrl and alt are
+                 active modifier flags, txt - pressed button text content.
+                 Default handler is implemented in **defaultHW**.keyboardFS: function(con), where
+                 con is terminal object, instantiated for canvas with id **scrfs**; returns the handler.
+
+Full screen mode is activated by **showFS** method.
+
 To use generic emulator functionality, the main function should call **defaultHW**(scr, URLSearchParams) function and
 return the result. If URLSearchParams parameter is empty, the result will be generic emulator. Customization of
 returned object is possible by overriding the object's properties or replacing parts of the object by providing URL

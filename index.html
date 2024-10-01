@@ -1,13 +1,62 @@
 <!DOCTYPE html>
-<html lang='en'>
+<html lang='en' data-theme='dark'>
 <head>
-    <meta name='viewport' content='initial-scale=1'/>
+    <meta name='viewport' content='width=device-width, initial-scale=1'/>
     <style type='text/css'>
 @font-face { font-family: 'CP437'; src: url('cp437.ttf'); }
 #kbd { width: 663px; }
 #scr { background-color: black; margin-top: 10px; display: none; }
 .log_wnd { font-family: monospace; font-size: 14px; border: 1px solid black;
            background-color: #faf9f6; padding: 8px; }
+[data-theme='dark'] {                   /* color theme dark */
+    --background: #121212;                                /* background (0dp elevation surface) */
+    --surface: rgba(255, 255, 255, 0.05);                 /* surface (1dp elevation surface) */
+    --primary: #bb86fc;                                   /* primary color */
+    --secondary: #161616;                                 /* secondary color */
+    --onbackground: #ffffff;                              /* on background */
+    --onsurface: #ffffff;                                 /* on surface */
+    --onprimary: #000000;                                 /* on primary */
+    --onsecondary: #98989c;                               /* on secondary */
+    --textnormal: 0.6;                                    /* normal text (60% opacity) */
+}
+[data-theme='light'] {                  /* color theme light */
+    --background: #ffffff;
+    --primary: #6200ee;
+    --secondary: #f0f0f0;
+    --onbackground: #000000;
+    --onsurface: #000000;
+    --onprimary: #ffffff;
+    --onsecondary: #202020;
+}
+[data-theme='light'] .surface {
+    box-shadow: 0 1px 4px 0 rgba(0, 0, 0, 0.05);
+}
+#runtime {                              /* emulator container */
+    background-color: var(--background); color: var(--onbackground); }
+.keyboard {                             /* soft keyboard */
+    --key_size: 36px;
+    background-color: var(--surface); color: var(--onsurface); opacity: var(--textnormal);
+    width: calc(36 * var(--key_size) / 2 + 34 * var(--key_size) / 10 + var(--key_size) / 2);
+    margin-left: auto; margin-right: auto; padding: 5px; font-family: sans-serif;
+    display: grid; grid-template-columns: auto auto; grid-gap: calc(var(--key_size) / 2); }
+.section { display: grid; grid-template-rows: repeat(6, calc(var(--key_size) / 1.36));
+           grid-gap: calc(var(--key_size) / 10); }
+.section.left { grid-template-columns: repeat(30, calc(var(--key_size) / 2)); }
+.section.right { grid-template-columns: repeat(6, calc(var(--key_size) / 2)); }
+.key { border: calc(var(--key_size) / 30) solid var(--onsurface);
+       border-radius: calc(var(--key_size) / 10); grid-column: span 2;
+       font-size: calc(var(--key_size) / 3.5); text-align: center; cursor: pointer;
+       display: flex; flex-direction: column; align-items: center; justify-content: space-around; }
+.key:active { border-color: var(--primary); }
+.sp20 { grid-column: span 20; }                           /* space */
+.sp5 { grid-column: span 5; }                             /* leftshift rightshift */
+.sp4 { grid-column: span 4; }                             /* backspace capslock enter */
+.sp3 { grid-column: span 3; }                             /* tab backslash leftctrl rightctrl */
+.sp2 { grid-column: span 2; }                             /* empty key */
+.key.i { font-size: 14px; /*font-weight: 600;*/ }         /* icon key */
+#scrfs {                                /* terminal */
+    background-color: var(--secondary); color: var(--onsecondary);
+    width: 100%; display: block; }
     </style>
     <script type='text/javascript'>
 window.onerror = function(event, source, line, col, error) {
@@ -22,6 +71,61 @@ window.onerror = function(event, source, line, col, error) {
     <input id='kbd' type='text'/><br/>
     <canvas id='scr'></canvas>
     <pre id='log'></pre>
+    <div id='runtime' style='display:none;'>
+        <canvas id='scrfs' class='surface'></canvas>
+        <div class='keyboard surface'>
+            <div class='section left'>
+                <div class='key'>Esc</div><div class='key'>F1</div><div class='key'>F2</div>
+                <div class='key'>F3</div><div class='key'>F4</div><div class='key'>F5</div>
+                <div class='key'>F6</div><div class='key'>F7</div><div class='key'>F8</div>
+                <div class='key'>F9</div><div class='key'>F10</div><div class='key'>F11</div>
+                <div class='key'>F12</div><div class='sp2'></div><div class='sp2'></div>
+                <div class='key'><span>~</span><span>`</span></div>
+                <div class='key'><span>!</span><span>1</span></div>
+                <div class='key'><span>@</span><span>2</span></div>
+                <div class='key'><span>#</span><span>3</span></div>
+                <div class='key'><span>$</span><span>4</span></div>
+                <div class='key'><span>%</span><span>5</span></div>
+                <div class='key'><span>^</span><span>6</span></div>
+                <div class='key'><span>&</span><span>7</span></div>
+                <div class='key'><span>*</span><span>8</span></div>
+                <div class='key'><span>(</span><span>9</span></div>
+                <div class='key'><span>)</span><span>0</span></div>
+                <div class='key'><span>_</span><span>-</span></div>
+                <div class='key'><span>+</span><span>=</span></div><div class='key sp4'>Backspace</div>
+                <div class='key sp3'>Tab</div><div class='key'>Q</div><div class='key'>W</div>
+                <div class='key'>E</div><div class='key'>R</div><div class='key'>T</div>
+                <div class='key'>Y</div><div class='key'>U</div><div class='key'>I</div>
+                <div class='key'>O</div><div class='key'>P</div>
+                <div class='key'><span>{</span><span>[</span></div>
+                <div class='key'><span>}</span><span>]</span></div>
+                <div class='key sp3'><span>|</span><span>\</span></div>
+                <div class='key sp4'>CapsLock</div><div class='key'>A</div><div class='key'>S</div>
+                <div class='key'>D</div><div class='key'>F</div><div class='key'>G</div>
+                <div class='key'>H</div><div class='key'>J</div><div class='key'>K</div>
+                <div class='key'>L</div><div class='key'><span>:</span><span>;</span></div>
+                <div class='key'><span>"</span><span>'</span></div><div class='key sp4'>Enter</div>
+                <div class='key sp5'>Shift</div><div class='key'>Z</div><div class='key'>X</div>
+                <div class='key'>C</div><div class='key'>V</div><div class='key'>B</div>
+                <div class='key'>N</div><div class='key'>M</div>
+                <div class='key'><span><</span><span>,</span></div>
+                <div class='key'><span>></span><span>.</span></div>
+                <div class='key'><span>?</span><span>/</span></div><div class='key sp5'>Shift</div>
+                <div class='key sp3'>Ctrl</div><div class='key'>Alt</div>
+                <div class='key sp20'>Space</div>
+                <div class='key'>Alt</div><div class='key sp3'>Ctrl</div>
+            </div>
+            <div class='section right'>
+                <div class='key i'>&#9770;</div><div class='sp2'></div><div class='key'>Stop</div>
+                <div class='key'>Insert</div><div class='key'>Home</div><div class='key'>PgUp</div>
+                <div class='key'>Del</div><div class='key'>End</div><div class='key'>PgDn</div>
+                <div class='sp2'></div><div class='sp2'></div><div class='sp2'></div>
+                <div class='sp2'></div><div class='key'>&#8593;</div><div class='sp2'></div>
+                <div class='key'>&#8592;</div><div class='key'>&#8595;</div>
+                <div class='key'>&#8594;</div>
+            </div>
+        </div>
+    </div>
     <script type='text/javascript'>
 'use strict';
 
@@ -525,6 +629,14 @@ function kbd_translate(ev, down) {
     return ev;
 }
 
+// show full screen UI
+function showFS() {
+    const elem = document.getElementById('runtime');
+    elem.style.display = 'block';
+    elem.requestFullscreen();
+}
+
+let fs_shift = false, fs_ctrl = false, fs_alt = false, fs_caps = false;
 async function main() {
     await monitor(`cpu ${CPUTYPE}`);
     let kbd = document.getElementById('kbd'), evc;
@@ -577,6 +689,52 @@ async function main() {
             console.error(exc.message + '\n', exc.stack);
         }
         })(evc);
+    };
+    const shfts = document.getElementsByClassName('key sp5');
+    let ctrl = null, alt = null;
+    document.getElementsByClassName('keyboard')[0].onclick = e => {
+        let elem = e.target;
+        if (elem.tagName === 'SPAN') elem = elem.parentNode;
+        const txt = elem.innerText.replace('\n', '');
+        switch (txt) {
+            case '\u262a':
+                const htm = document.querySelector('html'),
+                      theme = htm.getAttribute('data-theme');
+                htm.setAttribute('data-theme', (theme === 'dark') ? 'light' : 'dark');
+                hardware.resetFS();
+                break;
+            case 'Stop':
+                CPU.RUN = false;
+                document.exitFullscreen();
+                document.getElementById('runtime').style.display = 'none';
+                hardware.exitFS();
+                break;
+            case 'CapsLock':
+                fs_caps = !fs_caps; fs_shift = fs_caps;
+                shfts[0].style.borderColor = shfts[1].style.borderColor = fs_caps ?
+                        'var(--primary)' : 'var(--onsurface)';
+                break;
+            case 'Shift': fs_shift = true; elem.style.borderColor = 'var(--primary)'; break;
+            case 'Ctrl':
+                if (fs_ctrl) ctrl.style.borderColor = 'var(--onsurface)';
+                else fs_ctrl = true;
+                elem.style.borderColor = 'var(--primary)'; ctrl = elem;
+                break;
+            case 'Alt':
+                if (fs_alt) alt.style.borderColor = 'var(--onsurface)';
+                else fs_alt = true;
+                elem.style.borderColor = 'var(--primary)'; alt = elem;
+                break;
+            default:
+                hardware.keyboardFS(fs_shift, fs_ctrl, fs_alt, txt);
+                if (!fs_caps && fs_shift) {
+                    shfts[0].style.borderColor = shfts[1].style.borderColor = 'var(--onsurface)';
+                    fs_shift = false;
+                }
+                if (fs_ctrl) { ctrl.style.borderColor = 'var(--onsurface)'; fs_ctrl = false; }
+                if (fs_alt) { alt.style.borderColor = 'var(--onsurface)'; fs_alt = false; }
+                break;
+        }
     };
 }
 
