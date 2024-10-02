@@ -1,6 +1,6 @@
 'use strict';
 
-let con, cono, confs;
+let con, cono, confs, confs2;
 
 async function cpm(scr) {                 // default version
     return await cpm22(scr);
@@ -175,19 +175,47 @@ async function cpm_init(scr, version) {   // CP[MP]/M init
         return true;
     };
     const elem = document.getElementById('scrfs'),
-          style = getComputedStyle(elem);
-    confs = await VT_100(elem, {COLORS: [
-        style.getPropertyValue('background-color'),
-        '#0000aa', '#00aa00', '#00aaaa', '#aa0000', '#aa00aa', '#aa5500',
-        style.getPropertyValue('color'),
-        '#555555', '#5555ff', '#55ff55', '#55ffff', '#ff5555', '#ff55ff', '#ffff55', '#ffffff'
-    ]});
-    mod.resetFS = () => confs.setColors([
-        0, style.getPropertyValue('background-color'),
-        7, style.getPropertyValue('color')
-    ]);
+          style = getComputedStyle(elem),
+          COLORS = [
+              style.getPropertyValue('background-color'),
+              '#0000aa', '#00aa00', '#00aaaa', '#aa0000', '#aa00aa', '#aa5500',
+              style.getPropertyValue('color'),
+              '#555555', '#5555ff', '#55ff55', '#55ffff', '#ff5555', '#ff55ff', '#ffff55', '#ffffff'
+          ];
+    confs = await VT_100(elem, {COLORS});
+    const cnv2 = document.createElement('canvas');        // second canvas element
+    cnv2.style = 'width:100%;'; cnv2.style.display = 'none';
+    document.getElementById('runtime').insertBefore(cnv2, elem);
+    confs2 = await VT_100(cnv2, {COLORS});                // second console
+    mod.resetFS = () => {
+        const clrs = [
+            0, style.getPropertyValue('background-color'),
+            7, style.getPropertyValue('color')
+        ];
+        confs.setColors(clrs);
+        confs2.setColors(clrs);
+    };
     mod.exitFS = () => con = cono;
-    mod.keyboardFS = mod.keyboardFS(confs);
+    const origkbdfs = mod.keyboardFS(confs),              // first kbd handler
+          secdkbdfs = mod.keyboardFS(confs2),             // first kbd handler and switch button
+          conkey = document.getElementsByClassName('section right')[0].childNodes[2];
+    conkey.className = 'key i'; conkey.innerHTML = '&#10112;';
+    let kbdhandler = origkbdfs;
+    mod.keyboardFS = (shft, ctrl, alt, txt) => {
+        switch (txt) {
+            case '\u2780':
+                conkey.innerHTML = '&#10113;';
+                elem.style.display = 'none'; cnv2.style.display = 'block';
+                kbdhandler = secdkbdfs;
+                break;
+            case '\u2781':
+                conkey.innerHTML = '&#10112;';
+                cnv2.style.display = 'none'; elem.style.display = 'block';
+                kbdhandler = origkbdfs;
+                break;
+            default: kbdhandler(shft, ctrl, alt, txt); break;
+        }
+    };
     return mod;
 }
 
@@ -274,7 +302,8 @@ async function cpm_memo(tmp) {            // CPM system memory and IO
                     const tens = (res / 10) | 0,
                           units = (res % 10) | 0;
                     return (tens << 4) | units;
-                case 0x28: return 0x00;                                                 // console 1 status
+                case 0x28: return (confs2.kbd.length > 0) ? 0x03 : 0x02;                // console 1 status
+                case 0x29: return (confs2.kbd.length > 0) ? confs2.kbd.shift() & 0x7f : 0x02;
                 case 0x2a: return 0x00;                                                 // console 2 status
                 case 0x2c: return 0x00;                                                 // console 3 status
                 case 0x2e: return 0x00;                                                 // console 4 status
@@ -332,6 +361,7 @@ async function cpm_memo(tmp) {            // CPM system memory and IO
                     break;
                 case 0x19: clkcmd = v & 0xff; break;                                    // clock command
                 case 0x1b: timer10(v); break;                                           // 10ms interrupt timer
+                case 0x29: confs2.display(v & 0xff); break;
                 case 0xdd: GSX(con, v); break;                                          // GSX support
                 default: throw new Error(`unknown output port: ${p.toString(16).padStart(2, '0')}`);
             }
