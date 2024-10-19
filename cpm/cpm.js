@@ -313,7 +313,7 @@ async function cpm_memo(tmp) {            // CPM system memory and IO
         'output': (p, v) => {
             switch (p) {
                 case 0x00:                                                              // tests data
-                    if (v === 0x0a) v = 0x0d;
+                    if (v === 0x0a) { console.log(); break; }
                     else if (v === 0x0d) break;
                     console.log(String.fromCharCode(v), console.NB);
                     break;
