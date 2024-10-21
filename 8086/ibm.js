@@ -396,6 +396,7 @@ function getScanCode(key, code, value) {
         case 90 /*VK_DOWN      ctrl-z*/: return [0x50, 0];
         case 75 /*VK_PAGE_DOWN ctrl-k*/: return [0x51, 0];
         case 73 /*VK_INSERT    ctrl-i*/: return [0x52, 0];
+        case 80 /*CTRL-ALT-DEL ctrl-,*/: return [0x53, [0x1d, 0x38]];
         case 229:
             let modifier = 0;
             if (value >= 'A' && value <= 'Z') {
