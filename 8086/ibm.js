@@ -1,5 +1,7 @@
 'use strict';
 
+let con, cono, confs, scrvis = false;
+
 async function ibm(scr) {                 // default version
     return await pc(scr);
 }
@@ -32,20 +34,149 @@ async function initibm(proc, info, fnc) { // generic init
     mod.info = info;
     mod.cmd = async (command, parms) => { // intercept command processor
         switch (command) {
-            case 'on':
+            case 'on':                    // start emulator (false - set soft reset flag)
+            case 'onfs':                  // run full screen with soft keyboard
                 await fnc(mod, memo, cmd);
                 memo.wr(0x472, 0x00); memo.wr(0x473, 0x00);     // reset soft reset flag
                 if (parms.length > 1 && parms[1] === 'false') {
                     memo.wr(0x472, 0x34); memo.wr(0x473, 0x12); // set soft reset flag
                 }
-                hardware.toggleDisplay();
+                if (command === 'on') hardware.toggleDisplay();
+                else {
+                    con = confs;
+                    showFS();
+                    scrvis = true; memo.vcu();
+                }
                 CPU.reset(); CPU.setRegisters({cs: 0xffff, ip: 0x0000}); run();
                 break;
             default: return cmd(command, parms);
         }
         return true;
     };
+    const elem = document.getElementById('scrfs'),
+          style = getComputedStyle(elem),
+          COLORS = [
+              style.getPropertyValue('background-color'),
+              '#0000aa', '#00aa00', '#00aaaa', '#aa0000', '#aa00aa', '#aa5500',
+              style.getPropertyValue('color'),
+              '#555555', '#5555ff', '#55ff55', '#55ffff', '#ff5555', '#ff55ff', '#ffff55', '#ffffff'
+          ];
+    confs = await VT_100(elem, {COLORS});
+    confs.print('^[?25l');                // hide VT-100 cursor
+    mod.resetFS = () => {
+        const clrs = [
+            0, style.getPropertyValue('background-color'),
+            7, style.getPropertyValue('color')
+        ];
+        confs.setColors(clrs);
+    };
+    mod.exitFS = () => { scrvis = false; con = cono; };
+    mod.keyboardFS = (shft, ctrl, alt, txt) => {
+        let cde = 0, modifier = [];
+        switch (txt) {
+            case 'Esc': cde = 0x01; break;
+            case '!1': cde = 0x02; break;
+            case '@2': cde = 0x03; break;
+            case '#3': cde = 0x04; break;
+            case '$4': cde = 0x05; break;
+            case '%5': cde = 0x06; break;
+            case '^6': cde = 0x07; break;
+            case '&7': cde = 0x08; break;
+            case '*8': cde = 0x09; break;
+            case '(9': cde = 0x0a; break;
+            case ')0': cde = 0x0b; break;
+            case '_-': cde = 0x0c; break;
+            case '+=': cde = 0x0d; break;
+            case 'Backspace': cde = 0x0e; break;
+            case 'Tab': cde = 0x0f; break;
+            case 'Q': cde = 0x10; break;
+            case 'W': cde = 0x11; break;
+            case 'E': cde = 0x12; break;
+            case 'R': cde = 0x13; break;
+            case 'T': cde = 0x14; break;
+            case 'Y': cde = 0x15; break;
+            case 'U': cde = 0x16; break;
+            case 'I': cde = 0x17; break;
+            case 'O': cde = 0x18; break;
+            case 'P': cde = 0x19; break;
+            case '{[': cde = 0x1a; break;
+            case '}]': cde = 0x1b; break;
+            case 'Enter': cde = 0x1c; break;
+            case 'A': cde = 0x1e; break;
+            case 'S': cde = 0x1f; break;
+            case 'D': cde = 0x20; break;
+            case 'F': cde = 0x21; break;
+            case 'G': cde = 0x22; break;
+            case 'H': cde = 0x23; break;
+            case 'J': cde = 0x24; break;
+            case 'K': cde = 0x25; break;
+            case 'L': cde = 0x26; break;
+            case ':;': cde = 0x27; break;
+            case '"\'': cde = 0x28; break;
+            case '~`': cde = 0x29; break;
+            case '|\\': cde = 0x2b; break;
+            case 'Z': cde = 0x2c; break;
+            case 'X': cde = 0x2d; break;
+            case 'C': cde = 0x2e; break;
+            case 'V': cde = 0x2f; break;
+            case 'B': cde = 0x30; break;
+            case 'N': cde = 0x31; break;
+            case 'M': cde = 0x32; break;
+            case '<,': cde = 0x33; break;
+            case '>.': cde = 0x34; break;
+            case '?/': cde = 0x35; break;
+            case 'Space': cde = 0x39; break;
+            case 'F1': cde = 0x3b; break;
+            case 'F2': cde = 0x3c; break;
+            case 'F3': cde = 0x3d; break;
+            case 'F4': cde = 0x3e; break;
+            case 'F5': cde = 0x3f; break;
+            case 'F6': cde = 0x40; break;
+            case 'F7': cde = 0x41; break;
+            case 'F8': cde = 0x42; break;
+            case 'F9': cde = 0x43; break;
+            case 'F10': cde = 0x44; break;
+            case 'F11': cde = 0x57; break;
+            case 'F12': cde = 0x58; break;
+            case 'Home': cde = 0x47; break;
+            case 'PgUp': cde = 0x49; break;
+            case 'End': cde = 0x4f; break;
+            case 'PgDn': cde = 0x51; break;
+            case 'Insert': cde = 0x52; break;
+            case 'Del': cde = 0x53; break;
+            case '\u2190': cde = 0x4b; break;
+            case '\u2191': cde = 0x48; break;
+            case '\u2192': cde = 0x4d; break;
+            case '\u2193': cde = 0x50; break;
+        }
+        if (cde > 0) {
+            if (shft) modifier.push(0x2a);
+            if (ctrl) modifier.push(0x1d);
+            if (alt) modifier.push(0x38);
+            FSKeyPress(cde, modifier);
+        }
+    };
     return mod;
+}
+
+async function FSKeyPress(cde, modifier) {
+    async function mods(mod, up) {
+        for (let i = 0; i < mod.length; i++)
+            if (up) {
+                await delay(10);
+                memo.ppi.keyTyped(0x80 | mod[i]);
+            } else {
+                memo.ppi.keyTyped(mod[i]);
+                await delay(10);
+            }
+    }
+    if (!Array.isArray(modifier))
+        modifier = (modifier > 0) ? [modifier] : [];
+    await mods(modifier, false);
+    memo.ppi.keyTyped(cde);
+    await delay(10);
+    memo.ppi.keyTyped(0x80 | cde);
+    await mods(modifier, true);
 }
 
 async function cibm(memo) {               // IBM PC CPU
@@ -74,10 +205,11 @@ async function cibm(memo) {               // IBM PC CPU
 
 const DRIVES = [undefined, undefined, undefined]; // disk drives
 
-async function mibm(con) {                // IBM PC system IO
+async function mibm(tmp) {                // IBM PC system IO
+    con = cono = tmp;
     con.print('^[?25l');                  // hide VT-100 cursor
     const ram = new Uint8Array(0x100000);
-    let crtc = null, ocl = -1, scrvis = false,
+    let crtc = null, ocl = -1,
         base = 0xb8000, cols = 80, lsiz = 160, stad = 0,
         em_b = null, em_e, em_w, em_r,    // EMS parameters
         eg_b = null, eg_e, eg_w, eg_r;    // EGA parameters
@@ -352,19 +484,7 @@ async function kibm(con, memo) {          // IBM PC keyboard
             if (value === null)
                 return;
             const [cde, modifier] = getScanCode(key, code, value);
-            if (cde > 0) {
-                if (modifier > 0) {
-                    memo.ppi.keyTyped(modifier);
-                    await delay(10);
-                }
-                memo.ppi.keyTyped(cde);
-                await delay(10);
-                memo.ppi.keyTyped(0x80 | cde);
-                if (modifier > 0) {
-                    await delay(10);
-                    memo.ppi.keyTyped(0x80 | modifier);
-                }
-            }
+            if (cde > 0) await FSKeyPress(cde, modifier);
         }
     };
 }
