@@ -38,29 +38,34 @@ async function VT_100(screen, {
         '#000000', '#0000aa', '#00aa00', '#00aaaa', '#aa0000', '#aa00aa', '#aa5500', '#aaaaaa',
         '#555555', '#5555ff', '#55ff55', '#55ffff', '#ff5555', '#ff55ff', '#ffff55', '#ffffff'
     ],
-    FONT_WIDTH = 9, FONT_HEIGHT = 16, FONT_OFFSET = 12, SCR_WIDTH = 80, SCR_HEIGHT = 25,
-    FONT_G0 = 'CP437', FONT_G1 = null
+    FONT_WIDTH = 9, FONT_HEIGHT = 16, FONT_OFFSET = 4,
+    SCR_WIDTH = 80, SCR_HEIGHT = 25,
+    FONT_G0 = 'CP437', FONT_G1 = null, AA = false        // anti alias
 } = {}) {
-    await document.fonts.load(`${FONT_HEIGHT}px ${FONT_G0}`); // force font loading
-    if (FONT_G1 !== null)
-        await document.fonts.load(`${FONT_HEIGHT}px ${FONT_G1}`);
     if (typeof screen === 'string')
         screen = document.getElementById(screen);
     const canvas = screen.getContext('2d'),
           keys = [],                                     // keyboard buffer
           ps = [],                                       // vt100 ESC parameters
-          origWidth = SCR_WIDTH;                         // actual screen width (others will scale)
+    toRGB = c => {
+        if (c.charAt(0) === '#')
+            return [+`0x${c.substr(1, 2)}`, +`0x${c.substr(3, 2)}`, +`0x${c.substr(5, 2)}`];
+        return c.substr(4, c.length - 5).split(',').map(e => +e.trim());
+    };
     let inesc = false, esc = '',                         // vt100 ESC sequences
         x = 0, y = 0,                                    // vt100 cursor
         fi = 7, bi = 0,                                  // vt100 color indexes
         f = COLORS[fi], b = COLORS[bi], bright = false,  // vt100 colors
+        ff = toRGB(f), bb = toRGB(b),                    // vt100 RGB colors
         sx, sy, sfi, sbi, sbright, inprms = false,       // vt100 parameters
-        cv = true;                                       // cursor visibility
+        cv = true,                                       // cursor visibility
+        chsize = FONT_WIDTH * FONT_HEIGHT,               // char bitmap size
+        font, font0, font1 = null;                       // font bitmaps
     const cursor = () => {
         if (!cv) return;
         let cx, cy, i = 0;
-        const chr = canvas.getImageData(cx = 5 + x * FONT_WIDTH,
-              cy = 5 + y * FONT_HEIGHT, FONT_WIDTH, FONT_HEIGHT),
+        const chr = canvas.getImageData(cx = x * FONT_WIDTH,
+              cy = y * FONT_HEIGHT, FONT_WIDTH, FONT_HEIGHT),
               data = chr.data;
         while (i < data.length) {
             data[i] = 255 - data[i++];
@@ -74,18 +79,28 @@ async function VT_100(screen, {
         y++;
         if (y >= SCR_HEIGHT) {
             y = SCR_HEIGHT - 1;
-            const copy = canvas.getImageData(5, 5 + FONT_HEIGHT, screen.width - 10,
-                    screen.height - FONT_HEIGHT - 10);
-            canvas.putImageData(copy, 5, 5);
-            clearScr(5, screen.height - FONT_HEIGHT - 5, screen.width - 10, FONT_HEIGHT);
+            const copy = canvas.getImageData(0, FONT_HEIGHT, screen.width,
+                    screen.height - FONT_HEIGHT);
+            canvas.putImageData(copy, 0, 0);
+            clearScr(0, screen.height - FONT_HEIGHT, screen.width, FONT_HEIGHT);
         }
     },
-    outChar = (chr) => {
-        const cx = x * FONT_WIDTH + 5,
-              cy = y * FONT_HEIGHT + 5;
-        clearScr(cx, cy, FONT_WIDTH, FONT_HEIGHT);
-        canvas.fillStyle = f;
-        canvas.fillText(chr, cx, cy + FONT_OFFSET);
+    cout = ccode => {
+        const cx = x * FONT_WIDTH, cy = y * FONT_HEIGHT,
+              img = canvas.getImageData(cx, cy, FONT_WIDTH, FONT_HEIGHT),
+              dat = img.data;
+        let midx = ccode * chsize, i = 0;
+        while (i < dat.length) {
+            const c = font[midx++] ? ff : bb;
+            dat[i++] = c[0];
+            dat[i++] = c[1];
+            dat[i++] = c[2];
+            i++;
+        }
+        canvas.putImageData(img, cx, cy);
+    },
+    outChar = ccode => {
+        cout(ccode);
         if (cv) {
             x++;
             if (x >= SCR_WIDTH) { x = 0; newLine(); }
@@ -94,17 +109,18 @@ async function VT_100(screen, {
     },
     clearScr = (x = 0, y = 0, w = screen.width, h = screen.height) => {
         b = COLORS[0];
+        bb = toRGB(b);
         canvas.fillStyle = b;
         canvas.fillRect(x, y, w, h);
     },
-    numcode = (num) => {
+    numcode = num => {
         const str = num.toString(), res = [];
         for (let i = 0, n = str.length; i < n; i++)
             res.push(str.charCodeAt(i) & 0xff);
         return res;
     },
-    chrn = (chr) => chr.charCodeAt(0),
-    processEsc = (chr) => {
+    chrn = chr => chr.charCodeAt(0),
+    processEsc = chr => {
         if (inprms) {
             if ((chr >= '0' && chr <= '9') || chr === '?') {
                 ps[ps.length - 1] += chr; return;
@@ -122,14 +138,17 @@ async function VT_100(screen, {
             case '8':
                 cursor(); x = sx; y = sy; cursor();
                 fi = sfi; bi = sbi; bright = sbright; f = COLORS[fi]; b = COLORS[bi];
+                ff = toRGB(f); bb = toRGB(b);
                 break;
             case '[u': cursor(); x = sx; y = sy; cursor(); break;
             case '[A': cursor(); y -= ps[0] ? ps[0] | 0 : 1; if (y < 0) y = 0; cursor(); break;
             case '[B':
-                cursor(); y += ps[0] ? ps[0] | 0 : 1; if (y >= SCR_HEIGHT) y = SCR_HEIGHT - 1; cursor();
+                cursor(); y += ps[0] ? ps[0] | 0 : 1; if (y >= SCR_HEIGHT) y = SCR_HEIGHT - 1;
+                cursor();
                 break;
             case '[C':
-                cursor(); x += ps[0] ? ps[0] | 0 : 1; if (x >= SCR_WIDTH) x = SCR_WIDTH - 1; cursor();
+                cursor(); x += ps[0] ? ps[0] | 0 : 1; if (x >= SCR_WIDTH) x = SCR_WIDTH - 1;
+                cursor();
                 break;
             case '[D': cursor(); x -= ps[0] ? ps[0] | 0 : 1; if (x < 0) x = 0; cursor(); break;
             case '[H':
@@ -143,10 +162,11 @@ async function VT_100(screen, {
             case '[J':
                 let t1;
                 switch (ps[0]) {
-                    case '1': clearScr(5, 5, screen.width - 10, (y + 1) * FONT_HEIGHT); cursor(); break;
+                    case '1': clearScr(0, 0, screen.width, (y + 1) * FONT_HEIGHT); cursor();
+                    break;
                     case '2': clearScr(); x = 0; y = 0; cursor(); break;
                     default:
-                        clearScr(5, t1 = 5 + y * FONT_HEIGHT, screen.width - 10, screen.height - 5 - t1);
+                        clearScr(0, t1 = y * FONT_HEIGHT, screen.width, screen.height - t1);
                         cursor();
                         break;
                 }
@@ -155,13 +175,13 @@ async function VT_100(screen, {
                 let t2;
                 switch (ps[0]) {
                     case '1':
-                        clearScr(5, 5 + y * FONT_HEIGHT, (x + 1) * FONT_WIDTH, FONT_HEIGHT); cursor();
+                        clearScr(0, y * FONT_HEIGHT, (x + 1) * FONT_WIDTH, FONT_HEIGHT); cursor();
                         break;
                     case '2':
-                        clearScr(5, 5 + y * FONT_HEIGHT, screen.width - 10, FONT_HEIGHT); cursor();
+                        clearScr(0, y * FONT_HEIGHT, screen.width, FONT_HEIGHT); cursor();
                         break;
                     default:
-                        clearScr(t2 = 5 + x * FONT_WIDTH, 5 + y * FONT_HEIGHT, screen.width - 5 - t2,
+                        clearScr(t2 = x * FONT_WIDTH, y * FONT_HEIGHT, screen.width - t2,
                                 FONT_HEIGHT);
                         cursor();
                         break;
@@ -170,36 +190,39 @@ async function VT_100(screen, {
             case '[m':
                 for (let i = 0, n = ps.length; i < n; i++) {
                     let num = pi(ps[i], false);
-                    if (num === 0) { fi = 7; bi = 0; f = COLORS[fi]; b = COLORS[bi]; bright = false; }
+                    if (num === 0) {
+                        fi = 7; bi = 0; f = COLORS[fi]; b = COLORS[bi]; bright = false;
+                        ff = toRGB(f); bb = toRGB(b);
+                    }
                     else if (num === 1 && bi < 8) {
                         fi += 8; bi += 8; f = COLORS[fi]; b = COLORS[bi]; bright = true;
+                        ff = toRGB(f); bb = toRGB(b);
                     }
                     else if (num === 2 && bi >= 8) {
                         fi -= 8; bi -= 8; f = COLORS[fi]; b = COLORS[bi]; bright = false;
+                        ff = toRGB(f); bb = toRGB(b);
                     }
                     else if (num >= 30 && num <= 37) {
                         num -= 30; if (bright) num += 8; fi = num; f = COLORS[fi];
+                        ff = toRGB(f);
                     }
                     else if (num >= 40 && num <= 47) {
                         num -= 40; if (bright) num += 8; bi = num; b = COLORS[bi];
+                        bb = toRGB(b);
                     }
                 }
                 break;
             case '[n':
                 if (ps[0] === '6')
-                    keys.push(27, chrn('['), ...numcode(y + 1), chrn(';'), ...numcode(x + 1), chrn('R'));
+                    keys.push(27, chrn('['), ...numcode(y + 1), chrn(';'), ...numcode(x + 1),
+                            chrn('R'));
                 else {
                     inesc = false; esc = '';
                     throw new Error(`unknown ESC index: ${ps[0]}`);
                 }
                 break;
-            case '(':
-                canvas.font = `${FONT_HEIGHT}px ${FONT_G0}`;
-                break;
-            case ')':
-                if (FONT_G1 !== null)
-                    canvas.font = `${FONT_HEIGHT}px ${FONT_G1}`;
-                break;
+            case '(': font = font0; break;
+            case ')': if (font1 !== null) font = font1; break;
             case '[h':
                 if (ps[0] !== '?25') throw new Error(`unknown ESC: [${ps[0]}h`);
                 if (!cv) { cv = true; cursor(); }
@@ -214,49 +237,79 @@ async function VT_100(screen, {
         }
         inesc = false; esc = '';
     },
-    display = (chr) => {
-        switch (chr) {
+    display = ccode => {
+        switch (ccode) {
             case 0x08: cursor(); if (x > 0) x--; cursor(); break;
             case 0x0a: cursor(); newLine(); cursor(); break;
             case 0x0d: cursor(); x = 0; cursor(); break;
             case 0x1b: inesc = true; break;
             default:
-                chr = String.fromCharCode(chr);
-                if (inesc) processEsc(chr); else outChar(chr);
+                if (inesc) processEsc(String.fromCharCode(ccode)); else outChar(ccode);
                 break;
         }
     },
-    zoom = ZOOM_OPT ?                        // zoom URL option (scale width and height, margin left and top)
-            (ZOOM_OPT === 'tablet') ?
-                    [1.4, 1.525, 139, 98] :  // predefined tablet zoom
-            (ZOOM_OPT === 'tv') ?
-                    [1.83, 2.245, 296, 229] : // predefined TV zoom
-                    ZOOM_OPT.split(',') :    // custom zoom
-            null,                            // no zoom
-    z0 = zoom ? +zoom[0] : 1, z1 = zoom ? +zoom[1] : 1, z2 = zoom ? +zoom[2] : 0,
-    setWidth = (width) => {
-        SCR_WIDTH = width; screen.width = FONT_WIDTH * width + 10;
-        canvas.font = `${FONT_HEIGHT}px ${FONT_G0}`;
-        let trn = null, mrg = null, mrgt = null;
-        if (zoom) {
-            trn = `scale(${z0}, ${z1})`; mrg = `${z2}px`; mrgt = `${zoom[3]}px`;
+    loadFont = async (fname, debug = false) => {
+        const fmasks = new Uint8Array(chsize * 256),
+              fnt = `${FONT_HEIGHT}px ${fname}`,
+              style = getComputedStyle(screen),
+              orig_width = style.width, orig_height = style.height;
+        await document.fonts.load(fnt);
+        screen.width = FONT_WIDTH * SCR_WIDTH; screen.height = FONT_HEIGHT * SCR_HEIGHT;
+        screen.style.width = `${screen.width}px`; screen.style.height = `${screen.height}px`;
+        canvas.font = fnt;
+        canvas.fillStyle = '#000000';
+        canvas.fillRect(0, 0, screen.width, screen.height);
+        canvas.fillStyle = '#ffffff';
+        let x = FONT_WIDTH, y = FONT_HEIGHT, midx = chsize;
+        for (let i = 1; i < 256; i++) {
+            canvas.fillText(String.fromCharCode(i), x, y - FONT_OFFSET);
+            const d = canvas.getImageData(x, y - FONT_HEIGHT, FONT_WIDTH, FONT_HEIGHT).data;
+            for (let k = 0, j = 0; j < chsize; k += 4, j++) {
+                const dr = d[k], dg = d[k + 1], db = d[k + 2], da = d[k + 3],
+                      dot = (dr > 100 && dg > 100 && db > 100 && da > 100) ? 1 : 0;
+                fmasks[midx++] = dot;
+            }
+            x += FONT_WIDTH;
+            if (x >= screen.width) {
+                x = 0; y += FONT_HEIGHT;
+            }
         }
-        if (width !== origWidth) {
-            let tmp = FONT_WIDTH * (origWidth - width);
-            if (tmp > 0) tmp += 10; else tmp -= 5;
-            trn = `scale(${z0 * origWidth / width}, ${z1})`; mrg = `${z2 + (tmp / 2 | 0)}px`;
+        if (debug) for (let i = 0; i < 256; i++) {
+            let midx = i * chsize, bitmap, sm = 1 << FONT_WIDTH - 1;
+            console.log(i.toString(16).padStart(2, '0'));
+            for (let j = 0; j < FONT_HEIGHT; j++) {
+                bitmap = 0;
+                for (let k = 0; k < FONT_WIDTH; k++) {
+                    const mask = fmasks[midx++];
+                    bitmap |= (mask ? sm : 0) >> k;
+                }
+                console.log(bitmap.toString(2).padStart(FONT_WIDTH, '0'));
+            }
         }
-        screen.style.transform = trn; screen.style.marginLeft = mrg; screen.style.marginTop = mrgt;
+        screen.style.width = orig_width; screen.style.height = orig_height;
+        return fmasks;
+    },
+    setWidth = (cols, rows) => {
+        SCR_WIDTH = cols;
+        if (rows !== undefined) SCR_HEIGHT = rows;
+        screen.width = FONT_WIDTH * SCR_WIDTH; screen.height = FONT_HEIGHT * SCR_HEIGHT;
         clearScr(); cursor();
     },
     setColors = (clrs) => {
         for (let i = 0, n = clrs.length - 2; i <= n; i += 2)
             COLORS[clrs[i]] = clrs[i + 1];
         x = 0; y = 0; fi = 7; bi = 0; f = COLORS[fi]; b = COLORS[bi]; bright = false;
+        ff = toRGB(f); bb = toRGB(b);
         clearScr(); cursor();
     };
-    screen.height = FONT_HEIGHT * SCR_HEIGHT + 10;
-    setWidth(SCR_WIDTH);
+    if (!AA) {
+        screen.style.imageRendering = 'pixelated';
+        canvas.imageSmoothingEnabled = false;
+    }
+    font0 = await loadFont(FONT_G0);
+    if (FONT_G1 !== null) font1 = await loadFont(FONT_G1);
+    font = font0;
+    clearScr(); cursor();
     return {
         display,
         'kbd': keys,
@@ -265,7 +318,7 @@ async function VT_100(screen, {
         setWidth,
         setColors,
         'xy': (xx, yy) => { x = xx; y = yy; },
-        'print': (str) => {
+        'print': str => {
             str = str                                    // string conversion:
                     .replaceAll('^', '\x1b')             // ^ to ESC
                     .replaceAll('_', ' ')                // _ to space
@@ -274,16 +327,13 @@ async function VT_100(screen, {
                 display(str.charCodeAt(i) & 0xff);
         },
         canvas,
-        'output': (xx, yy, fg, bg, chr) => {             // direct output
+        'output': (xx, yy, fg, bg, ccode) => {           // direct output
             x = xx; y = yy;
             f = COLORS[fg]; b = COLORS[bg];
-            const cx = x * FONT_WIDTH + 5,
-                  cy = y * FONT_HEIGHT + 5;
-            canvas.fillStyle = b;
-            canvas.fillRect(cx, cy, FONT_WIDTH, FONT_HEIGHT);
-            canvas.fillStyle = f;
-            canvas.fillText(String.fromCharCode(chr), cx, cy + FONT_OFFSET);
-        }
+            ff = toRGB(f); bb = toRGB(b);
+            cout(ccode);
+        },
+        loadFont
     };
 }
 
