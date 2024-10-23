@@ -251,6 +251,7 @@ async function mibm(tmp) {                // IBM PC system IO
                 const video = ram[0x449],
                       wdth = (video < 2) ? 40 : 80;
                 base = (video === 7) ? 0xb0000 : 0xb8000;
+                if (a < base) return;     // outside of current video buffer
                 stad = (crtc.getRegister(0x0c) << 8 | crtc.getRegister(0x0d)) << 1;
                 if (cols !== wdth) {
                     cols = wdth;
