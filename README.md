@@ -128,7 +128,8 @@ parameter to the generic emulator URL. Start by **on** command.
 [The emulator](https://alex-code1234.github.io/emu8/?boot=8086/ibm&boot_name=xt) is loaded by adding
 boot=8086/ibm&boot_name=xt URL parameter to the generic emulator URL. Uses only original software, no specialized ROMs.
 Start by **on** command with optional parameter (true|false) to execute BIOS tests during boot (default true),
-**onfs** - boot in full screen mode.<br>
+**onfs** - boot in full screen mode.
+
 Configuration: BIOS - IBM XT rev.1 11/08/82 (bios2.bin), IBM EGA 64K monitor (ibm_ega.bin), 2 FDC (empty) and
 pre-loaded 10M HDC.
 
