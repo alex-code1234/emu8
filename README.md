@@ -31,9 +31,6 @@ Default CPU is 8080, can be changed by URL parameter cpu_type=type, where type i
 By default mobile soft keyboard is supported, to use hardware keyboard (or run on non mobile device) add special 
 parameter **hw_kbd=true** to the URL.
 
-There is special parameter **zoom** to enlarge emulated display to 100%. 4 comma delimited numbers are
-passed: scale_x, scale_y, margin_left, margin_top. 2 predefined values are **tablet** and **tv**.
-
 UI structure:
 - HTML input element to interact with system monitor \(command followed by \<CR> key)
 - canvas element for the terminal \(can be hidden)
@@ -130,7 +127,8 @@ parameter to the generic emulator URL. Start by **on** command.
 
 [The emulator](https://alex-code1234.github.io/emu8/?boot=8086/ibm&boot_name=xt) is loaded by adding
 boot=8086/ibm&boot_name=xt URL parameter to the generic emulator URL. Uses only original software, no specialized ROMs.
-Start by **on** command with optional parameter (true|false) to execute BIOS tests during boot (default true).<br>
+Start by **on** command with optional parameter (true|false) to execute BIOS tests during boot (default true),
+**onfs** - boot in full screen mode.<br>
 Configuration: BIOS - IBM XT rev.1 11/08/82 (bios2.bin), IBM EGA 64K monitor (ibm_ega.bin), 2 FDC (empty) and
 pre-loaded 10M HDC.
 
@@ -161,7 +159,8 @@ All versions:
 - **on** \- boot OS: on true|false, where true|false is flag to auto mount drives \(default true)
          bootable OS disk is mounted to drive A: \(cpma.cpm, cpm3a.cpm or mpma.cpm) and
          additional software disk is mounted to drive B: \(cpmb_turbo.cpm, cpm3b.cpm)
-         or empty I: drive \(for MP/M)
+         or empty I: drive \(for MP/M),
+         **onfs** - boot in full screen mode.
 - **ccopy** \- get/set save console data flag: ccopy \[true|false]. true \- save scrolled out console data
             \(clear previous data)
 - **console** \- show saved console data
