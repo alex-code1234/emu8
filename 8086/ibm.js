@@ -248,8 +248,11 @@ async function mibm(tmp) {                // IBM PC system IO
                     return;
                 ram[a] = v;
                 // check video settings
-                const video = ram[0x449],
-                      wdth = (video < 2) ? 40 : 80;
+                const video = ram[0x449];
+                let wdth = (video < 2) ? 40 : 80, rows = 25;
+                if (ram[0x484] === 0x2a) { // 8x8 font
+                    wdth = 90; rows = 43;
+                }
                 base = (video === 7) ? 0xb0000 : 0xb8000;
                 if (a < base) return;     // outside of current video buffer
                 stad = (crtc.getRegister(0x0c) << 8 | crtc.getRegister(0x0d)) << 1;
@@ -257,7 +260,7 @@ async function mibm(tmp) {                // IBM PC system IO
                     cols = wdth;
                     lsiz = (cols === 40) ? 80 : 160;
                     ocl = -1;
-                    con.setWidth(cols);
+                    con.setWidth(cols, rows);
                 }
                 // draw character with attribute
                 const idx = a - base - stad;
