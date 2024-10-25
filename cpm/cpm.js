@@ -532,13 +532,13 @@ function GSX(con, v) {
             con.canvas.setLineDash(GSX_LSTYLS[GSX_lstyl]);
             con.canvas.fillStyle = con.canvas.strokeStyle;
             con.canvas.beginPath();
-            con.canvas.moveTo(plx1 + 5, 399 - ply1 + 5);
+            con.canvas.moveTo(plx1, 399 - ply1);
             while (plidx <= plcnt) {
                 const plx2 = geti(ptsin, plidx++), ply2 = geti(ptsin, plidx++);
                 if (plx1 === plx2 && ply1 === ply2)
-                    con.canvas.fillRect(plx1 + 5, 399 - ply1 + 5, GSX_lwdth, GSX_lwdth);
+                    con.canvas.fillRect(plx1, 399 - ply1, GSX_lwdth, GSX_lwdth);
                 else
-                    con.canvas.lineTo(plx2 + 5, 399 - ply2 + 5);
+                    con.canvas.lineTo(plx2, 399 - ply2);
                 plx1 = plx2; ply1 = ply2;
             }
             con.canvas.stroke();
@@ -549,18 +549,18 @@ function GSX(con, v) {
             let pmidx = 1;
             con.canvas.fillStyle = GSX_COLORS[GSX_pmcolr];
             while (pmidx <= pmcnt)
-                con.canvas.fillText(pmtxt, geti(ptsin, pmidx++) + 5 - 4, 399 - geti(ptsin, pmidx++) + 5 + 5);
+                con.canvas.fillText(pmtxt, geti(ptsin, pmidx++) - 4, 399 - geti(ptsin, pmidx++) + 5);
             break;
         case 8:                                        // text
             let gst = '';
             for (let j = 1, n = geti(contrl, 4); j <= n; j++)
                 gst += String.fromCharCode(geti(intin, j));
             con.canvas.fillStyle = GSX_COLORS[GSX_txcolr];
-            con.canvas.fillText(gst, geti(ptsin, 1) + 5, 399 - geti(ptsin, 2) + 5 - 2);
+            con.canvas.fillText(gst, geti(ptsin, 1), 399 - geti(ptsin, 2) - 2);
             break;
         case 9:                                        // filled area
             const facnt = geti(contrl, 2) * 2,
-                  fax = geti(ptsin, 1) + 5, fay = 399 - geti(ptsin, 2) + 5;
+                  fax = geti(ptsin, 1), fay = 399 - geti(ptsin, 2);
             let faidx = 3;
             con.canvas.strokeStyle = GSX_COLORS[GSX_ficolr];
             con.canvas.lineWidth = 1;
@@ -569,7 +569,7 @@ function GSX(con, v) {
             con.canvas.beginPath();
             con.canvas.moveTo(fax, fay);
             while (faidx <= facnt)
-                con.canvas.lineTo(geti(ptsin, faidx++) + 5, 399 - geti(ptsin, faidx++) + 5);
+                con.canvas.lineTo(geti(ptsin, faidx++), 399 - geti(ptsin, faidx++));
             con.canvas.lineTo(fax, fay);
             con.canvas.fill();
             break;
@@ -581,7 +581,7 @@ function GSX(con, v) {
             con.canvas.lineWidth = 1;
             con.canvas.setLineDash([]);
             con.canvas.beginPath();
-            con.canvas.rect(cax1 + 5, 399 - cay2 + 5, caw, cah);
+            con.canvas.rect(cax1, 399 - cay2, caw, cah);
             con.canvas.stroke();
             break;
         case 11:                                       // generalized drawing primitive
@@ -592,7 +592,7 @@ function GSX(con, v) {
                           gdpx2 = geti(ptsin, 3), gdpy2 = geti(ptsin, 4),
                           gdpw = gdpx2 - gdpx1, gdph = gdpy2 - gdpy1;
                     con.canvas.fillStyle = GSX_COLORS[GSX_ficolr];
-                    con.canvas.fillRect(gdpx1 + 5, 399 - gdpy2 + 5, gdpw, gdph);
+                    con.canvas.fillRect(gdpx1, 399 - gdpy2, gdpw, gdph);
                     break;
                 case 2:                                // arc
                     const arcsa = geti(intin, 1) * Math.PI / 1800.0,
@@ -601,11 +601,11 @@ function GSX(con, v) {
                     con.canvas.lineWidth = GSX_lwdth;
                     con.canvas.setLineDash(GSX_LSTYLS[GSX_lstyl]);
                     con.canvas.beginPath();
-                    con.canvas.arc(geti(ptsin, 1) + 5, 399 - geti(ptsin, 2) + 5, geti(ptsin, 7), arcsa, arcea);
+                    con.canvas.arc(geti(ptsin, 1), 399 - geti(ptsin, 2), geti(ptsin, 7), arcsa, arcea);
                     con.canvas.stroke();
                     break;
                 case 3:                                // pie slice
-                    const piex = geti(ptsin, 1) + 5, piey = 399 - geti(ptsin, 2) + 5,
+                    const piex = geti(ptsin, 1), piey = 399 - geti(ptsin, 2),
                           piesa = geti(intin, 1) * Math.PI / 1800.0,
                           pieea = geti(intin, 2) * Math.PI / 1800.0;
                     con.canvas.fillStyle = GSX_COLORS[GSX_ficolr];
@@ -613,16 +613,16 @@ function GSX(con, v) {
                     con.canvas.lineWidth = 1;
                     con.canvas.setLineDash([]);
                     con.canvas.beginPath();
-                    con.canvas.moveTo(geti(ptsin, 3) + 5, 399 - geti(ptsin, 4) + 5);
+                    con.canvas.moveTo(geti(ptsin, 3), 399 - geti(ptsin, 4));
                     con.canvas.lineTo(piex, piey);
-                    con.canvas.lineTo(geti(ptsin, 5) + 5, 399 - geti(ptsin, 6) + 5);
+                    con.canvas.lineTo(geti(ptsin, 5), 399 - geti(ptsin, 6));
                     con.canvas.arc(piex, piey, geti(ptsin, 7), piesa, pieea);
                     con.canvas.fill();
                     break;
                 case 4:                                // circle
                     con.canvas.fillStyle = GSX_COLORS[GSX_ficolr];
                     con.canvas.beginPath();
-                    con.canvas.arc(geti(ptsin, 1) + 5, 399 - geti(ptsin, 2) + 5, geti(ptsin, 5), 0, 2 * Math.PI);
+                    con.canvas.arc(geti(ptsin, 1), 399 - geti(ptsin, 2), geti(ptsin, 5), 0, 2 * Math.PI);
                     con.canvas.fill();
                     break;
             }
