@@ -628,6 +628,7 @@ function GSX(con, v) {
             }
             break;
         case 12:                                       // set character height
+            con.canvas.font = `${geti(ptsin, 2)}px monospaced`;
             seti(contrl, 3, 2);
             seti(ptsout, 1, 7); seti(ptsout, 2, 14);
             seti(ptsout, 3, 9); seti(ptsout, 4, 16);
