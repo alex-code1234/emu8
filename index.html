@@ -5,7 +5,7 @@
     <style type='text/css'>
 @font-face { font-family: 'CP437'; src: url('cp437.ttf'); }
 #kbd { width: 663px; }
-#scr { background-color: black; margin-top: 10px; display: none; width: 720px; height: 480px; }
+#scr { background-color: black; margin-top: 10px; display: none; width: 720px; height: 460px; }
 .log_wnd { font-family: monospace; font-size: 14px; border: 1px solid black;
            background-color: #faf9f6; padding: 8px; }
 [data-theme='dark'] {                   /* color theme dark */
@@ -56,7 +56,11 @@
 .key.i { font-size: 14px; /*font-weight: 600;*/ }         /* icon key */
 #scrfs {                                /* terminal */
     background-color: var(--secondary); color: var(--onsecondary);
-    width: 100%; display: inline-block; height: 75%; }
+    width: 100%; display: inline-block; height: 50%; }
+@media only screen and (min-width : 1024px) {
+    #scrfs { height: 88% !important; }
+    .keyboard { --key_size: 17px; transform: scale(2.0, 1.0); }
+}
     </style>
     <script type='text/javascript'>
 window.onerror = function(event, source, line, col, error) {
