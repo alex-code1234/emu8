@@ -584,8 +584,7 @@ async function monitor(command) {
 }
 
 const URL_OPTS = new URLSearchParams(location.search),
-      history = ['', '', '', '', '', '', ''],
-      ZOOM_OPT = URL_OPTS.get('zoom'); // screen zoom option
+      history = ['', '', '', '', '', '', ''];
 let history_index = history.length - 1;
 
 // translate hardware keyboard keys to mobile soft keyboard keys
@@ -650,13 +649,10 @@ async function main() {
         try {
             if (CPU.RUN)
                 // emulate keyboard
-                if (ev.key === stop_char) {
+                if (ev.key === stop_char)
                     // CTRL-n or CTRL-s (stop emulation)
                     CPU.RUN = false;
-                    if (ZOOM_OPT) {            // monitor mode, show keyboard
-                        kbd.style.position = 'relative'; kbd.style.zIndex = '10';
-                    }
-                } else {
+                else {
                     await hardware.keyboard(ev.key, ev.keyCode, ev.target.value);
                     ev.target.value = '';
                 }
@@ -668,9 +664,6 @@ async function main() {
                     history.splice(0, 1);
                     history_index = history.length - 1;
                     ev.target.value = '';
-                    if (ZOOM_OPT && CPU.RUN) { // emulation mode, hide keyboard
-                        kbd.style.position = null; kbd.style.zIndex = null;
-                    }
                 }
                 else if (ev.key === 'w') {
                     // CTRL-w
