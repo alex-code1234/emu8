@@ -55,11 +55,11 @@
 .sp3 { grid-column: span 3; }                             /* tab backslash leftctrl rightctrl */
 .sp2 { grid-column: span 2; }                             /* empty key */
 .key.i { font-size: 14px; /*font-weight: 600;*/ }         /* icon key */
-#scrfs {                                /* terminal */
+.scrfs {                                /* terminal */
     background-color: var(--secondary); color: var(--onsecondary);
     width: 100%; display: inline-block; height: 50%; }
 @media only screen and (min-width : 1024px) {
-    #scrfs { height: 88% !important; }
+    .scrfs { height: 88% !important; }
     .keyboard { --key_size: 17px; transform: scale(2.0, 1.0); }
 }
     </style>
@@ -77,7 +77,7 @@ window.onerror = function(event, source, line, col, error) {
     <canvas id='scr'></canvas>
     <pre id='log'></pre>
     <div id='runtime' style='display:none;'>
-        <canvas id='scrfs' class='surface'></canvas>
+        <canvas id='scrfs' class='surface scrfs'></canvas>
         <div class='keyboard surface'>
             <div class='section left'>
                 <div class='key'>Esc</div><div class='key'>F1</div><div class='key'>F2</div>

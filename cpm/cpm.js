@@ -190,7 +190,7 @@ async function cpm_init(scr, version) {   // CP[MP]/M init
           ];
     confs = await VT_100(elem, {COLORS});
     const cnv2 = document.createElement('canvas');        // second canvas element
-    cnv2.style = 'width:100%;'; cnv2.style.display = 'none';
+    cnv2.className = 'scrfs'; cnv2.style.display = 'none';
     document.getElementById('runtime').insertBefore(cnv2, elem);
     confs2 = await VT_100(cnv2, {COLORS});                // second console
     mod.resetFS = () => {
