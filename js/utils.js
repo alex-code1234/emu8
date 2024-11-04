@@ -137,20 +137,16 @@ function pi(s16, hex = true) {
     return +num;
 }
 
+async function preLoadFile(name) {
+    const res = await fetch(name, {cache: 'no-store'});
+    if (!res.ok)
+        throw new Error(`not found: ${name}`);
+    return res;
+}
+
 async function loadFile(name, hex) {
-    const cont = await fetch(name, {cache: 'no-store'});
-    let data;
-    if (hex) {
-        data = await cont.text();
-        if (data.startsWith('<!DOCTYPE '))
-            throw new Error(`not found: ${name}`);
-    } else {
-        const buff = await cont.arrayBuffer();
-        data = new Uint8Array(buff);
-        if (Array.from(data.slice(0, 10)).map(x => String.fromCharCode(x)).join('') === '<!DOCTYPE ')
-            throw new Error(`not found: ${name}`);
-    }
-    return data;
+    const cont = await preLoadFile(name);
+    return hex ? await cont.text() : new Uint8Array(await cont.arrayBuffer());
 }
 
 function loadImage(url, image = null) {
