@@ -1,6 +1,7 @@
 'use strict';
 
-let con, cono, confs, confs2;
+let con, cono, confs, confs2,
+    wfname = null, wfdnme, wfdrv, wfdate; // work file full name, name, drive and date
 
 async function cpm(scr) {                 // default version
     return await cpm22(scr);
@@ -94,14 +95,19 @@ async function cpm_init(scr, version) {   // CP[MP]/M init
                     console.log(`file ${r_fn} not found or empty`);
                 break;
             case 'write':                 // write file
-                const w_drive = getDisk(parms, 3, 'missing: drv fname', true);
+                const w_drive = getDisk(parms, 3, 'missing: drv fname [R/O=0]', true);
                 if (w_drive === undefined) break;
-                let w_fn, w_idx;
-                const w_buf = await loadFile(w_fn = parms[2], false);
-                if ((w_idx = w_fn.lastIndexOf('/')) >= 0)
-                    w_fn = w_fn.substring(w_idx + 1);
-                w_drive.diskRW(w_fn, w_buf);
+                let w_fn, w_idx, w_nn;
+                const hndl = await preLoadFile(w_fn = parms[2]),
+                      w_buf = new Uint8Array(await hndl.arrayBuffer());
+                w_nn = ((w_idx = w_fn.lastIndexOf('/')) >= 0) ? w_fn.substring(w_idx + 1) : w_fn;
+                w_drive.diskRW(w_nn, w_buf);
                 console.log(w_buf.length);
+                if (parms.length > 3 && parms[3] === '1') { // set R/O working file
+                    wfname = w_fn; wfdnme = w_nn;
+                    wfdrv = pi(parms[1], false);
+                    wfdate = hndl.headers.get('Last-Modified');
+                }
                 break;
             case 'basic':                 // start 8080 MS Basic
                 memo.reset(); HLT_STOP = true;
@@ -335,9 +341,17 @@ async function cpm_memo(tmp) {            // CPM system memory and IO
                         (async () => {
                             try {
                                 const dd = CPM_DRIVES[drv];
-                                dskstat = dd ?
-                                        dd.transfer(trk, sec, dma, v === 0, result) :
-                                        1; // illegal drive
+                                if (dd === null || dd === undefined)
+                                    dskstat = 1; // illegal drive
+                                else {
+                                    if (wfname !== null && wfdrv === drv &&      // work file set
+                                            v === 0 && trk === 2 && sec === 1) { // resd first DIR sector
+                                        const hndl = await preLoadFile(wfname);  // check modified time
+                                        if (hndl.headers.get('Last-Modified') > wfdate)
+                                            dd.diskRW(wfdnme, new Uint8Array(await hndl.arrayBuffer()));
+                                    }
+                                    dskstat = dd.transfer(trk, sec, dma, v === 0, result);
+                                }
                             } catch(e) {
                                 console.error(e.message + '\n', e.stack);
                             }

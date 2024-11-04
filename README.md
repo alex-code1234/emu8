@@ -155,7 +155,8 @@ All versions:
            \(256256 for 0..3, 4177920 for 8..9, 536870912 for 15)
 - **dump** \- save disk image: dump drv
 - **read** \- read file from disk: read drv fname
-- **write** \- write file to disk: write drv fname
+- **write** \- write file to disk: write drv fname \[R/O=0|1], where R/O is read-only flag, if 1 then
+            the file will be automatically updated if changed outside of the emulator.
 - **basic** \- start MS 8080 Basic: basic
 - **on** \- boot OS: on true|false, where true|false is flag to auto mount drives \(default true)
          bootable OS disk is mounted to drive A: \(cpma.cpm, cpm3a.cpm or mpma.cpm) and
