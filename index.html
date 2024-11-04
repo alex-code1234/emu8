@@ -109,15 +109,15 @@ window.onerror = function(event, source, line, col, error) {
                 <div class='key'>H</div><div class='key'>J</div><div class='key'>K</div>
                 <div class='key'>L</div><div class='key'><span>:</span><span>;</span></div>
                 <div class='key'><span>"</span><span>'</span></div><div class='key sp4'>Enter</div>
-                <div class='key sp5'>Shift</div><div class='key'>Z</div><div class='key'>X</div>
+                <div class='key sp5' name='kshft'>Shift</div><div class='key'>Z</div><div class='key'>X</div>
                 <div class='key'>C</div><div class='key'>V</div><div class='key'>B</div>
                 <div class='key'>N</div><div class='key'>M</div>
                 <div class='key'><span><</span><span>,</span></div>
                 <div class='key'><span>></span><span>.</span></div>
-                <div class='key'><span>?</span><span>/</span></div><div class='key sp5'>Shift</div>
-                <div class='key sp3'>Ctrl</div><div class='key'>Alt</div>
+                <div class='key'><span>?</span><span>/</span></div><div class='key sp5' name='kshft'>Shift</div>
+                <div class='key sp3' name='kctrl'>Ctrl</div><div class='key' name='kalt'>Alt</div>
                 <div class='key sp20'>Space</div>
-                <div class='key'>Alt</div><div class='key sp3'>Ctrl</div>
+                <div class='key' name='kalt'>Alt</div><div class='key sp3' name='kctrl'>Ctrl</div>
             </div>
             <div class='section right'>
                 <div class='key i'>&#9770;</div><div class='sp2'></div><div class='key'>Stop</div>
@@ -687,8 +687,9 @@ async function main() {
         }
         })(evc);
     };
-    const shfts = document.getElementsByClassName('key sp5');
-    let ctrl = null, alt = null;
+    const shfts = document.getElementsByName('kshft'),
+          ctrls = document.getElementsByName('kctrl'),
+          alts = document.getElementsByName('kalt');
     document.getElementsByClassName('keyboard')[0].onclick = e => {
         let elem = e.target;
         if (elem.tagName === 'SPAN') elem = elem.parentNode;
@@ -711,16 +712,24 @@ async function main() {
                 shfts[0].style.borderColor = shfts[1].style.borderColor = fs_caps ?
                         'var(--primary)' : 'var(--onsurface)';
                 break;
-            case 'Shift': fs_shift = true; elem.style.borderColor = 'var(--primary)'; break;
+            case 'Shift':
+                fs_shift = !fs_shift;
+                shfts[0].style.borderColor = shfts[1].style.borderColor = fs_shift ?
+                        'var(--primary)' : 'var(--onsurface)';
+                if (!fs_shift) fs_caps = false;
+                break;
             case 'Ctrl':
-                if (fs_ctrl) ctrl.style.borderColor = 'var(--onsurface)';
-                else fs_ctrl = true;
-                elem.style.borderColor = 'var(--primary)'; ctrl = elem;
+                fs_ctrl = !fs_ctrl;
+                ctrls[0].style.borderColor = ctrls[1].style.borderColor = fs_ctrl ?
+                        'var(--primary)' : 'var(--onsurface)';
                 break;
             case 'Alt':
                 if (fs_alt) alt.style.borderColor = 'var(--onsurface)';
                 else fs_alt = true;
                 elem.style.borderColor = 'var(--primary)'; alt = elem;
+                fs_alt = !fs_alt;
+                alts[0].style.borderColor = alts[1].style.borderColor = fs_alt ?
+                        'var(--primary)' : 'var(--onsurface)';
                 break;
             default:
                 hardware.keyboardFS(fs_shift, fs_ctrl, fs_alt, txt);
@@ -728,8 +737,14 @@ async function main() {
                     shfts[0].style.borderColor = shfts[1].style.borderColor = 'var(--onsurface)';
                     fs_shift = false;
                 }
-                if (fs_ctrl) { ctrl.style.borderColor = 'var(--onsurface)'; fs_ctrl = false; }
-                if (fs_alt) { alt.style.borderColor = 'var(--onsurface)'; fs_alt = false; }
+                if (fs_ctrl) {
+                    ctrls[0].style.borderColor = ctrls[1].style.borderColor = 'var(--onsurface)';
+                    fs_ctrl = false;
+                }
+                if (fs_alt) {
+                    alts[0].style.borderColor = alts[1].style.borderColor = 'var(--onsurface)';
+                    fs_alt = false;
+                }
                 break;
         }
     };
