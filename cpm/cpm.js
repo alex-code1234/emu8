@@ -203,7 +203,7 @@ async function cpm_init(scr, version) {   // CP[MP]/M init
     };
     mod.exitFS = () => con = cono;
     const origkbdfs = mod.keyboardFS(confs),              // first kbd handler
-          secdkbdfs = mod.keyboardFS(confs2),             // first kbd handler and switch button
+          secdkbdfs = mod.keyboardFS(confs2),             // second kbd handler and switch button
           conkey = document.getElementsByClassName('section right')[0].childNodes[2];
     conkey.className = 'key i'; conkey.innerHTML = '&#10112;';
     let kbdhandler = origkbdfs;
