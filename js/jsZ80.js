@@ -2392,6 +2392,8 @@ function createZ80(mio) {
                 case 'hl': cpu.SET_HL(n & 0xFFFF); break;
                 case 'sp': cpu.SET_SP(n & 0xFFFF); break;
                 case 'pc': cpu.SET_PC(n & 0xFFFF); break;
+                case 'ix': cpu.SET_IX(n & 0xFFFF); break;
+                case 'iy': cpu.SET_IY(n & 0xFFFF); break;
                 default: s += ' ' + reg; break;
             }
         }
@@ -2419,6 +2421,11 @@ function createZ80(mio) {
         s += ' (HL):' + mio.rd(v).toString(16).padStart(2, '0');
         v = cpu.regs[13] << 8 | cpu.regs[12];
         s += ' SP:' + v.toString(16).padStart(4, '0');
+        s += '#';
+        v = cpu.regs[9] << 8 | cpu.regs[8];
+        s += 'IX:' + v.toString(16).padStart(4, '0');
+        v = cpu.regs[11] << 8 | cpu.regs[10];
+        s += ' IY:' + v.toString(16).padStart(4, '0');
         return s;
     };
     cpu.disassembleInstruction = function(addr) {
