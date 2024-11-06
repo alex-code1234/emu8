@@ -345,7 +345,7 @@ async function cpm_memo(tmp) {            // CPM system memory and IO
                                     dskstat = 1; // illegal drive
                                 else {
                                     if (wfname !== null && wfdrv === drv &&      // work file set
-                                            v === 0 && trk === 2 && sec === 1) { // resd first DIR sector
+                                            v === 0 && trk === 2 && sec === 1) { // read first DIR sector
                                         const hndl = await preLoadFile(wfname);  // check modified time
                                         if (hndl.headers.get('Last-Modified') > wfdate)
                                             dd.diskRW(wfdnme, new Uint8Array(await hndl.arrayBuffer()));
