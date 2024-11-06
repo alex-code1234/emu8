@@ -725,9 +725,6 @@ async function main() {
                         'var(--primary)' : 'var(--onsurface)';
                 break;
             case 'Alt':
-                if (fs_alt) alt.style.borderColor = 'var(--onsurface)';
-                else fs_alt = true;
-                elem.style.borderColor = 'var(--primary)'; alt = elem;
                 fs_alt = !fs_alt;
                 alts[0].style.borderColor = alts[1].style.borderColor = fs_alt ?
                         'var(--primary)' : 'var(--onsurface)';
