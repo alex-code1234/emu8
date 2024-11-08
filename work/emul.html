@@ -739,8 +739,10 @@ class Monitor {
         this.logger = logger;
     }
     async exec(command) {
-        const parms = command.split(/[\s\t]+/),
-              cmd = parms[0];
+        const parms = command.split(/[\s\t]+/);
+        await this.handler(parms, parms[0]);
+    }
+    async handler(parms, cmd) {
         let tmp, len, adr, idx, hex;
         switch (cmd) {
             case '':
@@ -826,11 +828,73 @@ class Monitor {
                 for (let i = adr, a = 0; i <= len; i++) tmp[a++] = this.emu.memo.rd(i);
                 downloadFile('block.bin', tmp);
                 break;
+            default: console.error(`invalid command: ${cmd}`); break;
+        }
+    }
+}
+
+class CPMMonitor extends Monitor {
+    constructor(emu, debug_height, logger) {
+        super(emu, debug_height, logger);
+    }
+    getDisk(pms, n, er, fg) {             // disk IO command helper
+        if (pms.length < n) { console.error(er); return; }
+        const dn = pi(pms[1], false);
+        if (dn >= this.emu.memo.CPM_DRIVES.length) { console.error(`invalid drive num: ${dn}`); return; }
+        if (!fg) return dn;
+        const dd = this.emu.memo.CPM_DRIVES[dn];
+        if (dd === undefined || dd === null) { console.error(`invalid drive: ${dn}`); return; }
+        return dd;
+    }
+    async handler(parms, cmd) {
+        switch (cmd) {
+            case 'read':                  // read file
+                const r_drive = this.getDisk(parms, 3, 'missing: drv fname', true);
+                if (r_drive === undefined) break;
+                let r_fn;
+                const r_buf = r_drive.diskRW(r_fn = parms[2]);
+                if (r_buf !== null) downloadFile(r_fn.toUpperCase(), r_buf);
+                else console.log(`file ${r_fn} not found or empty`);
+                break;
+            case 'write':                 // write file
+                const w_drive = this.getDisk(parms, 3, 'missing: drv fname [R/O=0]', true);
+                if (w_drive === undefined) break;
+                let w_fn, w_idx, w_nn;
+                const hndl = await preLoadFile(w_fn = parms[2]),
+                      w_buf = new Uint8Array(await hndl.arrayBuffer());
+                w_nn = ((w_idx = w_fn.lastIndexOf('/')) >= 0) ? w_fn.substring(w_idx + 1) : w_fn;
+                w_drive.diskRW(w_nn, w_buf);
+                console.log(w_buf.length);
+                if (parms.length > 3 && parms[3] === '1') { // set R/O working file
+                    this.emu.memo.wfname = w_fn;
+                    this.emu.memo.wfdnme = w_nn;
+                    this.emu.memo.wfdrv = pi(parms[1], false);
+                    this.emu.memo.wfdate = hndl.headers.get('Last-Modified');
+                }
+                break;
             case 'bank':                  // get/set active memory bank
                 if (parms.length < 2) this.logger(this.emu.memo.bank);
                 else this.emu.memo.setBank(pi(parms[1]));
                 break;
-            default: console.error(`invalid command: ${cmd}`); break;
+            case 'copy':                  // console output snapshot
+                if (parms.length < 2) {
+                    console.log('"',this.emu.memo.sconsole,'"');
+                    this.emu.memo.setCopy(false);
+                }
+                else this.emu.memo.setCopy(parms[1] === '1');
+                break;
+            case 'on':                    // start emulator (0 - do not load disks)
+                if (parms.length < 2) { console.error('missing: ver (0=CP/M 2.2|1=CP/M 3.0|2=MP/M II'); break; }
+                const version = pi(parms[1]);
+                this.emu.memo.reset();
+                if (version > 0) this.emu.memo.setBank(0); // bank 0 must be active for CP/M+ and MP/M
+                this.emu.CPU.HLT_STOP = version < 2;       // no stop on HALT for MP/M (interrupt based)
+                let boot_err;                              // boot loader
+                if ((boot_err = this.emu.memo.CPM_DRIVES[0].transfer(0, 1, 0x0000, true, this.emu.memo)) !== 0)
+                    console.error(`boot error: ${boot_err}`);
+                else { this.emu.CPU.cpu.reset(); this.emu.CPU.run(); }
+                break;
+            default: await super.handler(parms, cmd); break;
         }
     }
 }
@@ -875,19 +939,19 @@ async function main() {
           mem = new CPMMemIO(con, 1, true),
           cpu = new Cpu(mem, 1),
           emu = new Emulator(cpu, mem, 1),
-          mon = new Monitor(emu, undefined, (...args) => con.print(args.join(' ').replace('\n', '~') + '~')),
+          mon = new CPMMonitor(emu, undefined, (...args) => con.print(args.join(' ').replace('\n', '~') + '~')),
           kbd = new Kbd(con, mon);
 //    mem.ram.set(await loadFile('sargon.bin'), 0);
 //    cpu.setRegisters(['pc', '2372']);
-//    emu.debug(450, true);
-    mem.CPM_DRIVES[0] = await CPMDisk('../emu/github/emu8/cpm/mpma.cpm');
-    mem.CPM_DRIVES[1] = await CPMDisk('../emu/github/emu8/cpm/mpmb.cpm');
+//    mem.CPM_DRIVES[0] = await CPMDisk('../emu/github/emu8/cpm/mpma.cpm');
+//    mem.CPM_DRIVES[1] = await CPMDisk('../emu/github/emu8/cpm/mpmb.cpm');
+//    mem.CPM_DRIVES[0] = await CPMDisk('../emu/github/emu8/cpm/cpm3a.cpm');
+//    mem.CPM_DRIVES[1] = await CPMDisk('../emu/github/emu8/cpm/cpm3b.cpm');
+    mem.CPM_DRIVES[0] = await CPMDisk('../emu/github/emu8/cpm/cpma.cpm');
+    mem.CPM_DRIVES[1] = await CPMDisk('../emu/github/emu8/cpm/cpmb_turbo.cpm');
     mem.CPM_DRIVES[2] = await CPMDisk('../emu/github/emu8/cpm/gsx/gsx.cpm');
     mem.CPM_DRIVES[3] = await CPMDisk('../emu/github/emu8/cpm/cpma.cpm');
-    mem.setBank(0);
-    mem.CPM_DRIVES[0].transfer(0, 1, 0x0000, true, mem);
-    cpu.HLT_STOP = false;
-    cpu.run();
+    mon.exec('on 0');
 }
 
 (async () => {
