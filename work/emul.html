@@ -208,6 +208,7 @@ class Cpu {
 class MemIO {
     constructor(con, type, gsx_support = false) {
         this.con = con;
+        this.type = type;
         this.ram = new Uint8Array((type < 3) ? 0x10000 : 0x100000); // 8bit: 64K, 16bit: 1M
         if (gsx_support) this.gsx = GSX(this);
         this.CPU = null; // CPU reference
@@ -234,8 +235,9 @@ class MemIO {
 }
 
 class CPMMemIO extends MemIO {
-    constructor(con, type, gsx_support = false, con2 = null) {
+    constructor(con, type, mpm = false, gsx_support = false, con2 = null) {
         super(con, type, gsx_support);
+        this.mpm = mpm;                                   // MP/M special handling
         this.con2 = con2;                                 // second console for MP/M
         this.SEG = 49152;                                 // page size for CP/M+ and MP/M
         this.rams = [new Uint8Array(this.SEG), this.ram]; // paged RAM for CP/M+ and MP/M
@@ -277,6 +279,7 @@ class CPMMemIO extends MemIO {
         this.wfdnme = null; // work file name
         this.wfdrv = -1;    // work file drive
         this.wfdate = null; // work file modified date
+        this.tckcnt = 0;    // ticks count for MP/M
     }
     dateTime() {
         let date; // temp = (date - (8 years) + (1 day)) / day
@@ -319,6 +322,11 @@ class CPMMemIO extends MemIO {
                 let res;
                 switch (this.clkcmd) {
                     case 0:                                         // sec
+                        if (this.mpm) {                             // optimized clock for MP/M
+                            this.tckcnt++;
+                            if (this.tckcnt > 60) this.tckcnt = 0;  // 1 minute counter
+                            return this.tckcnt;
+                        }
                         [this.clkdata, this.clktemp] = this.dateTime();
                         res = this.clkdata.getSeconds();
                         break;
@@ -328,7 +336,7 @@ class CPMMemIO extends MemIO {
                     case 4: return (this.clktemp >>> 8) & 0xff;     // days high
                     default: return 0x1a;                           // CTRL-Z to simulate EOF
                 }
-                const tens = (res / 10) | 0,
+                const tens = (res / 10) | 0,                        // to BCD
                       units = (res % 10) | 0;
                 return (tens << 4) | units;
             case 0x28: return this.con2 ? (this.con2.kbd.length > 0) ? 0x03 : 0x02 : 0x00;    // console 1 status
@@ -965,7 +973,7 @@ async function main() {
               '#282828', '#0000aa', '#00aa00', '#00aaaa', '#aa0000', '#aa00aa', '#aa5500', amber,
               '#555555', '#5555ff', '#55ff55', '#55ffff', '#ff5555', '#ff55ff', '#ffff55', '#ffffff'
           ], FONT_WIDTH: 10, FONT_HEIGHT: 20, SCR_HEIGHT: 24, FONT_G0: 'VT220'}),
-          mem = new CPMMemIO(con, 1, true),
+          mem = new CPMMemIO(con, 1, true, true),
           cpu = new Cpu(mem, 1),
           emu = new Emulator(cpu, mem, 1),
           mon = new CPMMonitor(emu, undefined, (...args) => con.print(args.join(' ').replace('\n', '~') + '~')),
