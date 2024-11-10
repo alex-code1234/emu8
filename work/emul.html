@@ -854,6 +854,9 @@ class Monitor {
                 for (let i = adr, a = 0; i <= len; i++) tmp[a++] = this.emu.memo.rd(i);
                 downloadFile('block.bin', tmp);
                 break;
+            case 'cls':
+                console.clear();
+                break;
             default: console.error(`invalid command: ${cmd}`); break;
         }
     }
@@ -969,15 +972,16 @@ async function main() {
           kbd = new Kbd(con, mon);
 //    mem.ram.set(await loadFile('sargon.bin'), 0);
 //    cpu.setRegisters(['pc', '2372']);
-//    mem.CPM_DRIVES[0] = await CPMDisk('../emu/github/emu8/cpm/mpma.cpm');
-//    mem.CPM_DRIVES[1] = await CPMDisk('../emu/github/emu8/cpm/mpmb.cpm');
+    mem.CPM_DRIVES[0] = await CPMDisk('../emu/github/emu8/cpm/mpma.cpm');
+    mem.CPM_DRIVES[1] = await CPMDisk('../emu/github/emu8/cpm/mpmb.cpm');
 //    mem.CPM_DRIVES[0] = await CPMDisk('../emu/github/emu8/cpm/cpm3a.cpm');
 //    mem.CPM_DRIVES[1] = await CPMDisk('../emu/github/emu8/cpm/cpm3b.cpm');
-    mem.CPM_DRIVES[0] = await CPMDisk('../emu/github/emu8/cpm/cpma.cpm');
-    mem.CPM_DRIVES[1] = await CPMDisk('../emu/github/emu8/cpm/cpmb_turbo.cpm');
-    mem.CPM_DRIVES[2] = await CPMDisk('../emu/github/emu8/cpm/gsx/gsx.cpm');
-    mem.CPM_DRIVES[3] = await CPMDisk('../emu/github/emu8/cpm/cpma.cpm');
-    mon.exec('on 0');
+//    mem.CPM_DRIVES[0] = await CPMDisk('../emu/github/emu8/cpm/cpma.cpm');
+//    mem.CPM_DRIVES[1] = await CPMDisk('../emu/github/emu8/cpm/cpmb_turbo.cpm');
+//    mem.CPM_DRIVES[2] = await CPMDisk('../emu/github/emu8/cpm/gsx/gsx.cpm');
+//    mem.CPM_DRIVES[3] = await CPMDisk('../emu/github/emu8/cpm/cpma.cpm');
+mem.CPM_DRIVES[8] = await CPMDisk('../../../../emu8080/mpm/hd-mpmsrc.dsk');
+    mon.exec('on 2');
 }
 
 (async () => {
