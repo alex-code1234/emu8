@@ -3,8 +3,8 @@
 <head>
     <meta name='viewport' content='width=device-width, initial-scale=1.0'/>
     <style type='text/css'>
-@font-face { font-family: 'CP437'; src: url('../emu/github/emu8/cp437.ttf'); }
-@font-face { font-family: 'VT220'; src: url('../emu/github/emu8/Glass_TTY_VT220.ttf'); }
+@font-face { font-family: 'CP437'; src: url('../cp437.ttf'); }
+@font-face { font-family: 'VT220'; src: url('../Glass_TTY_VT220.ttf'); }
 html {
     --background: #121212;
     --onbackground: #808080;
@@ -70,11 +70,11 @@ window.onerror = function(event, source, line, col, error) {
     document.write(`<span style='color: red;'>${text}</span><br/>`);
 };
     </script>
-    <script src='../emu/github/emu8/js/utils.js'></script>
-    <script src='../emu/github/emu8/js/jsZ80.js'></script>
-    <script src='../emu/github/emu8/js/disks.js'></script>
-    <script src='../emu/github/emu8/js/monitor.js'></script>
-    <script src='../emu/github/emu8/js/GSX.js'></script>
+    <script src='../js/utils.js'></script>
+    <script src='../js/jsZ80.js'></script>
+    <script src='../js/disks.js'></script>
+    <script src='../js/monitor.js'></script>
+    <script src='../js/GSX.js'></script>
 </head>
 <body>
     <canvas id='scr'></canvas>
@@ -972,14 +972,14 @@ async function main() {
           kbd = new Kbd(con, mon);
 //    mem.ram.set(await loadFile('sargon.bin'), 0);
 //    cpu.setRegisters(['pc', '2372']);
-    mem.CPM_DRIVES[0] = await CPMDisk('../emu/github/emu8/cpm/mpma.cpm');
-    mem.CPM_DRIVES[1] = await CPMDisk('../emu/github/emu8/cpm/mpmb.cpm');
-//    mem.CPM_DRIVES[0] = await CPMDisk('../emu/github/emu8/cpm/cpm3a.cpm');
-//    mem.CPM_DRIVES[1] = await CPMDisk('../emu/github/emu8/cpm/cpm3b.cpm');
-//    mem.CPM_DRIVES[0] = await CPMDisk('../emu/github/emu8/cpm/cpma.cpm');
-//    mem.CPM_DRIVES[1] = await CPMDisk('../emu/github/emu8/cpm/cpmb_turbo.cpm');
-//    mem.CPM_DRIVES[2] = await CPMDisk('../emu/github/emu8/cpm/gsx/gsx.cpm');
-//    mem.CPM_DRIVES[3] = await CPMDisk('../emu/github/emu8/cpm/cpma.cpm');
+    mem.CPM_DRIVES[0] = await CPMDisk('../cpm/mpma.cpm');
+    mem.CPM_DRIVES[1] = await CPMDisk('../cpm/mpmb.cpm');
+//    mem.CPM_DRIVES[0] = await CPMDisk('../cpm/cpm3a.cpm');
+//    mem.CPM_DRIVES[1] = await CPMDisk('../cpm/cpm3b.cpm');
+//    mem.CPM_DRIVES[0] = await CPMDisk('../cpm/cpma.cpm');
+//    mem.CPM_DRIVES[1] = await CPMDisk('../cpm/cpmb_turbo.cpm');
+//    mem.CPM_DRIVES[2] = await CPMDisk('../cpm/gsx/gsx.cpm');
+//    mem.CPM_DRIVES[3] = await CPMDisk('../cpm/cpma.cpm');
 mem.CPM_DRIVES[8] = await CPMDisk('../../../../emu8080/mpm/hd-mpmsrc.dsk');
     mon.exec('on 2');
 }
