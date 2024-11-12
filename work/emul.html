@@ -946,14 +946,14 @@ async function main() {
         kbdHandler(txt, soft) {
             const val = super.kbdHandler(txt, soft);
             if (val !== null) {
-                if (val === 14) {
+                if (this.monitor.emu.CPU.RUN && val === 14) { // stop emulation on CTRL-n
                     this.monitor.emu.stop();
                     this.monitor.logger('\n');
                     this.monitor.exec('x');
                     return;
                 }
                 this.con.kbd.push(val);
-                if (!this.monitor.emu.CPU.RUN) {
+                if (!this.monitor.emu.CPU.RUN) {              // monitor UI uses emulated console keyboard buffer
                     this.con.display(val);
                     if (val === 8) { this.con.kbd.pop(); this.con.kbd.pop(); }
                     else if (val === 13) {
@@ -972,24 +972,26 @@ async function main() {
           con = await VT_100('scr', {COLORS: [
               '#282828', '#0000aa', '#00aa00', '#00aaaa', '#aa0000', '#aa00aa', '#aa5500', amber,
               '#555555', '#5555ff', '#55ff55', '#55ffff', '#ff5555', '#ff55ff', '#ffff55', '#ffffff'
-          ], FONT_WIDTH: 10, FONT_HEIGHT: 20, SCR_HEIGHT: 24, FONT_G0: 'VT220'}),
-          mem = new CPMMemIO(con, 1, true, true),
-          cpu = new Cpu(mem, 1),
-          emu = new Emulator(cpu, mem, 1),
-          mon = new CPMMonitor(emu, undefined, (...args) => con.print(args.join(' ').replace('\n', '~') + '~')),
-          kbd = new Kbd(con, mon);
+          ], FONT_WIDTH: 10, FONT_HEIGHT: 20, SCR_HEIGHT: 24, FONT_G0: 'VT220'});
+// generic CP/M emulator ---------------------------------------------------------------------------------------
+const Z80 = 1,                                   // CPU type
+      isMPM = true,                              // MP/M support
+      mem = new CPMMemIO(con, Z80, isMPM, true), // MemIO with MP/M and GSX support
+      cpu = new Cpu(mem, Z80),                   // CPU
+      emu = new Emulator(cpu, mem, Z80),         // base emulator with debugging
+      mon = new CPMMonitor(emu, undefined,       // CP/M monitor with output to emulated console
+              (...args) => con.print(args.join(' ').replace('\n', '~') + '~')),
+      kbd = new Kbd(con, mon);                   // keyboard
+//--------------------------------------------------------------------------------------------------------------
+// MP/M II emulator --------------------------------------------------------------------------------------------
+mem.CPM_DRIVES[0] = await CPMDisk('../cpm/mpma.cpm');
+mem.CPM_DRIVES[1] = await CPMDisk('../cpm/mpmb.cpm');
+mem.CPM_DRIVES[2] = await CPMDisk('../cpm/gsx/gsx.cpm');
+mon.exec('on 2');
+//--------------------------------------------------------------------------------------------------------------
+
 //    mem.ram.set(await loadFile('sargon.bin'), 0);
 //    cpu.setRegisters(['pc', '2372']);
-    mem.CPM_DRIVES[0] = await CPMDisk('../cpm/mpma.cpm');
-    mem.CPM_DRIVES[1] = await CPMDisk('../cpm/mpmb.cpm');
-//    mem.CPM_DRIVES[0] = await CPMDisk('../cpm/cpm3a.cpm');
-//    mem.CPM_DRIVES[1] = await CPMDisk('../cpm/cpm3b.cpm');
-//    mem.CPM_DRIVES[0] = await CPMDisk('../cpm/cpma.cpm');
-//    mem.CPM_DRIVES[1] = await CPMDisk('../cpm/cpmb_turbo.cpm');
-//    mem.CPM_DRIVES[2] = await CPMDisk('../cpm/gsx/gsx.cpm');
-//    mem.CPM_DRIVES[3] = await CPMDisk('../cpm/cpma.cpm');
-mem.CPM_DRIVES[8] = await CPMDisk('../../../../emu8080/mpm/hd-mpmsrc.dsk');
-    mon.exec('on 2');
 }
 
 (async () => {
