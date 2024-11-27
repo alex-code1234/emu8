@@ -112,120 +112,120 @@ txt.value = 'word a, b, c, d; byte e, f;\na = 0;';
         RAR
         JMP  @SHRF`,
                           'peephole': base => {
-                              // MOV  ?, A   begin
-                              //    ---
-                              // MOV  A, ?   match, remove if A and ? not changed
-                              base.phopt('MOV  A, (.)$', cnd => `MOV  ${cnd}, A`, cnd => {
-                                  const pattern = [
-                                      `MOV  [A${cnd}], `, `MVI  [A${cnd}], `, 'LDA  ', 'CALL ', 'CMA', `INR  [A${cnd}]`, `DCR  [A${cnd}]`,
-                                      'ADI  ', 'ADD  ', 'SUI  ', 'SUB  ', 'XRI  ', 'XRA  ', 'ANI  ', 'ANA  ', 'ORI  ', 'ORA  ', 'RAL', 'RAR'
-                                  ];
-                                  if (cnd === 'M') pattern.push(['LXI  H, ']);
-                                  return pattern;
-                              });
-                              // MOV  ?, any begin
-                              //    ---
-                              // MOV  E, ?   match if ? not M, remove if ? not changed; repl. ? at begin and ren. ? before MOV  ?, . or CALL
-                              base.phopt('MOV  E, ([^M])$', cnd => `MOV  ${cnd}, `, cnd => [`MOV  ${cnd}, `], (lines, start, i, cnd) => {
-                                  lines.splice(i, 1);                                                   // remove match
-                                  lines[start] = lines[start].replace(` ${cnd}, `, ' E, ');             // replace ? at begin
-                                  const regexp = new RegExp(` ${cnd}$`);
-                                  for (let k = start + 1, n = lines.length; k < n; k++) {               // scan from begin + 1 to end
-                                      const line = lines[k];
-                                      if (line.match(`MOV  ${cnd}, |CALL `) !== null) break;            // break if reset ? | CALL
-                                      lines[k] = line.replace(regexp, ' E');                            // rename ?
-                                  }
-                                  return true;
-                              });
-                              // MOV  ?, A        begin
-                              //    ---
-                              // MOV  ?, any | $  match, remove begin if ? not used
-                              base.phopt('MOV  ([^HLEM]), A$', cnd => `MOV  ${cnd}, `,
-                                  cnd => [`ADI  ${cnd}`, `ADD  ${cnd}`, `SUI  ${cnd}`, `SUB  ${cnd}`, `MOV  ., ${cnd}`],
-                                  null, true
-                              );
-                              // MOV  A, ?       begin
-                              //    ---
-                              // MOV  M | E, A   match, remove begin if only INR or DCR opers in --- and ? not used forward; rename A to ?
-                              base.phopt('MOV  A, ([^EM])$', cnd => 'MOV  [EM], A$', cnd => ['^\(\(?!DCR  A|INR  A\).\)*$'],
-                                      (lines, start, i, cnd, end) => {
-                                  if (base.chgop(lines, [`MOV  ., ${cnd}`, `[^,]+ ${cnd}$`], end + 1, lines.length - 1, `MOV  ${cnd}, `)[0])
-                                      return false;                                                     // ? used forward, exit
-                                  lines.splice(i, 1);                                                   // remove begin
-                                  const regexp = new RegExp(' A$');
-                                  for (let k = i; k <= end; k++)
-                                      lines[k] = lines[k].replace(regexp, ` ${cnd}`);                   // rename A to ?
-                                  return true;
-                              }, true);
-                              // LXI  H, ?   begin
-                              // MOV  M, A   match, remove if M not used forward; replace begin with STA  ?
-                              base.phopt('LXI  H, (.+)$', cnd => 'MOV  M, A', cnd => [], (lines, start, i, cnd, end) => {
-                                  if (end !== start + 1) return false;
-                                  if (base.chgop(lines, ['MOV  ., M', '[^,]+ M$'], end + 1, lines.length - 1, 'LXI  H, ')[0])
-                                      return false;                                                     // M used forward, exit
-                                  lines[start] = lines[start].replace('LXI  H, ', 'STA  ');             // replace begin
-                                  lines.splice(end, 1);                                                 // remove match
-                                  return true;
-                              }, true);
-                              // type 1 optimizations
-                              // MOV  ?, A   begin
-                              //    ---
-                              // MOV  L, ?   match, remove begin if A and ? not changed; rename ? to A
-                              base.phopt('MOV  L, (.)$', cnd => `MOV  ${cnd}, A`, cnd => {
-                                  const pattern = [
-                                      `MOV  [A${cnd}], `, `MVI  [A${cnd}], `, 'LDA  ', 'CALL ', 'CMA', `INR  [A${cnd}]`, `DCR  [A${cnd}]`,
-                                      'ADI  ', 'ADD  ', 'SUI  ', 'SUB  ', 'XRI  ', 'XRA  ', 'ANI  ', 'ANA  ', 'ORI  ', 'ORA  ', 'RAL', 'RAR'
-                                  ];
-                                  if (cnd === 'M') pattern.push(['LXI  H, ']);
-                                  return pattern;
-                              }, (lines, start, i, cnd) => {
-                                  lines[i] = lines[i].replace(`, ${cnd}`, ', A');                       // rename ? to A
-                                  lines.splice(start, 1);                                               // remove begin
-                                  return true;
-                              });
-                              // MVI  H, 0   begin
-                              // SHLD        first match, remove preceding MVI  H, 0 if H not changed
-                              base.phopt('SHLD ', cnd => 'MVI  H, 0', cnd => [], (lines, start, i, cnd) => {
-                                  if (i !== start + 1) return false;
-                                  let top, ptrn = ['MVI  H, [^0]', 'MOV  H, ', 'LXI  H, ', 'DAD  ', 'LHLD ', 'INX  H', 'DCX  H'];
-                                  if ((top = base.fndop(lines, start - 1, 'MVI  H, 0')) < 0 ||          // previous not found
-                                          base.chgop(lines, ptrn, top + 1, start - 1)[0])               // H changed
-                                      return false;
-                                  lines.splice(start, 1);
-                              // MOV  L, ?   begin
-                              //    ---
-                              // MOV  L, ?   second match, remove if ? and L not changed
-                              // MVI  H, 0
-                              // SHLD
-                                  let mtch;
-                                  if (start > 0 && (mtch = lines[start - 1].match('MOV  L, (.+)$')) !== null) {
-                                      start--; cnd = mtch[1];
-                                      ptrn = [`MOV  L, [^${cnd}]`, 'LXI  H, ', 'DAD  ', 'LHLD ', 'INX  H', 'DCX  H'];
-                                      if (cnd === 'A') ptrn.push([
-                                          'MOV  A, ', 'MVI  A, ', 'LDA  ', 'CALL ', 'CMA', 'INR  A', 'DCR  A', 'ADI  ', 'ADD  ',
-                                          'SUI  ', 'SUB  ', 'XRI  ', 'XRA  ', 'ANI  ', 'ANA  ', 'ORI  ', 'ORA  ', 'RAL', 'RAR'
-                                      ]);
-                                      if ((top = base.fndop(lines, start - 1, `MOV  L, ${cnd}`)) < 0 || // previous not found
-                                              base.chgop(lines, ptrn, top + 1, start - 1)[0])           // L or ? changed
-                                          return true;                                                  // apply first match only
-                                      lines.splice(start, 1);                                           // apply second match
-                                  }
-                                  return true;
-                              });
-                              // SHLD ?      begin
-                              //    ---
-                              // LHLD ?      match, remove if HL not changed
-                              base.phopt('LHLD (.+)$', cnd => `SHLD ${cnd}`, cnd => [
-                                  'MVI  H, ', 'MOV  H, ', 'MOV  L, ', 'LXI  H, ', 'DAD  ', 'LHLD ', 'INX  H', 'DCX  H'
-                              ]);
-                              // LXI  H, any begin
-                              // XCHG        match, remove and rename preceding H to D
-                              base.phopt('XCHG', cnd => `LXI  H, `, cnd => ['LHLD ', 'LXI  [DH], '], (lines, start, i, cnd) => {
-                                  if (i !== start + 1) return false;
-                                  lines.splice(i, 1);                                                   // remove match
-                                  lines[start] = lines[start].replace('LXI  H, ', 'LXI  D, ');          // rename H at begin
-                                  return true;
-                              });
+        // MOV  ?, A   begin
+        //    ---
+        // MOV  A, ?   match, remove if A and ? not changed
+        base.phopt('MOV  A, (.)$', cnd => `MOV  ${cnd}, A`, cnd => {
+            const pattern = [
+                `MOV  [A${cnd}], `, `MVI  [A${cnd}], `, 'LDA  ', 'CALL ', 'CMA', `INR  [A${cnd}]`, `DCR  [A${cnd}]`,
+                'ADI  ', 'ADD  ', 'SUI  ', 'SUB  ', 'XRI  ', 'XRA  ', 'ANI  ', 'ANA  ', 'ORI  ', 'ORA  ', 'RAL', 'RAR'
+            ];
+            if (cnd === 'M') pattern.push(['LXI  H, ']);
+            return pattern;
+        });
+        // MOV  ?, any begin
+        //    ---
+        // MOV  E, ?   match if ? not M, remove if ? not changed; repl. ? at begin and ren. ? before MOV  ?, . or CALL
+        base.phopt('MOV  E, ([^M])$', cnd => `MOV  ${cnd}, `, cnd => [`MOV  ${cnd}, `], (lines, start, i, cnd) => {
+            lines.splice(i, 1);                                                   // remove match
+            lines[start] = lines[start].replace(` ${cnd}, `, ' E, ');             // replace ? at begin
+            const regexp = new RegExp(` ${cnd}$`);
+            for (let k = start + 1, n = lines.length; k < n; k++) {               // scan from begin + 1 to end
+                const line = lines[k];
+                if (line.match(`MOV  ${cnd}, |CALL `) !== null) break;            // break if reset ? | CALL
+                lines[k] = line.replace(regexp, ' E');                            // rename ?
+            }
+            return true;
+        });
+        // MOV  ?, A        begin
+        //    ---
+        // MOV  ?, any | $  match, remove begin if ? not used
+        base.phopt('MOV  ([^HLEM]), A$', cnd => `MOV  ${cnd}, `,
+            cnd => [`ADI  ${cnd}`, `ADD  ${cnd}`, `SUI  ${cnd}`, `SUB  ${cnd}`, `MOV  ., ${cnd}`],
+            null, true
+        );
+        // MOV  A, ?       begin
+        //    ---
+        // MOV  M | E, A   match, remove begin if only INR or DCR opers in --- and ? not used forward; rename A to ?
+        base.phopt('MOV  A, ([^EM])$', cnd => 'MOV  [EM], A$', cnd => ['^\(\(?!DCR  A|INR  A\).\)*$'],
+                (lines, start, i, cnd, end) => {
+            if (base.chgop(lines, [`MOV  ., ${cnd}`, `[^,]+ ${cnd}$`], end + 1, lines.length - 1, `MOV  ${cnd}, `)[0])
+                return false;                                                     // ? used forward, exit
+            lines.splice(i, 1);                                                   // remove begin
+            const regexp = new RegExp(' A$');
+            for (let k = i; k <= end; k++)
+                lines[k] = lines[k].replace(regexp, ` ${cnd}`);                   // rename A to ?
+            return true;
+        }, true);
+        // LXI  H, ?   begin
+        // MOV  M, A   match, remove if M not used forward; replace begin with STA  ?
+        base.phopt('LXI  H, (.+)$', cnd => 'MOV  M, A', cnd => [], (lines, start, i, cnd, end) => {
+            if (end !== start + 1) return false;
+            if (base.chgop(lines, ['MOV  ., M', '[^,]+ M$'], end + 1, lines.length - 1, 'LXI  H, ')[0])
+                return false;                                                     // M used forward, exit
+            lines[start] = lines[start].replace('LXI  H, ', 'STA  ');             // replace begin
+            lines.splice(end, 1);                                                 // remove match
+            return true;
+        }, true);
+        // type 1 optimizations
+        // MOV  ?, A   begin
+        //    ---
+        // MOV  L, ?   match, remove begin if A and ? not changed; rename ? to A
+        base.phopt('MOV  L, (.)$', cnd => `MOV  ${cnd}, A`, cnd => {
+            const pattern = [
+                `MOV  [A${cnd}], `, `MVI  [A${cnd}], `, 'LDA  ', 'CALL ', 'CMA', `INR  [A${cnd}]`, `DCR  [A${cnd}]`,
+                'ADI  ', 'ADD  ', 'SUI  ', 'SUB  ', 'XRI  ', 'XRA  ', 'ANI  ', 'ANA  ', 'ORI  ', 'ORA  ', 'RAL', 'RAR'
+            ];
+            if (cnd === 'M') pattern.push(['LXI  H, ']);
+            return pattern;
+        }, (lines, start, i, cnd) => {
+            lines[i] = lines[i].replace(`, ${cnd}`, ', A');                       // rename ? to A
+            lines.splice(start, 1);                                               // remove begin
+            return true;
+        });
+        // MVI  H, 0   begin
+        // SHLD        first match, remove preceding MVI  H, 0 if H not changed
+        base.phopt('SHLD ', cnd => 'MVI  H, 0', cnd => [], (lines, start, i, cnd) => {
+            if (i !== start + 1) return false;
+            let top, ptrn = ['MVI  H, [^0]', 'MOV  H, ', 'LXI  H, ', 'DAD  ', 'LHLD ', 'INX  H', 'DCX  H'];
+            if ((top = base.fndop(lines, start - 1, 'MVI  H, 0')) < 0 ||          // previous not found
+                    base.chgop(lines, ptrn, top + 1, start - 1)[0])               // H changed
+                return false;
+            lines.splice(start, 1);
+            // MOV  L, ?   begin
+            //    ---
+            // MOV  L, ?   second match, remove if ? and L not changed
+            // MVI  H, 0
+            // SHLD
+            let mtch;
+            if (start > 0 && (mtch = lines[start - 1].match('MOV  L, (.+)$')) !== null) {
+                start--; cnd = mtch[1];
+                ptrn = [`MOV  L, [^${cnd}]`, 'LXI  H, ', 'DAD  ', 'LHLD ', 'INX  H', 'DCX  H'];
+                if (cnd === 'A') ptrn.push([
+                    'MOV  A, ', 'MVI  A, ', 'LDA  ', 'CALL ', 'CMA', 'INR  A', 'DCR  A', 'ADI  ', 'ADD  ',
+                    'SUI  ', 'SUB  ', 'XRI  ', 'XRA  ', 'ANI  ', 'ANA  ', 'ORI  ', 'ORA  ', 'RAL', 'RAR'
+                ]);
+                if ((top = base.fndop(lines, start - 1, `MOV  L, ${cnd}`)) < 0 || // previous not found
+                        base.chgop(lines, ptrn, top + 1, start - 1)[0])           // L or ? changed
+                    return true;                                                  // apply first match only
+                lines.splice(start, 1);                                           // apply second match
+            }
+            return true;
+        });
+        // SHLD ?      begin
+        //    ---
+        // LHLD ?      match, remove if HL not changed
+        base.phopt('LHLD (.+)$', cnd => `SHLD ${cnd}`, cnd => [
+            'MVI  H, ', 'MOV  H, ', 'MOV  L, ', 'LXI  H, ', 'DAD  ', 'LHLD ', 'INX  H', 'DCX  H'
+        ]);
+        // LXI  H, any begin
+        // XCHG        match, remove and rename preceding H to D
+        base.phopt('XCHG', cnd => `LXI  H, `, cnd => ['LHLD ', 'LXI  [DH], '], (lines, start, i, cnd) => {
+            if (i !== start + 1) return false;
+            lines.splice(i, 1);                                                   // remove match
+            lines[start] = lines[start].replace('LXI  H, ', 'LXI  D, ');          // rename H at begin
+            return true;
+        });
                           },
                           'accW': 'HL',
                           'workW': 'DE',
@@ -834,7 +834,50 @@ function Parser(emit) {
     match = x => {
         if (look !== x) expect(x);
         getch(); spskip();
-    },
+    },function Parser(emit) {
+        let text, index, look, token, pb_idx;
+        const
+        getch = () => look = text.charAt(index++),
+        peekch = () => text.charAt(index),
+        error = s => { throw new Error(`error: ${s}`); },
+        alpha = c => (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z'),
+        digit = c => c >= '0' && c <= '9',
+        alphanum = c => alpha(c) || digit(c),
+        space = c => c === ' ' || c === '\t' || c === '\r' || c === '\n',
+        spskip = () => { while (space(look)) getch(); },
+        expect = s => error(`expected ${s}`),
+        match = x => {
+            if (look !== x) expect(x);
+            getch(); spskip();
+        },
+        name = () => {
+            if (!alpha(look)) expect('name');
+            token = ''; pb_idx = index - 1;
+            while (alphanum(look)) { token += look; getch(); }
+            spskip();
+        },
+        num = () => {
+            if (!digit(look)) expect('integer');
+            token = ''; pb_idx = index - 1;
+            while (digit(look)) { token += look; getch(); }
+            spskip();
+        },
+        pushback = () => { index = pb_idx; getch(); },
+        // <exp5> ::= ( <expr> ) | <number> | <id>
+        // <exp4> ::= ~ <exp4> | <exp5>
+        // <exp3> ::= <exp4> [ + <exp4> | - <exp4> ]*
+        // <exp2> ::= <exp3> [ << <exp3> | >> <exp3> ]*
+        // <exp1> ::= <exp2> [ == <exp2> | != <exp2> | '>' <exp2> | '<' <exp2> ]*
+        // <expr> ::= <exp1> [ & <exp1> | '|' <exp1> | ^ <exp1> ]*
+        exp5 = () => {
+            if (look === '(') { match('('); expr(); match(')'); }
+            else if (digit(look)) { num(); emit('num', token); }
+            else { name(); emit('var', token); }
+        },
+        exp4 = () => {
+            if (look === '~') { match('~'); exp4(); emit('inv'); }
+            else exp5();
+        },
     name = () => {
         if (!alpha(look)) expect('name');
         token = ''; pb_idx = index - 1;
