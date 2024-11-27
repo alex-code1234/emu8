@@ -834,50 +834,7 @@ function Parser(emit) {
     match = x => {
         if (look !== x) expect(x);
         getch(); spskip();
-    },function Parser(emit) {
-        let text, index, look, token, pb_idx;
-        const
-        getch = () => look = text.charAt(index++),
-        peekch = () => text.charAt(index),
-        error = s => { throw new Error(`error: ${s}`); },
-        alpha = c => (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z'),
-        digit = c => c >= '0' && c <= '9',
-        alphanum = c => alpha(c) || digit(c),
-        space = c => c === ' ' || c === '\t' || c === '\r' || c === '\n',
-        spskip = () => { while (space(look)) getch(); },
-        expect = s => error(`expected ${s}`),
-        match = x => {
-            if (look !== x) expect(x);
-            getch(); spskip();
-        },
-        name = () => {
-            if (!alpha(look)) expect('name');
-            token = ''; pb_idx = index - 1;
-            while (alphanum(look)) { token += look; getch(); }
-            spskip();
-        },
-        num = () => {
-            if (!digit(look)) expect('integer');
-            token = ''; pb_idx = index - 1;
-            while (digit(look)) { token += look; getch(); }
-            spskip();
-        },
-        pushback = () => { index = pb_idx; getch(); },
-        // <exp5> ::= ( <expr> ) | <number> | <id>
-        // <exp4> ::= ~ <exp4> | <exp5>
-        // <exp3> ::= <exp4> [ + <exp4> | - <exp4> ]*
-        // <exp2> ::= <exp3> [ << <exp3> | >> <exp3> ]*
-        // <exp1> ::= <exp2> [ == <exp2> | != <exp2> | '>' <exp2> | '<' <exp2> ]*
-        // <expr> ::= <exp1> [ & <exp1> | '|' <exp1> | ^ <exp1> ]*
-        exp5 = () => {
-            if (look === '(') { match('('); expr(); match(')'); }
-            else if (digit(look)) { num(); emit('num', token); }
-            else { name(); emit('var', token); }
-        },
-        exp4 = () => {
-            if (look === '~') { match('~'); exp4(); emit('inv'); }
-            else exp5();
-        },
+    },
     name = () => {
         if (!alpha(look)) expect('name');
         token = ''; pb_idx = index - 1;
