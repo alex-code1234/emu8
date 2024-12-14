@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang='en'>
+<head>
+    <meta name='viewport' content='width=device-width, initial-scale=1.0'/>
+    <style type='text/css'>
+@font-face { font-family: 'CP437'; src: url('cp437.ttf'); }
+@font-face { font-family: 'VT220'; src: url('Glass_TTY_VT220.ttf'); }
+html {
+    --background: #121212;
+    --onbackground: #808080;
+    --keypressed: #bb86fc;   /* active soft key */
+    --error: #ef2659;        /* log error */
+    --warning: #adaa0d;      /* log warning */
+    --info: #03aa56;         /* log info */
+    --dbgbckgrnd: #343434;   /* debugger background */
+    --dbgcolor: #9594a3;     /* debugger color */
+    --dbghilight: #575757;   /* debugger selected line */
+    --dbgborder: #707070;    /* debugger border */
+}
+body {
+    font-family: Ubuntu Mono, Monaco, Courier, monospace; font-size: 14px;
+    background-color: var(--background); color: var(--onbackground);
+}
+#scr {
+    width: 800px; height: 480px;
+    margin: auto; display: block;
+}
+.log_wnd {
+    border: 1px solid var(--dbgborder); padding: 8px; opacity: 1.0;
+    background-color: var(--dbgbckgrnd); color: var(--dbgcolor);
+}
+.keyboard {                     /* soft keyboard */
+    --key_size: 36px;
+    background-color: #00000000; color: var(--onbackground); opacity: 1.0;
+    width: calc(36 * var(--key_size) / 2 + 34 * var(--key_size) / 10 + var(--key_size) / 2);
+    margin-left: auto; margin-right: auto; padding: 5px; font-family: sans-serif;
+    display: grid; grid-template-columns: auto auto; grid-gap: calc(var(--key_size) / 2);
+}
+.section {
+    display: grid; grid-template-rows: repeat(6, calc(var(--key_size) / 1.36));
+    grid-gap: calc(var(--key_size) / 10);
+}
+.section.left {
+    grid-template-columns: repeat(30, calc(var(--key_size) / 2));
+}
+.section.right {
+    grid-template-columns: repeat(6, calc(var(--key_size) / 2));
+}
+.key {
+    border: calc(var(--key_size) / 30) solid var(--onbackground);
+    border-radius: calc(var(--key_size) / 10); grid-column: span 2;
+    font-size: calc(var(--key_size) / 3.5); text-align: center; cursor: pointer;
+    display: flex; flex-direction: column; align-items: center; justify-content: space-around;
+}
+.key:active {
+    border-color: var(--keypressed);
+}
+.key.i {                        /* icon key */
+    font-size: 14px; font-weight: 600;
+}
+.sp20 { grid-column: span 20; } /* space */
+.sp5 { grid-column: span 5; }   /* leftshift rightshift */
+.sp4 { grid-column: span 4; }   /* backspace capslock enter */
+.sp3 { grid-column: span 3; }   /* tab backslash leftctrl rightctrl */
+.sp2 { grid-column: span 2; }   /* empty key */
+    </style>
+    <script type='text/javascript'>
+window.onerror = function(event, source, line, col, error) {
+    const text = `Error: ${error.message} at ${source}:${line}:${col}`;
+    document.write(`<span style='color: red;'>${text}</span><br/>`);
+};
+    </script>
+    <script src='js/utils.js'></script>
+    <script src='js/jsZ80.js'></script>
+    <script src='js/js8080.js'></script>
+    <script src='js/disks.js'></script>
+    <script src='js/monitor.js'></script>
+    <script src='js/GSX.js'></script>
+    <script src='js/emul.js'></script>
+</head>
+<body>
+    <canvas id='scr'></canvas>
+    <div class='keyboard'>
+        <div class='section left'>
+            <div class='key'>Esc</div><div class='key'>F1</div><div class='key'>F2</div>
+            <div class='key'>F3</div><div class='key'>F4</div><div class='key'>F5</div>
+            <div class='key'>F6</div><div class='key'>F7</div><div class='key'>F8</div>
+            <div class='key'>F9</div><div class='key'>F10</div><div class='key'>F11</div>
+            <div class='key'>F12</div><div class='sp2'></div><div class='sp2'></div>
+            <div class='key'><span>~</span><span>`</span></div>
+            <div class='key'><span>!</span><span>1</span></div>
+            <div class='key'><span>@</span><span>2</span></div>
+            <div class='key'><span>#</span><span>3</span></div>
+            <div class='key'><span>$</span><span>4</span></div>
+            <div class='key'><span>%</span><span>5</span></div>
+            <div class='key'><span>^</span><span>6</span></div>
+            <div class='key'><span>&</span><span>7</span></div>
+            <div class='key'><span>*</span><span>8</span></div>
+            <div class='key'><span>(</span><span>9</span></div>
+            <div class='key'><span>)</span><span>0</span></div>
+            <div class='key'><span>_</span><span>-</span></div>
+            <div class='key'><span>+</span><span>=</span></div><div class='key sp4'>Backspace</div>
+            <div class='key sp3'>Tab</div><div class='key'>Q</div><div class='key'>W</div>
+            <div class='key'>E</div><div class='key'>R</div><div class='key'>T</div>
+            <div class='key'>Y</div><div class='key'>U</div><div class='key'>I</div>
+            <div class='key'>O</div><div class='key'>P</div>
+            <div class='key'><span>{</span><span>[</span></div>
+            <div class='key'><span>}</span><span>]</span></div>
+            <div class='key sp3'><span>|</span><span>\</span></div>
+            <div class='key sp4'>CapsLock</div><div class='key'>A</div><div class='key'>S</div>
+            <div class='key'>D</div><div class='key'>F</div><div class='key'>G</div>
+            <div class='key'>H</div><div class='key'>J</div><div class='key'>K</div>
+            <div class='key'>L</div><div class='key'><span>:</span><span>;</span></div>
+            <div class='key'><span>"</span><span>'</span></div><div class='key sp4'>Enter</div>
+            <div class='key sp5 kshft'>Shift</div><div class='key'>Z</div><div class='key'>X</div>
+            <div class='key'>C</div><div class='key'>V</div><div class='key'>B</div>
+            <div class='key'>N</div><div class='key'>M</div>
+            <div class='key'><span><</span><span>,</span></div>
+            <div class='key'><span>></span><span>.</span></div>
+            <div class='key'><span>?</span><span>/</span></div><div class='key sp5 kshft'>Shift</div>
+            <div class='key sp3 kctrl'>Ctrl</div><div class='key kalt'>Alt</div>
+            <div class='key sp20'>Space</div>
+            <div class='key kalt'>Alt</div><div class='key sp3 kctrl'>Ctrl</div>
+        </div>
+        <div class='section right'>
+            <div class='sp2'></div><div class='sp2'></div><div class='sp2'></div>
+            <div class='key'>Insert</div><div class='key'>Home</div><div class='key'>PgUp</div>
+            <div class='key'>Del</div><div class='key'>End</div><div class='key'>PgDn</div>
+            <div class='sp2'></div><div class='sp2'></div><div class='sp2'></div>
+            <div class='sp2'></div><div class='key i'>&#8593;</div><div class='sp2'></div>
+            <div class='key i'>&#8592;</div><div class='key i'>&#8595;</div>
+            <div class='key i'>&#8594;</div>
+        </div>
+    </div>
+    <pre id='log'></pre>
+    <script type='text/javascript'>
+'use strict';
+
+console.error = console._logwrapper('var(--error)');
+console.warn = console._logwrapper('var(--warning)');
+console.info = console._logwrapper('var(--info)');
+
+async function main() {
+    class Kbd extends Keyboard {
+        constructor(con, monitor) {
+            super();
+            this.con = con;
+            this.monitor = monitor;
+        }
+        kbdHandler(txt, soft) {
+            const val = super.kbdHandler(txt, soft);
+            if (val !== null) {
+                if (this.monitor.emu.CPU.RUN && val === 14) { // stop emulation on CTRL-n
+                    this.monitor.emu.stop();
+                    this.monitor.logger('\n');
+                    this.monitor.exec('x');
+                    return;
+                }
+                this.con.kbd.push(val);
+                if (!this.monitor.emu.CPU.RUN) {              // monitor UI uses emulated console keyboard buffer
+                    this.con.display(val);
+                    if (val === 8) { this.con.kbd.pop(); this.con.kbd.pop(); }
+                    else if (val === 13) {
+                        this.con.print('^[2K'); this.con.kbd.pop();
+                        const cmd = this.con.kbd.reduce((str, val) => str + String.fromCharCode(val), '');
+                        this.con.kbd.length = 0;
+                        this.monitor.exec(cmd);
+                    }
+                }
+            }
+        }
+    }
+    const amber = '#b38000', // amber monitor
+          green = '#36bf00', // green monitor
+          blue = '#a5a4b3',  // blue (white) monitor
+          con = await VT_100('scr', {COLORS: [
+              '#282828', '#0000aa', '#00aa00', '#00aaaa', '#aa0000', '#aa00aa', '#aa5500', amber,
+              '#555555', '#5555ff', '#55ff55', '#55ffff', '#ff5555', '#ff55ff', '#ffff55', '#ffffff'
+          ], FONT_WIDTH: 10, FONT_HEIGHT: 20, SCR_HEIGHT: 24, FONT_G0: 'VT220'});
+// generic CP/M emulator ---------------------------------------------------------------------------------------
+const cpuType = 0,                                    // CPU type
+      isMPM = true,                                   // MP/M support (true for MP/M II only)
+      isGSX = true,                                   // GSX support
+      mem = new CPMMemIO(con, cpuType, isMPM, isGSX), // MemIO with MP/M and GSX support
+      cpu = new GenCpu(mem, cpuType),                 // CPU
+      emu = new Emulator(cpu, mem, cpuType),          // base emulator with debugging
+      mon = new CPMMonitor(emu, undefined,            // CP/M monitor with output to emulated console
+              (...args) => con.print(args.join(' ').replace('\n', '~') + '~')),
+      kbd = new Kbd(con, mon);                        // keyboard
+// CP/M 2.2 emulator -------------------------------------------------------------------------------------------
+//mem.CPM_DRIVES[0] = await CPMDisk('cpm/cpma.cpm');
+//mon.exec('on 0');
+//--------------------------------------------------------------------------------------------------------------
+//--------------------------------------------------------------------------------------------------------------
+// MP/M II emulator --------------------------------------------------------------------------------------------
+mem.CPM_DRIVES[0] = await CPMDisk('cpm/mpma.cpm');
+mem.CPM_DRIVES[1] = await CPMDisk('cpm/mpmb.cpm');
+mem.CPM_DRIVES[2] = await CPMDisk('cpm/gsx/gsx.cpm');
+mon.exec('on 2');
+//--------------------------------------------------------------------------------------------------------------
+}
+
+(async () => {
+    try {
+        await main();
+    } catch(e) {
+        console.error(e.stack);
+    }
+})();
+    </script>
+</body>
+</html>
