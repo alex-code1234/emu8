@@ -2454,6 +2454,28 @@ b = b + 1; a = a + a + b; b = b + b + b;
     `);
 }
 
+function compiler(prg) {
+    const [frg, vars] = compile(prg);
+    prg = `        ORG 100h\n\n${frg}\n        DB   76h\n`;
+    for (let i = 0, n = codec.lib.length; i < n; i += 2)
+        if (prg.indexOf(codec.lib[i]) >= 0) prg += `${codec.lib[i + 1]}\n`;
+    prg += '\n        ORG 200h\n\n';
+    for (const n in vars) {
+        const v = vars[n];
+        prg += `${n}:`.padEnd(8);
+        if (v.dim) {
+            let sz = v.dim;
+            if (v.typ !== 0) sz += sz;
+            prg += `DS   ${sz}`;
+        }
+        else if (v.typ === 0) prg += 'DB   0';
+        else prg += 'DW   0';
+        prg += '\n';
+    }
+    prg += '\n        END\n';
+    return prg;
+}
+
 class CPM22MemIO extends MemIO {
     constructor(con, type, fname) {
         super(con, type);
@@ -2551,12 +2573,6 @@ class LogConsole {
     }
 }
 
-const con = new LogConsole('#b38000'),
-      mem = new CPM22MemIO(con, 0, 'PRG.ASM'),
-      cpu = new GenCpu(mem, 0),
-      emu = new Emulator(cpu, mem, 0),
-      mon = new CPMMonitor(emu, 500);
-
 function toData(str) {
     const arr = [];
     for (let i = 0, n = str.length; i < n; i++) {
@@ -2568,7 +2584,12 @@ function toData(str) {
 }
 
 async function main2() {
-const [frg, vars] = compile(`
+    const con = new LogConsole('#b38000'),
+          mem = new CPM22MemIO(con, 0, 'PRG.ASM'),
+          cpu = new GenCpu(mem, 0),
+          emu = new Emulator(cpu, mem, 0),
+          mon = new CPMMonitor(emu, 500),
+          prg = compiler(`
 word a1[8], e1, c1; byte b1;
 a1 = 545 - 16;
 a1[2] = &b1;
@@ -2576,31 +2597,14 @@ b1 = 12;
 *a1[2] = 10 + b1;
 e1 = &a1[2] + 1;
 *e1 = *a1;
-`);
-let prg = `        ORG 100h\n\n${frg}\n        DB   76h\n`;
-for (let i = 0, n = codec.lib.length; i < n; i += 2)
-    if (prg.indexOf(codec.lib[i]) >= 0) prg += `${codec.lib[i + 1]}\n`;
-prg += '\n        ORG 200h\n\n';
-for (const n in vars) {
-    const v = vars[n];
-    prg += `${n}:`.padEnd(8);
-    if (v.dim) {
-        let sz = v.dim;
-        if (v.typ !== 0) sz += sz;
-        prg += `DS   ${sz}`;
-    }
-    else if (v.typ === 0) prg += 'DB   0';
-    else prg += 'DW   0';
-    prg += '\n';
-}
-prg += '\n        END\n';
-console.log(prg);
-mem.setData(toData(prg));
-con.keys('mac prg\n load prg\nprg\n');
+          `);
+    console.log(prg);
+    mem.setData(toData(prg));
+    con.keys('mac prg\n load prg\nprg\n');
     mem.CPM_DRIVES[0] = await CPMDisk('../emu/github/emu8/cpm/cpma.cpm');
     let boot_err;
     if ((boot_err = mem.CPM_DRIVES[0].transfer(0, 1, 0x0000, true, mem)) !== 0)
         console.error(`boot error: ${boot_err}`);
     await cpu.run();
-emu.printMem(0x200);
+    emu.printMem(0x200);
 }
