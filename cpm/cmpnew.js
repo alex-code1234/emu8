@@ -1220,13 +1220,13 @@ function compile(prg) {
     return [gen.generate(code, vars), vars];
 }
 
-async function main() {
-    const test = (prg, res) => {
-        const code = compile(prg)[0];
-//        console.clear();
-        if (code.trim() !== res.trim())
-            throw new Error(`program:\n${prg}\ngenerated:\n${code}\nexpected:\n${res}`);
-    };
+function test(prg, res) {
+    const code = compile(prg)[0];
+    if (code.trim() !== res.trim())
+        throw new Error(`program:\n${prg}\ngenerated:\n${code}\nexpected:\n${res}`);
+}
+
+function doTests() {
     test(`
 word a, b; byte c, d;
 c = *b;
@@ -2603,15 +2603,4 @@ con.keys('mac prg\n load prg\nprg\n');
         console.error(`boot error: ${boot_err}`);
     await cpu.run();
 emu.printMem(0x200);
-//delay(1000);
-//mon.handler(['read', '0', 'prg.com'], 'read');
 }
-
-//(async () => {
-//    try {
-//        await main();
-////        await main2();
-//    } catch(e) {
-//        console.error(e.stack);
-//    }
-//})();
