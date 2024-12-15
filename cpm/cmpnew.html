@@ -185,6 +185,8 @@ async function createCon(color, font = 'CP437') {
 }
 
 async function main() {
+    document.getElementById('scr').style.display = 'none';
+    document.getElementsByClassName('keyboard')[0].style.display = 'none';
     doTests();
 }
 
@@ -212,8 +214,8 @@ e1 = &a1[2] + 1;
 
 (async () => {
     try {
-//        await main();
-        await mainDebug();
+        await main();
+//        await mainDebug();
     } catch(e) {
         console.error(e.stack);
     }
