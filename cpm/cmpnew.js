@@ -33,7 +33,7 @@ function Parser(emit) {
     // <exp4> ::= '~' <exp4> | <exp5> | '&' <exp4> | '*' <exp4>
     // <exp3> ::= <exp4> [ '+' <exp4> | '-' <exp4> ]*
     // <exp2> ::= <exp3> [ '<<' <exp3> | '>>' <exp3> ]*
-    // <exp1> ::= <exp2> [ '==' <exp2> | '!=' <exp2> | '>' <exp2> | '<' <exp2> ]*
+    // <exp1> ::= <exp2> [ '==' <exp2> | '!=' <exp2> | '>' <exp2> | '<' <exp2> | '>=' <exp2> | '<=' <exp2> ]*
     // <expr> ::= <exp1> [ '&' <exp1> | '|' <exp1> | '^' <exp1> ]*
     id = (key, type) => {
         name();
@@ -77,6 +77,8 @@ function Parser(emit) {
             const tmp = peekch();
             if (look === '=' && tmp === '=') { match('='); match('='); exp2(); emit('eql'); }
             else if (look === '!' && tmp === '=') { match('!'); match('='); exp2(); emit('neq'); }
+            else if (look === '>' && tmp === '=') { match('>'); match('='); exp2(); emit('gre'); }
+            else if (look === '<' && tmp === '=') { match('<'); match('='); exp2(); emit('lse'); }
             else if (look === '>') { match('>'); exp2(); emit('grt'); }
             else if (look === '<') { match('<'); exp2(); emit('lst'); }
             else break;
@@ -123,6 +125,7 @@ function IL() {
             case 'shl': o1 <<= o2; break;     case 'shr': o1 >>= o2; break;
             case 'eql': o1 = o1 == o2; break; case 'neq': o1 = o1 != o2; break;
             case 'grt': o1 = o1 > o2; break;  case 'lst': o1 = o1 < o2; break;
+            case 'gre': o1 = o1 >= o2; break;  case 'lse': o1 = o1 <= o2; break;
             case 'xor': o1 ^= o2; break;      case 'and': o1 &= o2; break;
             case 'oro': o1 |= o2; break;
             default: throw new Error(`unknown id: ${id}`);
@@ -262,7 +265,7 @@ function IL() {
                 break;
             case 'add': case 'sub':
             case 'shl': case 'shr':
-            case 'eql': case 'neq': case 'grt': case 'lst':
+            case 'eql': case 'neq': case 'grt': case 'lst': case 'gre': case 'lse':
             case 'xor': case 'and': case 'oro':
                 o2 = stack.pop(); o1 = stack.pop();
                 if (o1[0] === 'num' && o2[0] === 'num') { o1 = o1[1]; o2 = o2[1]; calc(id); return; }
@@ -393,7 +396,10 @@ function Codec8080() {
         //    ---
         // MOV  ?, any | $  match, remove begin if ? not used
         base.phopt('MOV  ([^HLEM]), A$', cnd => `MOV  ${cnd}, `,
-            cnd => [`ADI  ${cnd}`, `ADD  ${cnd}`, `SUI  ${cnd}`, `SUB  ${cnd}`, `MOV  ., ${cnd}`],
+            cnd => [
+                `ADI  ${cnd}`, `ADD  ${cnd}`, `SUI  ${cnd}`, `SUB  ${cnd}`, `MOV  ., ${cnd}`,
+                `ANA  ${cnd}`, `ORA  ${cnd}`, `XRA  ${cnd}`
+            ],
             null, true
         );
         // MOV  A, ?       begin
@@ -836,7 +842,7 @@ function CodeGen(codec) {
                     break;
                 case 'add': case 'sub':                        // swappable binary operations
                 case 'xor': case 'and': case 'oro':
-                case 'eql': case 'neq': case 'grt': case 'lst':
+                case 'eql': case 'neq': case 'grt': case 'lst': case 'gre': case 'lse':
                     let swapped = false;
                     if (const1(trp, true)) {                   // one time usage optimization
                         swap(trp); swapped = true;
@@ -855,9 +861,8 @@ function CodeGen(codec) {
                         case 'xor': adi = codec.xri; add = codec.xra; break;
                         case 'and': adi = codec.ani; add = codec.ana; break;
                         case 'oro': adi = codec.ori; add = codec.ora; break;
-                        case 'eql': case 'neq': case 'grt': case 'lst':
+                        case 'eql': case 'neq': case 'grt': case 'lst': case 'gre': case 'lse':
                             adi = codec.cpi; add = codec.cmp;
-                            trp.swap = swapped;                // remember swap flag for post-processing
                             break;
                     }
                     if (const1(trp, false))                    // one time usage optimization
@@ -865,6 +870,19 @@ function CodeGen(codec) {
                     else {
                         const wr = load2(trp);                 // side effect - modifies code, no nesting
                         code += add(wr);
+                    }
+                    if ('eql neq grt lst gre lse'.indexOf(trp.oper) >= 0) {
+                        code += codec.movi(codec.acc, 1);      // comparison post-processing
+                        switch (trp.oper) {
+                            case 'eql': add = codec.jz; break;
+                            case 'neq': add = codec.jnz; break;
+                            case 'grt': add = swapped ? codec.jc : codec.jnc; break;
+                            case 'lst': add = swapped ? codec.jnc : codec.jc; break;
+                            case 'gre': add = swapped ? codec.jnc : codec.jc; break;
+                            case 'lse': add = swapped ? codec.jc : codec.jnc; break;
+                        }
+                        code += add('$+4');
+                        code += codec.xra(codec.acc);
                     }
                     break;
                 case 'shl': case 'shr':                        // binary operations
@@ -881,18 +899,6 @@ function CodeGen(codec) {
                     clrreg(codec.prm);                         // clear special register
                     break;
                 case 'asg':                                    // assignment
-                    let prevtrp, swpf, cnd;
-                    if (i > 0 && (prevtrp = triples[i - 1]) && (swpf = prevtrp.swap) !== undefined) {
-                        code += codec.movi(codec.acc, 1);      // comparison post-processing
-                        switch (prevtrp.oper) {
-                            case 'eql': cnd = codec.jz; break;
-                            case 'neq': cnd = codec.jnz; break;
-                            case 'grt': cnd = swpf ? codec.jc : codec.jnc; break;
-                            case 'lst': cnd = swpf ? codec.jnc : codec.jc; break;
-                        }
-                        code += cnd('$+4');
-                        code += codec.xra(codec.acc);
-                    }
                     if (trp.typ1 !== 'var' || trp.ref) {       // indexed variable or de-reference
                         if (trp.typ1 !== 'var')                // address on stack
                             restW(trp, codec.mem, true);
@@ -1227,6 +1233,27 @@ function test(prg, res) {
 }
 
 function doTests() {
+    test(`
+byte a1, b1;
+a1 = 3;
+b1 = 2 >= a1 & b1 < 4;
+    `, `
+        LXI  H, a1
+        MVI  M, 3
+        MOV  A, M
+        CPI  2
+        MVI  A, 1
+        JNC  $+4
+        XRA  A
+        MOV  B, A
+        LDA  b1
+        CPI  4
+        MVI  A, 1
+        JC   $+4
+        XRA  A
+        ANA  B
+        STA  b1
+    `);
     test(`
 word a, b; byte c, d;
 c = *b;
