@@ -358,26 +358,25 @@ class Keyboard {
             }
         };
         document.onkeydown = e => {
-            e.preventDefault();
             switch (e.key) {
                 case 'Shift': this.fs_shift = true; break;
                 case 'Control': this.fs_ctrl = true; break;
                 case 'Alt': this.fs_alt = true; break;
-                default: this.kbdHandler(e.key, false); break;
+                default: this.kbdHandler(e, false, true); break;
             }
         };
         document.onkeyup = e => {
-            e.preventDefault();
             switch (e.key) {
                 case 'Shift': this.fs_shift = false; break;
                 case 'Control': this.fs_ctrl = false; break;
                 case 'Alt': this.fs_alt = false; break;
+                default: this.kbdHandler(e, false, false); break;
             }
         };
     }
-    kbdHandler(txt, soft) {
+    kbdHandler(dat, soft, isDown) {
         let val = null;
-        switch (txt) {
+        switch (dat) {
             case 'Escape':
             case 'Esc': val = 27; break;
             case 'F1':
@@ -415,10 +414,10 @@ class Keyboard {
             case 'ArrowDown':
             case '\u2193': val = 24; break; // down arrow
             default:
-                if (txt.length > 1) val = txt.charCodeAt(this.fs_shift ? 0 : 1);
+                if (dat.length > 1) val = dat.charCodeAt(this.fs_shift ? 0 : 1);
                 else {
-                    if (soft && !this.fs_shift) txt = txt.toLowerCase();
-                    val = txt.charCodeAt(0);
+                    if (soft && !this.fs_shift) dat = dat.toLowerCase();
+                    val = dat.charCodeAt(0);
                 }
                 break;
         }
