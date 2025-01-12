@@ -59,8 +59,7 @@ class GenCpu {
         if (print) console.info('stopped');
     }
     setRegisters(regs) {
-        let res;
-        if ((res = this.cpu.setRegisters([0, ...regs])).length > 0) throw new Error(res);
+        return this.cpu.setRegisters(regs);
     }
     cpuStatus() {
         return this.cpu.cpuStatus();
