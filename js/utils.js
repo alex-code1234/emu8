@@ -262,7 +262,6 @@ function PageManager(adr_mask, def_write, def_read) {
 function oscilloscope(parent, time_fnc, {
     width = 1000,
     maxpoints = 1000,
-    background = '#000000',
     configs = [{}]
 } = {}) {
     const e = document.createElement('canvas'),

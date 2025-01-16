@@ -115,6 +115,10 @@ class Emulator {
         }
         this.watches = []; // debug watches
         this.dbgw = null;  // debug window
+        this.ssettings = { // scope settings
+            width: 1000, maxpoints: 1000, configs: [{}],
+            addr: 0x0000, scope: null, orig_write: null
+        };
     }
     loadBin(data, start, mem) {
         if (mem === undefined) mem = this.memo;
@@ -287,9 +291,27 @@ class Emulator {
                     'var(--dbgcolor)', 'var(--dbgbckgrnd)');
             this.dbgw.watch = console.open(x + this.D_DCW + 17, y + 116 + 17, this.D_DRW, h - 116,
                     'var(--dbgcolor)', 'var(--dbgbckgrnd)');
+            if (this.memo.scope) { // requested scope
+                this.dbgw.scope = console.open(x, y + h + 34, this.D_DCW + this.D_DRW + 33, 80);
+                const tmp = this.dbgw.scope[0], ssettings = this.ssettings;
+                ssettings.orig_write = this.memo.wr;
+                ssettings.scope = oscilloscope(tmp, this.memo.scope, ssettings);
+                tmp.style.padding = tmp.style.margin = '0px 0px 0px 0px';
+                this.memo.wr = (a, v) => {
+                    ssettings.orig_write(a, v);
+                    if (a === ssettings.addr) ssettings.scope.update(v);
+                };
+            }
             this.debug_update();
         } else {
             if (this.dbgw === null) { console.error('debug not active'); return; }
+            if (this.dbgw.scope) {
+                console.close(this.dbgw.scope);
+                this.dbgw.scope = null;
+                this.ssettings.scope = null;
+                this.memo.wr = this.ssettings.orig_write;
+                this.ssettings.orig_write = null;
+            }
             console.close(this.dbgw.watch);
             this.dbgw.watch = null;
             console.close(this.dbgw.regs);
@@ -497,6 +519,42 @@ class Monitor {
                 for (let i = 1, n = parms.length; i < n; i++)
                     if ((idx = this.emu.watches.indexOf(pi(parms[i]))) >= 0) this.emu.watches.splice(idx, 1);
                 if (this.emu.dbgw !== null) this.emu.debug_watch(this.emu.dbgw.watch);
+                break;
+            case 'sadr':
+                if (parms.length < 2) { console.error('missing: adr'); break; }
+                if ((adr = pi(parms[1])) !== this.emu.ssettings.addr) {
+                    this.emu.ssettings.addr = adr;
+                    if (this.emu.ssettings.scope !== null) this.emu.ssettings.scope.clear();
+                }
+                break;
+            case 'sadd':
+                if (parms.length < 2) { console.error('missing: mask [color [width]]'); break; }
+                tmp = pi(parms[1]);
+                if ((hex = this.emu.ssettings.configs.find(e => e.mask === tmp)) === undefined) {
+                    hex = {'mask': tmp}; this.emu.ssettings.configs.push(hex);
+                }
+//                hex.color = parms[2] ?? '#383838';
+//                hex.width = (parms[3] ? pi(parms[3], false) : null) ?? 1;
+                if (this.emu.ssettings.scope !== null) this.emu.ssettings.scope.set(this.emu.ssettings.configs);
+                break;
+            case 'srem':
+                if (parms.length < 2) { console.error('missing: mask'); break; }
+                tmp = pi(parms[1]);
+                if ((idx = this.emu.ssettings.configs.findIndex(e => e.mask === tmp)) >= 0) {
+                    this.emu.ssettings.configs.splice(idx, 1);
+                    if (this.emu.ssettings.scope !== null) this.emu.ssettings.scope.set(this.emu.ssettings.configs);
+                }
+                else console.error(`mask: 0x${fmt(tmp)} not found`);
+                break;
+            case 'swdt':
+                if (parms.length < 2) { console.error('missing: width'); break; }
+                this.emu.ssettings.width = pi(parms[1], false);
+                if (this.emu.ssettings.scope !== null) this.emu.ssettings.scope.width(this.emu.ssettings.width);
+                break;
+            case 'spts':
+                if (parms.length < 2) { console.error('missing: points'); break; }
+                this.emu.ssettings.maxpoints = pi(parms[1], false);
+                if (this.emu.ssettings.scope !== null) this.emu.ssettings.scope.points(this.emu.ssettings.maxpoints);
                 break;
             case 'd':
                 if (parms.length > 1) this.addr = pi(parms[1]);
