@@ -533,8 +533,8 @@ class Monitor {
                 if ((hex = this.emu.ssettings.configs.find(e => e.mask === tmp)) === undefined) {
                     hex = {'mask': tmp}; this.emu.ssettings.configs.push(hex);
                 }
-//                hex.color = parms[2] ?? '#383838';
-//                hex.width = (parms[3] ? pi(parms[3], false) : null) ?? 1;
+                hex.color = parms[2] ?? '#03dac6';
+                hex.width = (parms[3] ? pi(parms[3], false) : null) ?? 1;
                 if (this.emu.ssettings.scope !== null) this.emu.ssettings.scope.set(this.emu.ssettings.configs);
                 break;
             case 'srem':
