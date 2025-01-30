@@ -266,7 +266,7 @@ class Emulator {
         const s = this.CPU.cpuStatus();
         wnd[1](s.replaceAll('|', '\n').replaceAll('#', '\n'));
         wnd[1]();
-        wnd[1](this.debug_sp());
+        if (this.CPU.cpu.getSP) wnd[1](this.debug_sp());
     }
     debug_watch(wnd) {
         wnd[0].innerHTML = '';
@@ -461,7 +461,7 @@ class Monitor {
         this.logger = logger;
     }
     async exec(command) {
-        const parms = command.split(/[\s\t]+/);
+        const parms = command.trim().split(/[\s\t]+/);
         await this.handler(parms, parms[0]);
     }
     async handler(parms, cmd) {
