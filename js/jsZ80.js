@@ -2100,7 +2100,7 @@ var D_optable_FD_CB = [
         "LD A,SET 3,(IY[SO])",
         "LD B,SET 4,(IY[SO])", "LD C,SET 4,(IY[SO])", "LD D,SET 4,(IY[SO])", "LD E,SET 4,(IY[SO])", "LD H,SET 4,(IY[SO])",
         "LD L,SET 4,(IY[SO])", "SET 4,(IY[SO])", "LD A,SET 4,(IY[SO])", "LD B,SET 5,(IY[SO])", "LD C,SET 5,(IY[SO])",
-        "LD D,SET 5,(IY[SO])", "LD E,SET 5,(IY[SO])", "LD H,SET 5,(IY[SO])", "LD L,SET 5,(IY[SO])", "SET 5,(IY+[N]",
+        "LD D,SET 5,(IY[SO])", "LD E,SET 5,(IY[SO])", "LD H,SET 5,(IY[SO])", "LD L,SET 5,(IY[SO])", "SET 5,(IY[SO])",
         "LD A,SET 5,(IY[SO])",
         "LD B,SET 6,(IY[SO])", "LD C,SET 6,(IY[SO])", "LD D,SET 6,(IY[SO])", "LD E,SET 6,(IY[SO])", "LD H,SET 6,(IY[SO])",
         "LD L,SET 6,(IY[SO])", "SET 6,(IY[SO])", "LD A,SET 6,(IY[SO])", "LD B,SET 7,(IY[SO])", "LD C,SET 7,(IY[SO])",
@@ -2158,7 +2158,7 @@ var D_optable_DD_CB = [
         "LD A,SET 3,(IX[SO])",
         "LD B,SET 4,(IX[SO])", "LD C,SET 4,(IX[SO])", "LD D,SET 4,(IX[SO])", "LD E,SET 4,(IX[SO])", "LD H,SET 4,(IX[SO])",
         "LD L,SET 4,(IX[SO])", "SET 4,(IX[SO])", "LD A,SET 4,(IX[SO])", "LD B,SET 5,(IX[SO])", "LD C,SET 5,(IX[SO])",
-        "LD D,SET 5,(IX[SO])", "LD E,SET 5,(IX[SO])", "LD H,SET 5,(IX[SO])", "LD L,SET 5,(IX[SO])", "SET 5,(IX+[N]",
+        "LD D,SET 5,(IX[SO])", "LD E,SET 5,(IX[SO])", "LD H,SET 5,(IX[SO])", "LD L,SET 5,(IX[SO])", "SET 5,(IX[SO])",
         "LD A,SET 5,(IX[SO])",
         "LD B,SET 6,(IX[SO])", "LD C,SET 6,(IX[SO])", "LD D,SET 6,(IX[SO])", "LD E,SET 6,(IX[SO])", "LD H,SET 6,(IX[SO])",
         "LD L,SET 6,(IX[SO])", "SET 6,(IX[SO])", "LD A,SET 6,(IX[SO])", "LD B,SET 7,(IX[SO])", "LD C,SET 7,(IX[SO])",
@@ -2429,9 +2429,18 @@ function createZ80(mio) {
         return s;
     };
     cpu.disassembleInstruction = function(addr) {
+        var origadr = addr;                             // remember original address
         var i = mio.rd(addr++);
         var r = D_optable_00[i];
-        while (typeof r !== 'string') {
+        var soval = null, first = i, second = 0;
+        if (typeof r !== 'string') {
+            i = mio.rd(addr++);
+            r = r[i];
+            second = i;
+        }
+        if (typeof r !== 'string') {
+            if ((first === 0xfd || first === 0xdd) && second === 0xcb)
+                soval = optable_toInt8(mio.rd(addr++)); // swapped SO prm and code for fdcb and ddcb prefixes
             i = mio.rd(addr++);
             r = r[i];
         }
@@ -2454,11 +2463,12 @@ function createZ80(mio) {
                 } else {
                     i = r.indexOf('[SO]');
                     if (i >= 0) {
-                        var intb = optable_toInt8(mio.rd(addr++));
-                        if (intb < 0)
-                            r = r.replace('[SO]', '-' + (-intb).toString(16).padStart(2, '0'));
+                        if (soval === null)             // SO prm at the end of code
+                            soval = optable_toInt8(mio.rd(addr++));
+                        if (soval < 0)
+                            r = r.replace('[SO]', '-' + (-soval).toString(16).padStart(2, '0'));
                         else
-                            r = r.replace('[SO]', '+' + intb.toString(16).padStart(2, '0'));
+                            r = r.replace('[SO]', '+' + soval.toString(16).padStart(2, '0'));
                     }
                 }
             }
@@ -2470,6 +2480,8 @@ function createZ80(mio) {
         i = r.indexOf(',');
         if (i > 0)
             r = r.substr(0, ++i) + ((i > 7) ? ' ' : '  ') + r.substr(i);
+        if (addr - origadr < 4)
+            r = '  ' + r;                               // align listing for up to 4 bytes code
         return [addr, r];
     };
     cpu.setPC = cpu.SET_PC;

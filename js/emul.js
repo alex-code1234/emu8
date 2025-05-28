@@ -15,7 +15,11 @@ class GenCpu {
                 this.pic = new Intel8259();
                 this.dma = new Intel8237();
                 this.ppi = new Intel8255(this.pic);
-                this.cpu = new Intel8086(memo.wr, memo.rd, this.pic, new Intel8253(this.pic), memo.int);
+                this.cpu = new Intel8086(
+                    memo.wr.bind(memo), memo.rd.bind(memo), // bind if memo is class
+                    this.pic, new Intel8253(this.pic),
+                    memo.int.bind(memo)                     // bind if memo is class
+                );
                 this.cpu.peripherals.push(this.dma);
                 this.cpu.peripherals.push(this.ppi);
                 this.cpu.peripherals.push(new Intel8272(this.dma, this.pic));
