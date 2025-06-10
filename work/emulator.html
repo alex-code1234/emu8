@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html lang='en' data-theme='dark'>
+<head>
+    <meta name='viewport' content='width=device-width, initial-scale=1.0'/>
+    <style type='text/css'>
+@font-face { font-family: 'CP437'; src: url('../emu/github/emu8/cp437.ttf'); }
+@font-face { font-family: 'VT220'; src: url('../emu/github/emu8/Glass_TTY_VT220.ttf'); }
+[data-theme='dark'] {                   /* color theme dark */
+    --background: #121212;                                /* background (0dp elevation surface) */
+    --surface: rgba(255, 255, 255, 0.05);                 /* surface (1dp elevation surface) */
+    --primary: #bb86fc;                                   /* primary color */
+    --secondary: #03dac6;                                 /* secondary color */
+    --error: #cf6679;                                     /* error */
+    --warning: #fdda0d;                                   /* warning */
+    --onbackground: #ffffff;                              /* on background */
+    --onsurface: #ffffff;                                 /* on surface */
+    --onprimary: #000000;                                 /* on primary */
+    --onsecondary: #000000;                               /* on secondary */
+    --onerror: #000000;                                   /* on error */
+    --textnormal: 0.6;                                    /* normal text (60% opacity) */
+    --keypressed: #bb86fc;                                /* active soft key */
+    --dbgbckgrnd: #343434;                                /* debugger background */
+    --dbgcolor: #9594a3;                                  /* debugger color */
+    --dbghilight: #575757;                                /* debugger selected line */
+    --dbgborder: #707070;                                 /* debugger border */
+}
+[data-theme='light'] {                  /* color theme light */
+    --background: #ffffff;
+    --primary: #6200ee;
+    --secondary: #00d7c3;
+    --error: #b00020;
+    --warning: #8b8000;
+    --onbackground: #000000;
+    --onsurface: #000000;
+    --onprimary: #ffffff;
+    --onsecondary: #000000;
+    --onerror: #ffffff;
+    --keypressed: #bb86fc;
+    --dbgbckgrnd: #fafafa;
+    --dbgcolor: #000000;
+    --dbghilight: #d7d7d7;
+    --dbgborder: #707070;
+}
+[data-theme='light'] .surface {
+    box-shadow: 0 1px 4px 0 rgba(0, 0, 0, 0.05);
+}
+body {                                  /* base */
+    font-family: Ubuntu Mono, Monaco, Courier, monospace; /* font */
+    font-size: 14px;                                      /* font size */
+    background-color: var(--background); color: var(--onbackground);
+}
+input[type='checkbox'] {                /* check box */
+    accent-color: var(--primary);
+}
+.command, input::file-selector-button { /* action elements style */
+    padding: 5px 15px; font-weight: bold; text-transform: uppercase; letter-spacing: 1px;
+}
+.button, input::file-selector-button {  /* buttons style */
+    font-size: inherit; border: none; border-radius: 3px;
+    background-color: var(--primary); color: var(--onprimary);
+}
+.tabbed {                               /* tab component */
+    overflow-x: hidden; margin: -12px 0; padding-bottom: 10px;
+}
+.tabbed [type='radio'] { display: none; }
+.tabs {
+    padding: 0px 0px;                                     /* tab bar height (first number) */
+    display: flex; align-items: stretch; list-style: none; background-color: var(--surface);
+}
+.tab > label {
+    display: block; margin-bottom: -1px; cursor: pointer; opacity: var(--textnormal);
+}
+.tab-content {
+    padding: 10px;                                        /* tab content padding */
+    display: none; background-color: var(--surface); opacity: var(--textnormal);
+}
+.tabbed [type="radio"]:nth-of-type(1):checked ~ .tabs .tab:nth-of-type(1) label,
+.tabbed [type="radio"]:nth-of-type(2):checked ~ .tabs .tab:nth-of-type(2) label,
+.tabbed [type="radio"]:nth-of-type(3):checked ~ .tabs .tab:nth-of-type(3) label,
+.tabbed [type="radio"]:nth-of-type(4):checked ~ .tabs .tab:nth-of-type(4) label,
+.tabbed [type="radio"]:nth-of-type(5):checked ~ .tabs .tab:nth-of-type(5) label {
+    border-bottom: 2px solid var(--primary); color: var(--primary);
+}
+.tabbed [type="radio"]:nth-of-type(1):checked ~ .tab-content:nth-of-type(1),
+.tabbed [type="radio"]:nth-of-type(2):checked ~ .tab-content:nth-of-type(2),
+.tabbed [type="radio"]:nth-of-type(3):checked ~ .tab-content:nth-of-type(3),
+.tabbed [type="radio"]:nth-of-type(4):checked ~ .tab-content:nth-of-type(4),
+.tabbed [type="radio"]:nth-of-type(5):checked ~ .tab-content:nth-of-type(5) {
+    display: block;
+}
+.theme {                                /* theme switch */
+    margin-left: auto;
+}
+.theme > button {
+    font-size: 18px; border: none; background-color: inherit; color: var(--primary);
+}
+.jsShell {                              /* terminal component */
+    height: 505px; overflow: auto;
+}
+.cursor { background-color: var(--onbackground); border-right-color: var(--onbackground); }
+#scr {                                  /* emulated screen */
+    width: 800px; height: 480px;
+    margin: auto; display: block;
+}
+.keyboard {                             /* soft keyboard */
+    --key_size: 36px;
+    background-color: #00000000; color: var(--onbackground); opacity: 1.0;
+    width: calc(36 * var(--key_size) / 2 + 34 * var(--key_size) / 10 + var(--key_size) / 2);
+    margin-left: auto; margin-right: auto; padding: 5px; font-family: sans-serif;
+    display: grid; grid-template-columns: auto auto; grid-gap: calc(var(--key_size) / 2);
+}
+.section {
+    display: grid; grid-template-rows: repeat(6, calc(var(--key_size) / 1.36));
+    grid-gap: calc(var(--key_size) / 10);
+}
+.section.left {
+    grid-template-columns: repeat(30, calc(var(--key_size) / 2));
+}
+.section.right {
+    grid-template-columns: repeat(6, calc(var(--key_size) / 2));
+}
+.key {
+    border: calc(var(--key_size) / 30) solid var(--onbackground);
+    border-radius: calc(var(--key_size) / 10); grid-column: span 2;
+    font-size: calc(var(--key_size) / 3.5); text-align: center; cursor: pointer;
+    display: flex; flex-direction: column; align-items: center; justify-content: space-around;
+}
+.key:active {
+    border-color: var(--keypressed);
+}
+.key.i {                                                  /* icon key */
+    font-size: 14px; font-weight: 600;
+}
+.sp20 { grid-column: span 20; }                           /* space */
+.sp5 { grid-column: span 5; }                             /* leftshift rightshift */
+.sp4 { grid-column: span 4; }                             /* backspace capslock enter */
+.sp3 { grid-column: span 3; }                             /* tab backslash leftctrl rightctrl */
+.sp2 { grid-column: span 2; }                             /* empty key */
+#emulator {                             /* emulator area */
+    padding: 0px !important;
+    overflow: auto;
+}
+.log_wnd {                              /* debugger window */
+    border: 1px solid var(--dbgborder); padding: 8px; opacity: 1.0;
+    background-color: var(--dbgbckgrnd); color: var(--dbgcolor);
+}
+    </style>
+    <script type='text/javascript'>
+window.onerror = function(event, source, line, col, error) {
+    const text = `Error: ${error.message} at ${source}:${line}:${col}`;
+    document.write(`<span style="color: red;">${text}</span><br/>`);
+};
+    </script>
+    <script src='../emu/github/emu8/js/utils.js'></script>
+    <script src='../emu/github/emu8/js/monitor.js'></script>
+    <script src='../emu/github/emu8/js/emul.js'></script>
+</head>
+<body>
+    <div class='tabbed'>
+        <input type='radio' id='tab1' name='css-tabs' checked/>
+        <input type='radio' id='tab2' name='css-tabs'/>
+        <ul class='tabs surface'>
+            <li class='tab'><label class='command' for='tab1'>Terminal</label></li>
+            <li class='tab'><label class='command' for='tab2'>Emulator</label></li>
+            <li class='theme'><button id='theme'>&#9770;</button></li>
+        </ul>
+        <div class='tab-content surface' id='terminal'></div>
+        <div class='tab-content surface' id='emulator'>
+            <canvas id='scr'></canvas>
+            <div class='keyboard'>
+                <div class='section left'>
+                    <div class='key'>Esc</div><div class='key'>F1</div><div class='key'>F2</div>
+                    <div class='key'>F3</div><div class='key'>F4</div><div class='key'>F5</div>
+                    <div class='key'>F6</div><div class='key'>F7</div><div class='key'>F8</div>
+                    <div class='key'>F9</div><div class='key'>F10</div><div class='key'>F11</div>
+                    <div class='key'>F12</div><div class='sp2'></div><div class='sp2'></div>
+                    <div class='key'><span>~</span><span>`</span></div>
+                    <div class='key'><span>!</span><span>1</span></div>
+                    <div class='key'><span>@</span><span>2</span></div>
+                    <div class='key'><span>#</span><span>3</span></div>
+                    <div class='key'><span>$</span><span>4</span></div>
+                    <div class='key'><span>%</span><span>5</span></div>
+                    <div class='key'><span>^</span><span>6</span></div>
+                    <div class='key'><span>&</span><span>7</span></div>
+                    <div class='key'><span>*</span><span>8</span></div>
+                    <div class='key'><span>(</span><span>9</span></div>
+                    <div class='key'><span>)</span><span>0</span></div>
+                    <div class='key'><span>_</span><span>-</span></div>
+                    <div class='key'><span>+</span><span>=</span></div><div class='key sp4'>Backspace</div>
+                    <div class='key sp3'>Tab</div><div class='key'>Q</div><div class='key'>W</div>
+                    <div class='key'>E</div><div class='key'>R</div><div class='key'>T</div>
+                    <div class='key'>Y</div><div class='key'>U</div><div class='key'>I</div>
+                    <div class='key'>O</div><div class='key'>P</div>
+                    <div class='key'><span>{</span><span>[</span></div>
+                    <div class='key'><span>}</span><span>]</span></div>
+                    <div class='key sp3'><span>|</span><span>\</span></div>
+                    <div class='key sp4'>CapsLock</div><div class='key'>A</div><div class='key'>S</div>
+                    <div class='key'>D</div><div class='key'>F</div><div class='key'>G</div>
+                    <div class='key'>H</div><div class='key'>J</div><div class='key'>K</div>
+                    <div class='key'>L</div><div class='key'><span>:</span><span>;</span></div>
+                    <div class='key'><span>"</span><span>'</span></div><div class='key sp4'>Enter</div>
+                    <div class='key sp5 kshft'>Shift</div><div class='key'>Z</div><div class='key'>X</div>
+                    <div class='key'>C</div><div class='key'>V</div><div class='key'>B</div>
+                    <div class='key'>N</div><div class='key'>M</div>
+                    <div class='key'><span><</span><span>,</span></div>
+                    <div class='key'><span>></span><span>.</span></div>
+                    <div class='key'><span>?</span><span>/</span></div><div class='key sp5 kshft'>Shift</div>
+                    <div class='key sp3 kctrl'>Ctrl</div><div class='key kalt'>Alt</div>
+                    <div class='key sp20'>Space</div>
+                    <div class='key kalt'>Alt</div><div class='key sp3 kctrl'>Ctrl</div>
+                </div>
+                <div class='section right'>
+                    <div class='sp2'></div><div class='sp2'></div><div class='sp2'></div>
+                    <div class='key'>Insert</div><div class='key'>Home</div><div class='key'>PgUp</div>
+                    <div class='key'>Del</div><div class='key'>End</div><div class='key'>PgDn</div>
+                    <div class='sp2'></div><div class='sp2'></div><div class='sp2'></div>
+                    <div class='sp2'></div><div class='key i'>&#8593;</div><div class='sp2'></div>
+                    <div class='key i'>&#8592;</div><div class='key i'>&#8595;</div>
+                    <div class='key i'>&#8594;</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script type='text/javascript'>
+'use strict';
+
+const html_tag = document.querySelector('html');
+document.getElementById('theme').onclick = e => {
+    html_tag.setAttribute('data-theme',
+            (html_tag.getAttribute('data-theme') === 'dark') ? 'light' : 'dark');
+};
+
+console.error = console._logwrapper('var(--error)');
+console.warn = console._logwrapper('var(--warning)');
+console.info = console._logwrapper('var(--secondary)');
+
+/* jsShell.js | https://github.com/francoisburdy/js-shell-emulator */
+class JsShell {
+    constructor(container, max_length = 10000) {
+        if (typeof container === 'string') {
+            if (container.charAt(0) === '#')
+                container = container.substring(1);
+            container = document.getElementById(container);
+        }
+        this.containerNode = container;
+        this.html = document.createElement('div');
+        this.html.setAttribute('tabindex', 0);
+        this.html.className = 'jsShell';
+        this._innerWindow = document.createElement('div');
+        this._output = document.createElement('pre');
+        this._output.style.margin = '0';
+        this._promptPS1 = document.createElement('span');
+        this._inputLine = document.createElement('span');
+        this._cursor = document.createElement('span');
+        this._cursor.innerHTML = 'O';
+        this._cursor.style.display = 'none';
+        this._cursor.className = 'cursor';
+        this._input = document.createElement('div');
+        this._input.style.margin = '0';
+        this._input.style.display = 'none';
+        this._input.appendChild(this._promptPS1);
+        this._input.appendChild(this._inputLine);
+        this._input.appendChild(this._cursor);
+        this._innerWindow.appendChild(this._output);
+        this._innerWindow.appendChild(this._input);
+        this.html.appendChild(this._innerWindow);
+        this.containerNode.innerHTML = '';
+        this.containerNode.appendChild(this.html);
+        this.cursorSpeed = 500;
+        this._shouldBlinkCursor = true;
+        this.cursorTimer = null;
+        this.setPrompt('');
+        this._prms = {'_log': this._output, 'MAX_LENGTH': max_length};
+    }
+    setPrompt(promptPS) {
+        this._promptPS1.innerHTML = promptPS;
+        return this;
+    }
+    clear() {
+        this._output.innerHTML = '';
+        return this;
+    }
+    print(...args) {
+        console.___log(this._prms, ...args);
+        this.html.scrollTop = this.html.scrollHeight;
+        return this;
+    }
+    write(message, color = null) {
+        if (color) {
+            const newLine = document.createElement('span');
+            newLine.style.color = color;
+            this._output.appendChild(newLine);
+        }
+        return this.print(message, console.NB);
+    }
+    printHTML(content) {
+        const newLine = document.createElement('span');
+        newLine.innerHTML = content;
+        this._output.appendChild(newLine);
+        return this.print();
+    }
+    _fireCursor() {
+        if (this._shouldBlinkCursor)
+            this._fireCursorInterval();
+        else
+            this._cursor.style.visibility = 'visible';
+    }
+    _fireCursorInterval() {
+        if (this.cursorTimer)
+            clearTimeout(this.cursorTimer);
+        this.cursorTimer = setTimeout(() => {
+            this._cursor.style.visibility = this._cursor.style.visibility === 'visible' ?
+                    'hidden' : 'visible';
+            this._fireCursorInterval();
+        }, this.cursorSpeed);
+    }
+    async prompt(message = '') {
+        return new Promise(async (resolve) => {
+            const inputField = document.createElement('input');
+            inputField.style.zIndex = '-100';
+            inputField.style.outline = 'none';
+            inputField.style.border = 'none';
+            inputField.style.top = '0';
+            inputField.style.opacity = '0';
+            inputField.onblur = () => {
+                this._cursor.style.display = 'none';
+            };
+            inputField.onfocus = () => {
+                inputField.value = this._inputLine.textContent;
+                this._cursor.style.display = 'inline-block';
+            };
+            inputField.onkeydown = e => {
+                if (e.code === 'ArrowUp' || e.code === 'ArrowRight' || e.code === 'ArrowLeft' ||
+                        e.code === 'ArrowDown' || e.code === 'Tab')
+                    e.preventDefault();
+                this._cursor.style.visibility = 'visible';
+            };
+            inputField.onkeyup = e => {
+                this._fireCursor();
+                const inputValue = inputField.value;
+                if (e.keyCode === 13 || e.code === 'Enter') {
+                    this._input.style.display = 'none';
+                    this.printHTML(this._promptPS1.innerHTML + inputValue);
+                    this.html.removeChild(inputField);
+                    this.html.scrollTop = this.html.scrollHeight;
+                    resolve(inputValue);
+                }
+                else
+                    this._inputLine.textContent = inputValue;
+            };
+            this.html.onclick = () => {
+                inputField.focus();
+            };
+            this._inputLine.textContent = '';
+            this._input.style.display = 'block';
+            this.html.appendChild(inputField);
+            this._fireCursor();
+            if (message.length)
+                this.printHTML(message);
+            inputField.focus();
+        });
+    }
+}
+
+class Kbd extends Keyboard {
+    constructor(con, monitor) {
+        super();
+        this.con = con;
+        this.monitor = monitor;
+    }
+    kbdHandler(txt, soft) {
+        if (soft && this.monitor.emu.CPU.RUN) {
+            const val = super.kbdHandler(txt, soft);
+            if (val !== null)
+                this.processKey(val);
+        }
+    }
+    processKey(val) {
+        if (val === 14)
+            this.monitor.emu.stop(); // stop emulation on CTRL-n
+        else
+            this.con.kbd.push(val);
+    }
+}
+
+const URL_OPTS = new URLSearchParams(location.search),
+      term = new JsShell('terminal', 1000),
+      amber = '#b38000', // amber monitor
+      green = '#36bf00', // green monitor
+      blue = '#a5a4b3',  // blue (white) monitor
+createCon = async (color, font = 'CP437', width = 80, height = 24, canvas = 'scr') => {
+    let settings = {COLORS: [
+        '#282828', '#0000aa', '#00aa00', '#00aaaa', '#aa0000', '#aa00aa', '#aa5500', color,
+        '#555555', '#5555ff', '#55ff55', '#55ffff', '#ff5555', '#ff55ff', '#ffff55', '#ffffff'
+    ]};
+    if (font === 'VT220') settings = {...settings, FONT_WIDTH: 10, FONT_HEIGHT: 20, FONT_G0: 'VT220'};
+    settings = {...settings, SCR_WIDTH: width, SCR_HEIGHT: height};
+    return await VT_100(canvas, settings);
+},
+addTab = (id, name, num = 1) => {
+    let elem = document.createElement('input');
+    elem.setAttribute('type', 'radio');
+    elem.setAttribute('id', id);
+    elem.setAttribute('name', 'css-tabs');
+    document.querySelector(`div.tabbed input:nth-of-type(${num})`).after(elem);
+    elem = document.createElement('li');
+    elem.className = 'tab';
+    elem.innerHTML = `<label class='command' for='${id}'>${name}</label>`;
+    document.querySelector(`div.tabbed ul li:nth-of-type(${num})`).after(elem);
+    const res = document.createElement('div');
+    res.className = 'tab-content surface';
+    document.querySelector(`div.tabbed div:nth-of-type(${num})`).after(res);
+    return res;
+};
+console._log = term._prms._log;             // merge terminal and
+console.MAX_LENGTH = term._prms.MAX_LENGTH; // console
+
+(async () => {
+    try {
+        await loadScript(URL_OPTS.get('js') ?? 'emulator.js');
+        await main();
+    } catch(e) {
+        console.error(e.stack);
+    }
+})();
+    </script>
+</body>
+</html>
