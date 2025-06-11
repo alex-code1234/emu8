@@ -315,12 +315,8 @@ function Codec8080() {
     const regs = {'A': null, 'B': null, 'C': null, 'D': null, 'E': null, 'H': null, 'L': null, 'S': null},
           acc = 'A', mem = 'HL', work = 'BCD', ref = 'M', prm = 'E',
     pair = reg => (reg === 'B') ? 'C' : (reg === 'D') ? 'E' : 'L',
-    move = (dest, src) => { let val;
-        if (dest !== 'M') {
-            if (src === 'M') { val = regs['H']; val = val.substring(0, val.length - 1); }
-            else val = regs[src];
-            regs[dest] = val;
-        }                                           return `        MOV  ${dest}, ${src}\n`; },
+    move = (dest, src) => { if (dest !== 'M') regs[dest] = (src === 'M') ? regs['L'].substring(1) : regs[src];
+                                                    return `        MOV  ${dest}, ${src}\n`; },
     movi = (dest, val) => { if (dest !== 'M') regs[dest] = val;
                                                     return `        MVI  ${dest}, ${val}\n`; },
     loada = val => { regs['A'] = val;               return `        LDA  ${val}\n`; },
@@ -478,7 +474,7 @@ function Codec8080() {
         //    ---
         // LHLD ?      match, remove if HL not changed
         base.phopt('LHLD (.+)$', cnd => `SHLD ${cnd}`, cnd => [
-            'MVI  H, ', 'MOV  H, ', 'MOV  L, ', 'LXI  H, ', 'DAD  ', 'INX  H', 'DCX  H', 'LHLD '
+            'MVI  H, ', 'MOV  H, ', 'MOV  L, ', 'LXI  H, ', 'DAD  ', 'INX  H', 'DCX  H', 'LHLD ', 'XCHG'
         ]);
         // LXI  H, any begin
         // XCHG        match, remove and rename preceding H to D
@@ -886,7 +882,20 @@ function CodeGen(codec) {
                     
                     break;
                 case 'ref':                                    // de-reference
-                    
+                    saveW(trp.adr);                            // save accW if needed
+                    let optype;
+                    if (trp.typ1 === 'var') optype = vars[trp.val1].typ;
+                    else if (trp.typ1 === 'num') optype = 1;
+                    else optype = triples[fndtrp(trp.val1)].typ;
+                    if (optype === 0) {                        // byte value, expand to word
+                        load1(trp, false);
+                        code += codec.move(codec.accW.charAt(1), codec.acc);
+                        if (regs[codec.accW.charAt(0)] !== 0)
+                            code += codec.movi(codec.accW.charAt(0), 0);
+                    }
+                    else loadW(trp, true, codec.accW, loc(1, trp.val1));
+                    code += codec.move(codec.acc, codec.ref);
+                    regs[codec.acc] = trp.adr;                 // set result
                     break;
                 default: throw new Error(`illegal operation: ${trp.oper}`);
             }
@@ -906,18 +915,25 @@ function CodeGen(codec) {
         return (hi === lo) ? (valtype(hi) === 'num') ? hi | 0 : hi : null;
     },
     saveW = (adr, force = false) => {                          // push to stack
+        let tt = null;
         const w = getW(regs[codec.accW.charAt(0)], regs[codec.accW.charAt(1)]);
         if (w === null) return false;                          // reg pair is not word
         if (valtype(w) === 'var' && vars[w].typ === 0)         // byte variable in word acc
             return false;                                      // do not save
-        if (!force && used(adr, w) === 0) return false;        // not used
+        if (!force) {
+            const usd = used(adr, w);
+            if (usd === 0) return false;                       // not used
+            if (usd === 1) {
+                tt = triples[fndtrp(adr) + 1];                 // next triple
+                if ((tt.val1 === w && tt.val2 !== adr) ||      // used only in next triple
+                        (tt.val2 === w && tt.val1 !== adr))    // 
+                    return false;
+            }
+        }
         const s = regs[codec.savW];
         if (s !== null) {                                      // stack is already used
-            if (!force && used(adr, w, 2, 1) === 0)
-                return false;                                  // don't save if used only in next triple of this asg
-            const tt = triples[fndtrp(adr) + 1],
-                  sw = getW(s.split('|'));
-            if (sw === tt.val1) {
+            if (tt === null) tt = triples[fndtrp(adr) + 1];
+            if (getW(s.split('|')) === tt.val1) {
                 code += codec.swapS();                         // stack used in next triplet, exchange
                 return false;
             }
@@ -975,7 +991,7 @@ function CodeGen(codec) {
                     restW(trp.adr, reg);                       // restore
                 else if (reg === codec.accW && inreg(lc, codec.workW))
                     code += codec.swapW();                     // swap working and accumulator regs
-                else if (lc === null) throw new Error(`too complex expression`);
+                else if (lc === null) throw new Error(`too complex expression at ${trp.adr}`);
                 else {                                         // type 0 result
                     code += codec.move(reg.charAt(1), lc.charAt(0));
                     if (regs[reg.charAt(0)] !== 0)
@@ -1055,7 +1071,12 @@ function CodeGen(codec) {
                 
                 break;
             case 'adr':                                        // variable address
-                
+                saveW(trp.adr);                                // save accumulator if needed
+                if (trp.typ1 === 'var')                        // not indexed variable
+                    code += codec.loadr(codec.mem.charAt(0), trp.val1);
+                else loadW(trp, true, codec.accW, loc(1, trp.val1));
+                regs[codec.accW.charAt(0)] = `${trp.adr}_`;    // set result
+                regs[codec.accW.charAt(1)] = `_${trp.adr}`;
                 break;
             default: throw new Error(`illegal operation: ${trp.oper}`);
         }
@@ -1759,23 +1780,34 @@ const il = IL(),
       codec = Codec8080(),
       gen = CodeGen(codec);
 
+function triplesToStr(code) {
+    let strcode = '';
+    for (let i = 0, n = code.length; i < n; i++) {
+        const trp = code[i];
+        strcode += showTrp(trp);
+    }
+    return strcode;
+}
+
 function compile(prg, optimize, showtrp) {
-    il.init();
-    parser.parse(prg);
-    const [code, vars] = il.code(),
-          codecpy = [];
-    for (let i = 0, n = code.length; i < n; i++)
-        codecpy.push({...code[i]});
-    return [gen.generate(code, vars, optimize, showtrp), vars, codecpy];
+    const codecpy = [];
+    try {
+        il.init();
+        parser.parse(prg);
+        const [code, vars] = il.code();
+        for (let i = 0, n = code.length; i < n; i++) codecpy.push({...code[i]});
+        return [gen.generate(code, vars, optimize, showtrp), vars, codecpy];
+    } catch(e) {
+        console.log(prg);
+        console.log(triplesToStr(codecpy));
+        console.error(e.stack);
+        throw '';
+    }
 }
 
 function test(prg, res, res2) {
     const code = compile(prg);
-    let strcode = '';
-    for (let i = 0, n = code[2].length; i < n; i++) {
-        const trp = code[2][i];
-        strcode += showTrp(trp);
-    }
+    let strcode = triplesToStr(code[2]);
     if (strcode.trim() !== res.trim())
         throw new Error(`program:\n${prg}\ngenerated:\n${strcode}\nexpected:\n${res}`);
     if (code[0].trim() !== res2.trim())
@@ -1849,101 +1881,6 @@ tmp = arr[i];
         DAD  D
         MOV  A, M
         STA  tmp
-    `);
-    test(`
-word a, b; byte c, d;
-c = *b;
-    `, `
-:0_ b__ ref ___ 0 ____ ____ ____
-:1_ c__ asg :0_ 0 ____ ____ ____
-    `, `
-        LHLD b
-        MOV  A, M
-        STA  c
-    `);
-    test(`
-word a, b; byte c, d;
-c = *10 + d;
-    `, `
-:0_ 10_ ref ___ 0 ____ ____ ____
-:1_ :0_ add d__ 0 ____ ____ ____
-:2_ c__ asg :1_ 0 ____ ____ ____
-    `, `
-        LXI  H, 10
-        MOV  A, M
-        LXI  H, d
-        ADD  M
-        STA  c
-    `);
-    test(`
-word a, b; byte c, d;
-d = *c;
-    `, `
-:0_ c__ ref ___ 0 ____ ____ ____
-:1_ d__ asg :0_ 0 ____ ____ ____
-    `, `
-        LDA  c
-        MOV  L, A
-        MVI  H, 0
-        MOV  A, M
-        STA  d
-    `);
-    test(`
-word a, b; byte c, d;
-a = *b;
-    `, `
-:0_ b__ ref ___ 0 ____ ____ ____
-:1_ a__ asg :0_ 1 ____ ____ ____
-    `, `
-        LHLD b
-        MOV  L, M
-        MVI  H, 0
-        SHLD a
-    `);
-    test(`
-word a, b; byte c, d;
-a = *10 + b;
-    `, `
-:0_ 10_ ref ___ 0 ____ ____ ____
-:1_ :0_ add b__ 1 ____ ____ ____
-:2_ a__ asg :1_ 1 ____ ____ ____
-    `, `
-        LXI  H, 10
-        MOV  L, M
-        MVI  H, 0
-        XCHG
-        LHLD b
-        DAD  D
-        SHLD a
-    `);
-    test(`
-word a, b; byte c, d;
-a = *10 + d;
-    `, `
-:0_ 10_ ref ___ 0 ____ ____ ____
-:1_ :0_ add d__ 0 ____ ____ ____
-:2_ a__ asg :1_ 1 ____ ____ ____
-    `, `
-        LXI  H, 10
-        MOV  A, M
-        LXI  H, d
-        ADD  M
-        MOV  L, A
-        MVI  H, 0
-        SHLD a
-    `);
-    test(`
-word a, b; byte c, d;
-a = *c;
-    `, `
-:0_ c__ ref ___ 0 ____ ____ ____
-:1_ a__ asg :0_ 1 ____ ____ ____
-    `, `
-        LDA  c
-        MOV  L, A
-        MVI  H, 0
-        MOV  L, M
-        SHLD a
     `);
     test(`
 word a1[10], e1; byte b1, c1;
@@ -2160,69 +2097,6 @@ b = 12;
         MVI  M, 7
     `);
     test(`
-word a; byte b, c;
-a = &b;
-b = 12;
-c = *(a + b + 7);
-    `, `
-:0_ b__ adr ___ 1 ____ ____ ____
-:1_ a__ asg :0_ 1 ____ ____ ____
-:2_ b__ asg 12_ 0 ____ ____ ____
-:3_ a__ add b__ 1 ____ ____ ____
-:4_ :3_ add 7__ 1 ____ ____ ____
-:5_ :4_ ref ___ 0 ____ ____ ____
-:6_ c__ asg :5_ 0 ____ ____ ____
-    `, `
-        LXI  H, b
-        SHLD a
-        MVI  M, 12
-        LDA  b
-        MOV  E, A
-        MVI  D, 0
-        DAD  D
-        LXI  D, 7
-        DAD  D
-        MOV  A, M
-        STA  c
-    `);
-    test(`
-word a; byte b, c;
-a = &b;
-b = 12;
-c = *120;
-    `, `
-:0_ b__ adr ___ 1 ____ ____ ____
-:1_ a__ asg :0_ 1 ____ ____ ____
-:2_ b__ asg 12_ 0 ____ ____ ____
-:3_ 120 ref ___ 0 ____ ____ ____
-:4_ c__ asg :3_ 0 ____ ____ ____
-    `, `
-        LXI  H, b
-        SHLD a
-        MVI  M, 12
-        LXI  H, 120
-        MOV  A, M
-        STA  c
-    `);
-    test(`
-word a; byte b, c;
-a = &b;
-b = 12;
-c = *a;
-    `, `
-:0_ b__ adr ___ 1 ____ ____ ____
-:1_ a__ asg :0_ 1 ____ ____ ____
-:2_ b__ asg 12_ 0 ____ ____ ____
-:3_ a__ ref ___ 0 ____ ____ ____
-:4_ c__ asg :3_ 0 ____ ____ ____
-    `, `
-        LXI  H, b
-        SHLD a
-        MVI  M, 12
-        MOV  A, M
-        STA  c
-    `);
-    test(`
 word a[3], b; byte c, d, e;
 c = 32;
 a[2] = &d;
@@ -2296,51 +2170,6 @@ a[2] = &b;
         MOV  M, E
         INX  H
         MOV  M, D
-    `);
-    test(`
-word a, b; byte c, d;
-a = &b + &d;
-a = &b + &b;
-    `, `
-:0_ b__ adr ___ 1 ____ ____ ____
-:1_ d__ adr ___ 1 ____ ____ ____
-:2_ :0_ add :1_ 1 ____ ____ ____
-:3_ a__ asg :2_ 1 ____ ____ ____
-:6_ :0_ add :0_ 1 ____ ____ ____
-:7_ a__ asg :6_ 1 ____ ____ ____
-    `, `
-        LXI  H, b
-        PUSH H
-        LXI  H, d
-        POP  D
-        DAD  D
-        SHLD a
-        XCHG
-        DAD  H
-        SHLD a
-    `);
-    test(`
-word a, b; byte c, d;
-a = &b + &d;
-a = &b + 2;
-    `, `
-:0_ b__ adr ___ 1 ____ ____ ____
-:1_ d__ adr ___ 1 ____ ____ ____
-:2_ :0_ add :1_ 1 ____ ____ ____
-:3_ a__ asg :2_ 1 ____ ____ ____
-:5_ :0_ inc 2__ 1 ____ ____ ____
-:6_ a__ asg :5_ 1 ____ ____ ____
-    `, `
-        LXI  H, b
-        PUSH H
-        LXI  H, d
-        POP  D
-        DAD  D
-        SHLD a
-        XCHG
-        INX  H
-        INX  H
-        SHLD a
     `);
     test(`
 word a, b[5]; byte c, d[5];
@@ -2705,6 +2534,328 @@ a = b[a + 1];
         STA  a
     `);*/
     test(`
+word a; byte b, c;
+a = &b;
+b = 12;
+c = *(a + b + 7);
+    `, `
+:0_ b__ adr ___ 1 ____ ____ ____
+:1_ a__ asg :0_ 1 ____ ____ ____
+:2_ b__ asg 12_ 0 ____ ____ ____
+:3_ a__ add b__ 1 ____ ____ ____
+:4_ :3_ add 7__ 1 ____ ____ ____
+:5_ :4_ ref ___ 0 ____ ____ ____
+:6_ c__ asg :5_ 0 ____ ____ ____
+    `, `
+        LXI  H, b
+        SHLD a
+        MVI  M, 12
+        XCHG
+        LHLD a
+        DAD  D
+        LXI  D, 7
+        DAD  D
+        MOV  A, M
+        STA  c
+    `);
+    test(`
+word a; byte b, c;
+a = &b;
+b = 12;
+c = *120;
+    `, `
+:0_ b__ adr ___ 1 ____ ____ ____
+:1_ a__ asg :0_ 1 ____ ____ ____
+:2_ b__ asg 12_ 0 ____ ____ ____
+:3_ 120 ref ___ 0 ____ ____ ____
+:4_ c__ asg :3_ 0 ____ ____ ____
+    `, `
+        LXI  H, b
+        SHLD a
+        MVI  M, 12
+        LXI  H, 120
+        MOV  A, M
+        STA  c
+    `);
+    test(`
+word a; byte b, c;
+a = &b;
+b = 12;
+c = *a;
+    `, `
+:0_ b__ adr ___ 1 ____ ____ ____
+:1_ a__ asg :0_ 1 ____ ____ ____
+:2_ b__ asg 12_ 0 ____ ____ ____
+:3_ a__ ref ___ 0 ____ ____ ____
+:4_ c__ asg :3_ 0 ____ ____ ____
+    `, `
+        LXI  H, b
+        SHLD a
+        MVI  M, 12
+        MOV  A, M
+        STA  c
+    `);
+    test(`
+word a, b; byte c, d;
+a = &b + &d;
+a = &b + &b;
+    `, `
+:0_ b__ adr ___ 1 ____ ____ ____
+:1_ d__ adr ___ 1 ____ ____ ____
+:2_ :0_ add :1_ 1 ____ ____ ____
+:3_ a__ asg :2_ 1 ____ ____ ____
+:6_ :0_ add :0_ 1 ____ ____ ____
+:7_ a__ asg :6_ 1 ____ ____ ____
+    `, `
+        LXI  H, b
+        PUSH H
+        LXI  H, d
+        POP  D
+        DAD  D
+        SHLD a
+        XCHG
+        DAD  H
+        SHLD a
+    `);
+    test(`
+word a, b; byte c, d;
+a = &b + &d;
+a = &b + 2;
+    `, `
+:0_ b__ adr ___ 1 ____ ____ ____
+:1_ d__ adr ___ 1 ____ ____ ____
+:2_ :0_ add :1_ 1 ____ ____ ____
+:3_ a__ asg :2_ 1 ____ ____ ____
+:5_ :0_ inc 2__ 1 ____ ____ ____
+:6_ a__ asg :5_ 1 ____ ____ ____
+    `, `
+        LXI  H, b
+        PUSH H
+        LXI  H, d
+        POP  D
+        DAD  D
+        SHLD a
+        XCHG
+        INX  H
+        INX  H
+        SHLD a
+    `);
+    test(`
+word a, b, c;
+a = &c;
+b = &c + 10;
+    `, `
+:0_ c__ adr ___ 1 ____ ____ ____
+:1_ a__ asg :0_ 1 ____ ____ ____
+:3_ :0_ add 10_ 1 ____ ____ ____
+:4_ b__ asg :3_ 1 ____ ____ ____
+    `, `
+        LXI  H, c
+        SHLD a
+        LXI  D, 10
+        DAD  D
+        SHLD b
+    `);
+    test(`
+word a, b; byte c;
+a = &b + 10 + &b;
+    `, `
+:0_ b__ adr ___ 1 ____ ____ ____
+:1_ :0_ add 10_ 1 ____ ____ ____
+:3_ :1_ add :0_ 1 ____ ____ ____
+:4_ a__ asg :3_ 1 ____ ____ ____
+    `, `
+        LXI  H, b
+        PUSH H
+        LXI  D, 10
+        DAD  D
+        POP  D
+        DAD  D
+        SHLD a
+    `);
+    test(`
+word a; byte b;
+a = &(10 + &b);
+    `, `
+:0_ b__ adr ___ 1 ____ ____ ____
+:1_ 10_ add :0_ 1 true true ____
+:2_ :1_ adr ___ 1 ____ ____ ____
+:3_ a__ asg :2_ 1 ____ ____ ____
+    `, `
+        LXI  H, b
+        LXI  D, 10
+        DAD  D
+        SHLD a
+    `);
+    test(`
+word a, b;
+a = &(10 + &b);
+    `, `
+:0_ b__ adr ___ 1 ____ ____ ____
+:1_ 10_ add :0_ 1 true true ____
+:2_ :1_ adr ___ 1 ____ ____ ____
+:3_ a__ asg :2_ 1 ____ ____ ____
+    `, `
+        LXI  H, b
+        LXI  D, 10
+        DAD  D
+        SHLD a
+    `);
+    test(`
+byte a; word b, c;
+a = *(10 + b);
+    `, `
+:0_ 10_ add b__ 1 ____ ____ ____
+:1_ :0_ ref ___ 0 ____ ____ ____
+:2_ a__ asg :1_ 0 ____ ____ ____
+    `, `
+        LXI  D, 10
+        LHLD b
+        DAD  D
+        MOV  A, M
+        STA  a
+    `);
+    test(`
+word a; byte b;
+a = *(10 + b);
+    `, `
+:0_ 10_ add b__ 0 ____ ____ ____
+:1_ :0_ ref ___ 0 ____ ____ ____
+:2_ a__ asg :1_ 1 ____ ____ ____
+    `, `
+        LDA  b
+        ADI  10
+        MOV  L, A
+        MVI  H, 0
+        MOV  L, M
+        SHLD a
+    `);
+    test(`
+byte a, b;
+a = *(10 + b);
+    `, `
+:0_ 10_ add b__ 0 ____ ____ ____
+:1_ :0_ ref ___ 0 ____ ____ ____
+:2_ a__ asg :1_ 0 ____ ____ ____
+    `, `
+        LDA  b
+        ADI  10
+        MOV  L, A
+        MVI  H, 0
+        MOV  A, M
+        STA  a
+    `);
+    test(`
+word a, b;
+a = *(10 + b);
+    `, `
+:0_ 10_ add b__ 1 ____ ____ ____
+:1_ :0_ ref ___ 0 ____ ____ ____
+:2_ a__ asg :1_ 1 ____ ____ ____
+    `, `
+        LXI  D, 10
+        LHLD b
+        DAD  D
+        MOV  L, M
+        MVI  H, 0
+        SHLD a
+    `);
+    test(`
+word a, b; byte c, d;
+c = *b;
+    `, `
+:0_ b__ ref ___ 0 ____ ____ ____
+:1_ c__ asg :0_ 0 ____ ____ ____
+    `, `
+        LHLD b
+        MOV  A, M
+        STA  c
+    `);
+    test(`
+word a, b; byte c, d;
+c = *10 + d;
+    `, `
+:0_ 10_ ref ___ 0 ____ ____ ____
+:1_ :0_ add d__ 0 ____ ____ ____
+:2_ c__ asg :1_ 0 ____ ____ ____
+    `, `
+        LXI  H, 10
+        MOV  A, M
+        LXI  H, d
+        ADD  M
+        STA  c
+    `);
+    test(`
+word a, b; byte c, d;
+d = *c;
+    `, `
+:0_ c__ ref ___ 0 ____ ____ ____
+:1_ d__ asg :0_ 0 ____ ____ ____
+    `, `
+        LDA  c
+        MOV  L, A
+        MVI  H, 0
+        MOV  A, M
+        STA  d
+    `);
+    test(`
+word a, b; byte c, d;
+a = *b;
+    `, `
+:0_ b__ ref ___ 0 ____ ____ ____
+:1_ a__ asg :0_ 1 ____ ____ ____
+    `, `
+        LHLD b
+        MOV  L, M
+        MVI  H, 0
+        SHLD a
+    `);
+    test(`
+word a, b; byte c, d;
+a = *10 + b;
+    `, `
+:0_ 10_ ref ___ 0 ____ ____ ____
+:1_ :0_ add b__ 1 ____ ____ ____
+:2_ a__ asg :1_ 1 ____ ____ ____
+    `, `
+        LXI  H, 10
+        MOV  L, M
+        MVI  H, 0
+        XCHG
+        LHLD b
+        DAD  D
+        SHLD a
+    `);
+    test(`
+word a, b; byte c, d;
+a = *10 + d;
+    `, `
+:0_ 10_ ref ___ 0 ____ ____ ____
+:1_ :0_ add d__ 0 ____ ____ ____
+:2_ a__ asg :1_ 1 ____ ____ ____
+    `, `
+        LXI  H, 10
+        MOV  A, M
+        LXI  H, d
+        ADD  M
+        MOV  L, A
+        MVI  H, 0
+        SHLD a
+    `);
+    test(`
+word a, b; byte c, d;
+a = *c;
+    `, `
+:0_ c__ ref ___ 0 ____ ____ ____
+:1_ a__ asg :0_ 1 ____ ____ ____
+    `, `
+        LDA  c
+        MOV  L, A
+        MVI  H, 0
+        MOV  L, M
+        SHLD a
+    `);
+    test(`
 word a, b, c, d; byte e, f;
 e = 2 + f; d = f + 2; c = f + 2;
     `, `
@@ -2972,6 +3123,7 @@ a = c + b; c = a - d; e = a + c; f = a - c;
         CALL @SUBW
         SHLD c
         XCHG
+        LHLD c
         DAD  D
         SHLD e
         LHLD c
