@@ -474,7 +474,8 @@ function Codec8080() {
         //    ---
         // LHLD ?      match, remove if HL not changed
         base.phopt('LHLD (.+)$', cnd => `SHLD ${cnd}`, cnd => [
-            'MVI  H, ', 'MOV  H, ', 'MOV  L, ', 'LXI  H, ', 'DAD  ', 'INX  H', 'DCX  H', 'LHLD ', 'XCHG'
+            'MVI  H, ', 'MOV  H, ', 'MOV  L, ', 'LXI  H, ', 'DAD  ', 'INX  H', 'DCX  H', 'LHLD ', 'XCHG',
+            'CALL @SUBW', 'POP  H'
         ]);
         // LXI  H, any begin
         // XCHG        match, remove and rename preceding H to D
@@ -777,7 +778,7 @@ function CodeGen(codec) {
         for (const r in regs) regs[r] = null;
         for (let i = 0, n = triples.length; i < n; i++) {
             const trp = triples[i];
-            if (showtrp) code += `;;; ${showTrp(trp)}`;
+            if (!optimize && showtrp) code += `;;; ${showTrp(trp)}`;
             if (trp.typ !== 0) { generateW(trp); continue; }   // type 1 generation
             switch (trp.oper) {                                // type 0 generation
                 case 'inv': case 'inc': case 'dec':            // unary operations
@@ -926,7 +927,7 @@ function CodeGen(codec) {
             if (usd === 1) {
                 tt = triples[fndtrp(adr) + 1];                 // next triple
                 if ((tt.val1 === w && tt.val2 !== adr) ||      // used only in next triple
-                        (tt.val2 === w && tt.val1 !== adr))    // 
+                        (tt.val2 === w && tt.val1 !== adr))    // acc value and not this triple
                     return false;
             }
         }
@@ -3122,6 +3123,7 @@ a = c + b; c = a - d; e = a + c; f = a - c;
         MOV  E, A
         CALL @SUBW
         SHLD c
+        LHLD a
         XCHG
         LHLD c
         DAD  D
@@ -3808,15 +3810,10 @@ async function mainRun() {
           emu = new Emulator(cpu, mem, 0),
           mon = new CPMMonitor(emu, 500);
     let prg = compiler(`
-byte arr[10], tmp, i;
-tmp = arr[i];
-arr[i] = arr[i + 1];
-arr[i + 1] = tmp;
-tmp = arr[i + 2];
-arr[i + 2] = arr[i + 3];
-arr[i + 3] = tmp;
-          `, false, true);
-prg = prg.replace('arr:    DS   10', 'arr:    DB   1, 2, 3, 4, 5, 6, 7, 8, 9, 10');
+word aa, cc; byte bb, dd; word ee, ff;
+aa = 1234; cc = 5678; bb = 12; dd = 56;
+aa = cc + bb; cc = aa - dd; ee = aa + cc; ff = aa - cc;
+          `, true, false);
     console.log(prg);
     mem.setData(toData(prg));
     con.keys('mac prg\n load prg\nprg\n');
@@ -3871,21 +3868,24 @@ async function mainDebug() {
           mem = new CPM22MemIO(con, 0, 'PRG.ASM'),
           cpu = new GenCpu(mem, 0),
           emu = new Emulator(cpu, mem, 0),
-          mon = new CPMMonitor(emu, undefined, // CP/M monitor with output to emulated console
-                  (...args) => con.print(args.join(' ').replace('\n', '~') + '~')),
-          kbd = new KbdMon(con, mon);
+          mon = new CPMMonitor(emu),
+          kbd = new Kbd(con, mon);
     mem.CPM_DRIVES[0] = await CPMDisk('../emu/github/emu8/cpm/cpma.cpm');
+    term.setPrompt('> ');
     let prg = compiler(`
-byte arr[10], tmp, i;
-tmp = arr[i];
-arr[i] = arr[i + 1];
-arr[i + 1] = tmp;
-tmp = arr[i + 2];
-arr[i + 2] = arr[i + 3];
-arr[i + 3] = tmp;
-    `, true, true);
-    prg = prg.replace('arr:    DS   10', 'arr:    DB   1, 2, 3, 4, 5, 6, 7, 8, 9, 10');
+word va, vc; byte vb, vd; word ve, vf;
+va = 7; vc = 3; vb = 2; vd = 1;
+va = vc + vb; vc = va - vd; ve = va + vc; vf = va - vc;
+    `, false, true);
+/*
+*/
+//0200: 05 00 04 00 02 01 09 00 01 00  true
+//      05 00 04 00 02 01 09 00 01 00
+//0200: 05 00 04 00 02 01 09 00 01 00  false
     console.log(prg);
     mem.setData(toData(prg));
+    const cmd = 'mac prg\n load prg\n';
+    for (let i = 0, n = cmd.length; i < n; i++) con.kbd.push(cmd.charCodeAt(i));
     mon.exec('on 0');
+    while (true) mon.exec(await term.prompt());
 }
