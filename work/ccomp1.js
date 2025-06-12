@@ -616,9 +616,20 @@ function CodeGen(codec) {
         if (changed) code = lines.join('\n');
     },
     loc = (typ, val) => {                                      // get operand location
+        const varval = valtype(val) === 'var';                 // val is variable
         let lc = '';
         for (const r in regs) {
-            const rval = regs[r];
+            let rval = regs[r];
+            if (varval && rval !== null && valtype(rval) === 'trp') { // try to substitute trp with var
+                if (rval.indexOf('|') > 0) rval = getW(...rval.split('|'));
+                else if (rval.endsWith('_')) rval = rval.substring(0, rval.length - 1);
+                else if (rval.startsWith('_')) rval = rval.substring(1);
+                const id = fndtrp(rval);                       // find triplet by reg value
+                let tt = triples[id];
+                if (tt.oper !== 'asg') tt = triples[id + 1];   // not assignment, try next triplet
+                if (tt.oper === 'asg' && tt.val2 === rval)     // found
+                    rval = tt.val1;                            // replace with var
+            }
             if (rval === val) lc += r;                         // exact match
             else if (typ === 0) {                              // byte operation
                 if (r === codec.mem.charAt(0) && rval === `${val}_` &&
@@ -3123,13 +3134,11 @@ a = c + b; c = a - d; e = a + c; f = a - c;
         MOV  E, A
         CALL @SUBW
         SHLD c
-        LHLD a
         XCHG
-        LHLD c
+        LHLD a
         DAD  D
         SHLD e
-        LHLD c
-        XCHG
+        LHLD a
         CALL @SUBW
         SHLD f
     `);
@@ -3874,14 +3883,14 @@ async function mainDebug() {
     term.setPrompt('> ');
     let prg = compiler(`
 word va, vc; byte vb, vd; word ve, vf;
-va = 7; vc = 3; vb = 2; vd = 1;
+va = 1234; vc = 5678; vb = 12; vd = 56;
 va = vc + vb; vc = va - vd; ve = va + vc; vf = va - vc;
-    `, false, true);
+    `, true, true);
+//0200: 3a 16 02 16 0c 38 3c 2c 38 00    true
+//      3a 16 02 16 0c 38 3c 2c 38 00
+//0200: 3a 16 02 16 0c 38 3c 2c 38 00    false
 /*
 */
-//0200: 05 00 04 00 02 01 09 00 01 00  true
-//      05 00 04 00 02 01 09 00 01 00
-//0200: 05 00 04 00 02 01 09 00 01 00  false
     console.log(prg);
     mem.setData(toData(prg));
     const cmd = 'mac prg\n load prg\n';
