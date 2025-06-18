@@ -100,16 +100,19 @@ function Parser(emit) {
         while (look !== '') {
             if (look === '*') { match('*'); param = 1; }
             else param = 0;
-            name();
-            if (token === 'byte' || token === 'word') {
-                const typ = (token === 'byte') ? 0 : 1;
-                id('vdc', typ); while (look === ',') { match(','); id('vdc', typ); } match(';');
-            } else {
+            if (param && !alpha(look)) expr();
+            else {
+                name();
+                if (token === 'byte' || token === 'word') {
+                    const typ = (token === 'byte') ? 0 : 1;
+                    id('vdc', typ); while (look === ',') { match(','); id('vdc', typ); } match(';');
+                    continue;
+                }
                 pushback();
                 id('var');
-                if (look === '=') { match('='); expr(); match(';'); emit('asg', param); }
-                else expect('declaration or assignment');
             }
+            if (look === '=') { match('='); expr(); match(';'); emit('asg', param); }
+            else expect('declaration or assignment');
         }
     };
     return {parse};
@@ -881,46 +884,24 @@ function CodeGen(codec) {
                     break;
                 case 'asg':                                    // assignment
                     if (trp.typ1 !== 'var' || trp.ref) {       // indexed variable or de-reference
-                        if (trp.typ1 !== 'var') {              // address on stack
-                            if (!prevXTHL)                     // restore only if not after XTHL
-                                restW(trp.adr, codec.mem, true);
-                        } else {                               // var de-reference not processed
-                            if (vars[trp.val1].typ !== 1)      // check type
-                                throw new Error(`expected word type: ${trp.val1} at ${trp.adr}`);
-                            code += codec.loadaW(trp.val1);
-                        }
-                        if (trp.ref) {                         // de-reference
-                            let wr, save = false;              // try to get working register
-                            try { wr = rgwork(trp.adr, codec.work); }
-                            catch { wr = codec.work.charAt(0); save = true; }
-                            if (save) code += codec.saveWr(wr);
-                            code += codec.move(wr, codec.ref);
-                            code += codec.incrW(codec.accW.charAt(0), trp.adr);
-                            code += codec.move(codec.accW.charAt(0), codec.ref);
-                            code += codec.move(codec.accW.charAt(1), wr);
-                            if (save) code += codec.restW(wr);
-                            if (trp.typ2 === 'num') {          // check and load num
+                        saveW(trp.adr);                        // save word acc and load LHS
+                        loadW(trp, true, codec.accW, loc(1, trp.val1));
+                        if (trp.ref) {
+                            if (trp.typ2 === 'num') {          // check num type and load
                                 if (trp.val2 < -128 || trp.val2 > 255)
                                     throw new Error(`illegal assignment: ${trp.val2} at ${trp.adr}`);
                                 code += codec.movi(codec.ref, trp.val2);
                                 break;
                             }
-                            if (trp.typ2 === 'var') {          // check var type
+                            if (trp.typ2 === 'var') {          // check var and trp types
                                 if (vars[trp.val2].typ !== 0)
                                     throw new Error(`illegal assignment: ${trp.val2} at ${trp.adr}`);
                             }
                             else if (triples[fndtrp(trp.val2)].typ !== 0)
                                 throw new Error(`illegal assignment: ${trp.val2} at ${trp.adr}`);
-                        }
-                        if (trp.typ2 === 'var') {              // right side var is not processed, load
-                            const varloc = loc(0, trp.val2);   // check if already loaded
-                            if (varloc !== null) {             // use loaded
-                                code += codec.move(codec.ref, varloc.charAt(0));
-                                break;
-                            }
-                            code += codec.loada(trp.val2);     // else load
-                        }
-                        code += codec.move(codec.ref, codec.acc);
+                        }                                      // load RHS as 1st oper to avoid word acc usage
+                        load1({'adr': trp.adr, 'typ1': trp.typ2, 'val1': trp.val2, 'typ': 0}, false);
+                        code += codec.move(codec.ref, codec.acc); // do assignment
                         break;
                     }
                     let mem = regs[codec.mem.charAt(0)], v = `${trp.val1}_`;
@@ -998,6 +979,22 @@ function CodeGen(codec) {
             codec.peephole({fndop, chgop, phopt});             // peephole optimization
             codec.peephole({fndop, chgop, phopt});             // process changed code again
         }
+        const lines = code.split('\n');                        // check stack balance
+        for (let i = lines.length - 1, count = 0; i >= 0; i--) {
+            const line = lines[i];
+            if (line.indexOf('POP ') >= 0) count--;
+            else if (line.indexOf('PUSH ') >= 0) {
+                count++;
+                if (count > 0) {                               // remove last unused PUSH
+                    regs[codec.savW].pop();                    // remove from stack
+                    lines.splice(i, 1);                        // remove from code
+                    code = lines.join('\n');
+                    break;
+                }
+            }
+        }
+        if (regs[codec.savW].length > 0)                       // non empty stack, generation failed
+            throw new Error(`code generation error: invalid stack\n${code}`);
         return code;
     },
     saveW = (adr, force = false) => {                          // push word acc
@@ -1024,7 +1021,13 @@ function CodeGen(codec) {
         return true;
     },
     restW = (adr, reg, check = false) => {                     // pop from stack, check - check usage
-        code += codec.restW(reg.charAt(0));                    // restore word acc
+        if (reg === codec.accW) {                              // word acc target
+            const hl = getW(regs[reg.charAt(0)], regs[reg.charAt(1)]);
+            if (hl !== null && valtype(hl) === 'trp' && used(adr, hl, 1, 0, t => true) > 0)
+                code += codec.swapS();                         // current word acc used, save to work reg
+            else code += codec.restW(reg.charAt(0));           // restore to word acc
+        }
+        else code += codec.restW(reg.charAt(0));               // restore to reg
         if (check) {                                           // if check and used forward
             const w = getW(regs[reg.charAt(0)], regs[reg.charAt(1)]);
             if (w !== null && used(adr, w, 1, 0, t => true) > 0)
@@ -1068,10 +1071,10 @@ function CodeGen(codec) {
                 }
                 break;
             case 'trp':
-                if (inreg(lc, codec.savW))                     // saved
-                    restW(trp.adr, reg);                       // restore
-                else if (reg === codec.accW && inreg(lc, codec.workW))
-                    code += codec.swapW();                     // swap working and accumulator regs
+                if (reg === codec.accW && inreg(lc, codec.workW))
+                    code += codec.swapW();                     // in working regs, swap
+                else if (inreg(lc, codec.savW))                // saved
+                    restW(trp.adr, reg, true);                 // restore
                 else if (lc === null) throw new Error(`too complex expression: ${val} at ${trp.adr}`);
                 else {                                         // type 0 result
                     code += codec.move(reg.charAt(1), lc.charAt(0));
@@ -1241,9 +1244,7 @@ function compile(prg, optimize, showtrp) {
 }
 
 function test(prg, res, res2) {
-    const code = compile(prg
-, true, true
-    );
+    const code = compile(prg);
     let strcode = triplesToStr(code[2]);
     if (strcode.trim() !== res.trim())
         throw new Error(`program:\n${prg}\ngenerated:\n${strcode}\nexpected:\n${res}`);
@@ -1252,6 +1253,40 @@ function test(prg, res, res2) {
 }
 
 function doTests() {
+    test(`
+byte arr[10], tmp, i;
+tmp = *(&arr + i);
+*(&arr + i) = *(&arr + i + 1);
+*(&arr + i + 1) = tmp;
+    `, `
+:0_ arr adr ___ 1 ____ ____ ____
+:1_ :0_ add i__ 1 ____ ____ ____
+:2_ :1_ ref ___ 0 ____ ____ ____
+:3_ tmp asg :2_ 0 ____ ____ ____
+:8_ :1_ inc ___ 1 ____ ____ ____
+:9_ :8_ ref ___ 0 ____ ____ ____
+:10 :1_ asg :9_ 0 ____ ____ true
+:14 :8_ asg tmp 0 ____ ____ true
+    `, `
+        LXI  H, arr
+        LDA  i
+        MOV  E, A
+        MVI  D, 0
+        DAD  D
+        PUSH H
+        MOV  A, M
+        LXI  H, tmp
+        MOV  M, A
+        POP  H
+        PUSH H
+        INX  H
+        MOV  A, M
+        XTHL
+        MOV  M, A
+        POP  H
+        LDA  tmp
+        MOV  M, A
+    `);
     test(`
 byte arr[10], tmp, i;
 tmp = arr[i];
@@ -1359,22 +1394,12 @@ e1 = &a1[2] + 1;
         MOV  A, M
         ADI  10
         POP  H
-        PUSH H
-        MOV  B, M
-        INX  H
-        MOV  H, M
-        MOV  L, B
         MOV  M, A
-        POP  H
         INX  H
         SHLD e1
         LHLD a1
         MOV  A, M
         LHLD e1
-        MOV  B, M
-        INX  H
-        MOV  H, M
-        MOV  L, B
         MOV  M, A
     `);
     test(`
@@ -1414,19 +1439,9 @@ e1 = &a1[2] + 1;
         MOV  A, M
         ADI  10
         POP  H
-        PUSH H
-        MOV  B, M
-        INX  H
-        MOV  H, M
-        MOV  L, B
         MOV  M, A
-        POP  H
         INX  H
         SHLD e1
-        MOV  B, M
-        INX  H
-        MOV  H, M
-        MOV  L, B
         MVI  M, 1
     `);
     test(`
@@ -1500,10 +1515,6 @@ b = 12;
         MOV  A, M
         ADI  10
         POP  H
-        MOV  B, M
-        INX  H
-        MOV  H, M
-        MOV  L, B
         MOV  M, A
     `);
     test(`
@@ -1534,10 +1545,6 @@ b = 12;
         LXI  H, b
         MVI  M, 12
         POP  H
-        MOV  B, M
-        INX  H
-        MOV  H, M
-        MOV  L, B
         LDA  c
         MOV  M, A
     `);
@@ -1569,10 +1576,6 @@ b = 12;
         LXI  H, b
         MVI  M, 12
         POP  H
-        MOV  B, M
-        INX  H
-        MOV  H, M
-        MOV  L, B
         MVI  M, 7
     `);
     test(`
@@ -1909,7 +1912,7 @@ a = b[b + 1];
         DAD  D
         MOV  A, M
         STA  a
-    `); // added MOV  D, A and replaced M with D
+    `);
     test(`
 byte a, b, c[10]; b = 19; c = 27;
 a = (4 + b + c[1] + b) + (2 + c[1]) + (b + c[1]);
@@ -3215,25 +3218,6 @@ function toData(str) {
     return new Uint8Array(arr);
 }
 
-async function main2() {
-    test(`
-word a, b, c;
-a = &c;
-b = &c + 10;
-    `, `
-:0_ c__ adr ___ 1 ____ ____ ____
-:1_ a__ asg :0_ 1 ____ ____ ____
-:3_ :0_ add 10_ 1 ____ ____ ____
-:4_ b__ asg :3_ 1 ____ ____ ____
-    `, `
-        LXI  H, c
-        SHLD a
-        LXI  D, 10
-        DAD  D
-        SHLD b
-    `);
-}
-
 async function main() {
     doTests();
 }
@@ -3254,12 +3238,12 @@ async function mainDebug() {
     let prg = compiler(`
 
     `, true, true);
+/*
+*/
 //0200:     true
 //      
 //0200:     false
-/*
-*/
-//    prg = prg.replace('va:     DW   0', 'va:     DW   1');
+//    prg = prg.replace('a1:     DS   20', 'a1:     DB   1,1,2,2,3,3,4,4,5,5');
 //    prg = prg.replace('vc:     DW   0', 'vc:     DW   1');
 //    console.log(fmt(0x200 + 4 + 3 * 2 + 0x200 + 15 + 2), fmt(0x200 + 15 + 4 + 0x200 + 4 + 3 * 2));
     console.log(prg);
