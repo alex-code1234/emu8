@@ -28,13 +28,34 @@ function Parser(emit) {
         spskip();
     },
     pushback = () => { index = pb_idx; getch(); },
-    // <id>   ::= <name> [ '[' <expr> ']' ]
+    // <init> ::= <number> | '[' <number> [ ',' <number> ]* ']' | '"' <any> '"'
+    // <id>   ::= <name> [ '[' <expr> ']' | ':=' <init> ]
     // <exp5> ::= '(' <expr> ')' | <number> | <id>
     // <exp4> ::= '~' <exp4> | <exp5> | '&' <exp4> | '*' <exp4>
     // <exp3> ::= <exp4> [ '+' <exp4> | '-' <exp4> ]*
     // <exp2> ::= <exp3> [ '<<' <exp3> | '>>' <exp3> ]*
     // <exp1> ::= <exp2> [ '==' <exp2> | '!=' <exp2> | '>' <exp2> | '<' <exp2> | '>=' <exp2> | '<=' <exp2> ]*
     // <expr> ::= <exp1> [ '&' <exp1> | '|' <exp1> | '^' <exp1> ]*
+    init = name => {
+        if (digit(look)) { num(); emit('ini', [name, token | 0]); }
+        else if (look === '[') {
+            const arr = []; match('[');
+            num(); arr.push(token | 0);
+            while (look === ',') { match(','); num(); arr.push(token | 0); }
+            match(']'); emit('ini', [name, arr]);
+        }
+        else if (look === '"') {
+            let s = '';
+            while (true) {
+                getch();
+                if (look === '\n' || look === '\r') expect('"');
+                if (look === '"')
+                    if (peekch() === '"') getch(); else break;
+                s += look;
+            }
+            match('"'); emit('ini', [name, s]);
+        }
+    },
     id = (key, type) => {
         name();
         const nm = token;
@@ -44,6 +65,7 @@ function Parser(emit) {
             if (type !== undefined) emit('len', nm);
             else emit('idx');
         }
+        else if (look === ':' && peekch() === '=') { match(':'); match('='); init(nm); }
     },
     exp5 = () => {
         if (look === '(') { match('('); expr(); match(')'); }
@@ -308,6 +330,27 @@ function IL() {
                 o1 = stack.pop();
                 gen(id, false);
                 break;
+            case 'ini':
+                const vardecl = vars[value[0]],            // find var declaration
+                      varini = value[1];
+                vardecl.val = varini;                      // set init value
+                if (Array.isArray(varini) || isNaN(varini)) {
+                    if (Array.isArray(varini)) {           // check type for array
+                        let min = -128, max = 255, typ = 'byte';
+                        if (vardecl.typ !== 0) {
+                            min = -32768; max = 65535; typ = 'word';
+                        }
+                        for (let i = 0, n = varini.length; i < n; i++) {
+                            const elm = varini[i];
+                            if (elm < min || elm > max)
+                                throw new Error(`expected ${typ} type: ${value[0]} - ${elm}`);
+                        }
+                    }
+                    else if (vardecl.typ !== 0)            // check type for string
+                        throw new Error(`expected byte type: ${value[0]}`);
+                    vardecl.dim = varini.length;           // set array or string dimension
+                }
+                break;
             default: throw new Error(`unknown id: ${id}`);
         }
     };
@@ -564,7 +607,7 @@ function showTrp(trp) {
 
 function CodeGen(codec) {
     let triples,                                               // 3-address code
-        vars,                                                  // variables - var: typ=0|1
+        vars,                                                  // variables - var: typ=0|1, dim=num, val=null|ini
         code;                                                  // generated assembly
     const regs = codec.regs,                                   // regs - reg: var|num|:trp
     fndop = (lines, start, s) => {                             // find operation before current
@@ -3104,22 +3147,30 @@ a = b + c; a = a; c = b - 1; a = b;
     `);
 }
 
-function compiler(prg, optimize, showtrp) {
-    const [frg, vars] = compile(prg, optimize, showtrp);
-    prg = `        ORG 100h\n\n${frg}\n        DB   76h\n`;
+function compiler(frg, vars) {
+    let prg = `        ORG 100h\n\n${frg}\n        DB   76h\n`;
     for (let i = 0, n = codec.lib.length; i < n; i += 2)
         if (prg.indexOf(codec.lib[i]) >= 0) prg += `${codec.lib[i + 1]}\n`;
     prg += '\n        ORG 200h\n\n';
     for (const n in vars) {
-        const v = vars[n];
+        const v = vars[n],
+              ini = (v.val !== null) ? v.val : 0;
         prg += `${n}:`.padEnd(8);
         if (v.dim) {
-            let sz = v.dim;
-            if (v.typ !== 0) sz += sz;
-            prg += `DS   ${sz}`;
+            if (ini === 0) {               // not initialized
+                let sz = v.dim; if (v.typ !== 0) sz += sz;
+                prg += `DS   ${sz}`;
+            }
+            else if (Array.isArray(ini)) { // array
+                let s = '';
+                for (let i = 0, n = ini.length; i < n; i++)
+                    s += ((i === 0) ? '' : ', ') + ini[i];
+                prg += ((v.typ === 0) ? 'DB   ' : 'DW   ') + s;
+            }
+            else prg += `DB   '${ini}'`;   // string
         }
-        else if (v.typ === 0) prg += 'DB   0';
-        else prg += 'DW   0';
+        else if (v.typ === 0) prg += `DB   ${ini}`;
+        else prg += `DW   ${ini}`;
         prg += '\n';
     }
     prg += '\n        END\n';
@@ -3218,11 +3269,11 @@ function toData(str) {
     return new Uint8Array(arr);
 }
 
-async function main() {
+async function mainTests() {
     doTests();
 }
 
-async function mainDebug() {
+async function main() {
     await Promise.all([
         loadScript('../emu/github/emu8/js/js8080.js'),
         loadScript('../emu/github/emu8/js/disks.js')
@@ -3235,9 +3286,11 @@ async function mainDebug() {
           kbd = new Kbd(con, mon);
     mem.CPM_DRIVES[0] = await CPMDisk('../emu/github/emu8/cpm/cpma.cpm');
     term.setPrompt('> ');
-    let prg = compiler(`
-
-    `, true, true);
+    let prg = compiler(...compile(`
+byte arr := 45;
+word ar2 := [1, 2, 3];
+byte ar3 := "test";
+    `, true, true));
 /*
 */
 //0200:     true
