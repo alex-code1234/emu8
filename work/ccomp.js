@@ -462,7 +462,8 @@ function Codec8080() {
         // MOV  M, A   match, remove if M not used forward; replace begin with STA  ?
         base.phopt('LXI  H, (.+)$', cnd => 'MOV  M, A', cnd => [], (lines, start, i, cnd, end) => {
             if (end !== start + 1) return false;
-            if (base.chgop(lines, ['MOV  ., M', '[^,]+ M$'], end + 1, lines.length - 1, 'LXI  H, ')[0])
+            if (base.chgop(lines, ['MOV  ., M', '[^,]+ M$'], end + 1, lines.length - 1,
+                    'LXI  H, |POP  H|XCHG|XTHL')[0])
                 return false;                                                     // M used forward, exit
             lines[start] = lines[start].replace('LXI  H, ', 'STA  ');             // replace begin
             lines.splice(end, 1);                                                 // remove match
@@ -616,10 +617,16 @@ function CodeGen(codec) {
         return -1;
     },
     chgop = (lines, pattern, start, end, br = null) => {       // check if register changed
+        if (br !== null) br = br.split('|');                   // allow multiple brake patterns
+        const chkbr = s => {
+            for (let i = 0, n = br.length; i < n; i++)
+                if (s.match(br[i]) !== null) return true;
+            return false;
+        };
         let i;
         for (i = start; i <= end; i++) {
             const line = lines[i];
-            if (br !== null && line.match(br) !== null) break;
+            if (br !== null && chkbr(line)) break;
             for (let j = 0, n = pattern.length; j < n; j++)
                 if (line.match(pattern[j]) !== null) return [true, i];
         }
@@ -1015,8 +1022,7 @@ function CodeGen(codec) {
                     break;
                 default: throw new Error(`illegal operation: ${trp.oper} at ${trp.adr}`);
             }
-            if (trp.oper !== 'asg')                            // assignment not used in expressions
-                save(trp.adr, 2);                              // save result if used after next triplet
+            save(trp.adr, 2);                                  // save result if used after next triplet
         }
         if (optimize) {
             codec.peephole({fndop, chgop, phopt});             // peephole optimization
@@ -1316,19 +1322,16 @@ tmp = *(&arr + i);
         MOV  E, A
         MVI  D, 0
         DAD  D
-        PUSH H
         MOV  A, M
-        LXI  H, tmp
-        MOV  M, A
-        POP  H
+        STA  tmp
+        MOV  B, A
         PUSH H
         INX  H
         MOV  A, M
         XTHL
         MOV  M, A
         POP  H
-        LDA  tmp
-        MOV  M, A
+        MOV  M, B
     `);
     test(`
 byte arr[10], tmp, i;
@@ -2675,6 +2678,7 @@ b = b + 1; a = a + a + b; b = b + b + b;
         LDA  b
         INR  A
         STA  b
+        MOV  B, A
         LHLD a
         DAD  H
         MOV  E, A
@@ -2682,7 +2686,7 @@ b = b + 1; a = a + a + b; b = b + b + b;
         DAD  D
         SHLD a
         ADD  A
-        ADD  E
+        ADD  B
         STA  b
     `);
     test(`
@@ -2800,20 +2804,19 @@ a = (4 + (b + c) + b) + (2 + c) + (b + c);
         JNZ  $+4
         XRA  A
         STA  b
+        MOV  B, A
         LXI  H, c
         MVI  M, 27
         ADD  M
-        MOV  B, A
+        MOV  C, A
         ADI  4
-        MOV  C, M
-        LXI  H, b
-        ADD  M
-        MOV  D, A
-        MOV  A, C
-        INR  A
-        INR  A
-        ADD  D
         ADD  B
+        MOV  B, A
+        MOV  A, M
+        INR  A
+        INR  A
+        ADD  B
+        ADD  C
         STA  a
     `);
     test(`
