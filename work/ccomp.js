@@ -936,7 +936,15 @@ function CodeGen(codec) {
                     if (trp.typ1 !== 'var' || trp.ref) {       // indexed variable or de-reference
                         saveW(trp.adr);                        // save word acc and load LHS
                         loadW(trp, true, codec.accW, loc(1, trp.val1));
-                        if (trp.ref) {
+                        if (trp.ref) {                         // de-reference
+                            if (trp.typ1 === 'trp' &&                               // check if de-referenced
+                                    triples[fndtrp(trp.val1)].adrOnly) {            // no, de-reference
+                                const reg = rgwork(trp.adr, codec.work);            // get temp reg
+                                code += codec.move(reg, codec.ref);                 // result lo
+                                code += codec.incrW(codec.mem.charAt(0), trp.adr);
+                                code += codec.move(codec.mem.charAt(0), codec.ref); // result hi
+                                code += codec.move(codec.accW.charAt(1), reg);      // word result in accW
+                            }
                             if (trp.typ2 === 'num') {          // check num type and load
                                 if (trp.val2 < -128 || trp.val2 > 255)
                                     throw new Error(`illegal assignment: ${trp.val2} at ${trp.adr}`);
@@ -1198,7 +1206,7 @@ function CodeGen(codec) {
                     loadW(trp, false, codec.accW, vlc);
                 }
                 if (trp.typ1 === 'var') code += codec.saveaW(trp.val1);
-                else {                                         // indexed variable or de-reference
+                else {                                         // indexed variable
                     saveW(trp.adr);                            // save accumulator if needed
                     let iwr1 = codec.workW.charAt(0), iwr2 = codec.workW.charAt(1);
                     const reg = getW(regs[iwr1], regs[iwr2]);
@@ -1292,18 +1300,26 @@ function compile(prg, optimize, showtrp) {
     }
 }
 
-function test(prg, res, res2) {
+async function test(prg, res, res2, res3) {
     const code = compile(prg);
     let strcode = triplesToStr(code[2]);
     if (strcode.trim() !== res.trim())
         throw new Error(`program:\n${prg}\ngenerated:\n${strcode}\nexpected:\n${res}`);
     if (code[0].trim() !== res2.trim())
         throw new Error(`program:\n${prg}\ngenerated:\n${code[0]}\nexpected:\n${res2}`);
+    if (res3) {
+        const data = await emuRun(compiler(...code));
+        if (data === null)
+            throw new Error(`program:\n${prg}\ncompilation error`);
+        for (let i = 0, n = res3.length; i < n; i++)
+            if (data[i] !== res3[i])
+                throw new Error(`program:\n${prg}\nset: ${data[i]} expected: ${res3[i]} at ${i}`);
+    }
 }
 
-function doTests() {
-    test(`
-byte arr[10], tmp, i;
+async function doTests() {
+    await test(`
+byte arr := [1, 2, 3, 4], tmp, i := 1;
 tmp = *(&arr + i);
 *(&arr + i) = *(&arr + i + 1);
 *(&arr + i + 1) = tmp;
@@ -1332,9 +1348,9 @@ tmp = *(&arr + i);
         MOV  M, A
         POP  H
         MOV  M, B
-    `);
-    test(`
-byte arr[10], tmp, i;
+    `, [1, 3, 2, 4, 2, 1]);
+    await test(`
+byte arr := [1, 2, 3, 4], tmp, i := 1;
 tmp = arr[i];
 arr[i] = arr[i + 1];
 arr[i + 1] = tmp;
@@ -1363,35 +1379,35 @@ arr[i + 1] = tmp;
         MOV  M, A
         POP  H
         MOV  M, B
-    `);
-    test(`
-word a[10], b, c;
-a[2] = a[3] + b;
-c = a[3];
+    `, [1, 3, 2, 4, 2, 1]);
+    await test(`
+word a1 := [1, 2, 3, 4, 5], b1 := 1, c1;
+a1[2] = a1[3] + b1;
+c1 = a1[3];
     `, `
-:0_ a__ idx 2__ 1 true ____ ____
-:1_ a__ idx 3__ 1 ____ ____ ____
-:2_ :1_ add b__ 1 ____ ____ ____
+:0_ a1_ idx 2__ 1 true ____ ____
+:1_ a1_ idx 3__ 1 ____ ____ ____
+:2_ :1_ add b1_ 1 ____ ____ ____
 :3_ :0_ asg :2_ 1 ____ ____ ____
-:5_ c__ asg :1_ 1 ____ ____ ____
+:5_ c1_ asg :1_ 1 ____ ____ ____
     `, `
         LXI  H, 2
         DAD  H
         XCHG
-        LXI  H, a
+        LXI  H, a1
         DAD  D
         PUSH H
         LXI  H, 3
         DAD  H
         XCHG
-        LXI  H, a
+        LXI  H, a1
         DAD  D
         MOV  D, M
         INX  H
         MOV  H, M
         MOV  L, D
         XCHG
-        LHLD b
+        LHLD b1
         DAD  D
         POP  B
         MOV  A, L
@@ -1400,10 +1416,10 @@ c = a[3];
         MOV  A, H
         STAX B
         XCHG
-        SHLD c
-    `);
-    test(`
-word a1[10], e1; byte b1, c1;
+        SHLD c1
+    `, [1, 0, 2, 0, 5, 0, 4, 0, 5, 0, 1, 0, 4, 0]);
+    await test(`
+word a1 := [515, 2, 3, 4], e1; byte b1, c1;
 a1[2] = &b1;
 b1 = 12;
 *a1[2] = 10 + b1;
@@ -1440,16 +1456,22 @@ e1 = &a1[2] + 1;
         MOV  A, M
         ADI  10
         POP  H
+        PUSH H
+        MOV  B, M
+        INX  H
+        MOV  H, M
+        MOV  L, B
         MOV  M, A
+        POP  H
         INX  H
         SHLD e1
         LHLD a1
         MOV  A, M
         LHLD e1
         MOV  M, A
-    `);
-    test(`
-word a1[10], e1; byte b1, c1;
+    `, [0x03, 0x02, 0x02, 0x00, 0x0a, 0x00, 0x04, 0x00, 0x05, 0x02, 0x16, 0x00]);
+    await test(`
+word a1 := [515, 2, 3, 4], e1; byte b1, c1;
 a1[2] = &b1;
 b1 = 12;
 *a1[2] = 10 + b1;
@@ -1485,11 +1507,17 @@ e1 = &a1[2] + 1;
         MOV  A, M
         ADI  10
         POP  H
+        PUSH H
+        MOV  B, M
+        INX  H
+        MOV  H, M
+        MOV  L, B
         MOV  M, A
+        POP  H
         INX  H
         SHLD e1
         MVI  M, 1
-    `);
+    `, [0x03, 0x02, 0x02, 0x00, 0x0a, 0x01, 0x04, 0x00, 0x05, 0x02, 0x16, 0x00]);
     test(`
 word a[3], b; byte c, d, e;
 c = 32;
@@ -3193,6 +3221,7 @@ class CPM22MemIO extends MemIO {
         this.fname = fname;
         this.data = null;
         this.update = false;
+        this.scrcopy = '';
     }
     rd(a) {
         return this.ram[a];
@@ -3220,7 +3249,9 @@ class CPM22MemIO extends MemIO {
     }
     output(p, v) {
         switch (p) {
-            case 0x01: v &= 0xff; this.con.display(v); break;                                 // console data
+            case 0x01:                                                                        // console data
+                v &= 0xff; this.con.display(v); this.scrcopy += String.fromCharCode(v);
+                break;
             case 0x0a: this.drv = v & 0xff; break;                                            // fdc drive
             case 0x0b: this.trk = v & 0xff; break;                                            // fdc track
             case 0x0c: this.sec = (this.sec & 0xff00) | (v & 0xff); break;                    // fdc sector low
@@ -3272,40 +3303,51 @@ function toData(str) {
     return new Uint8Array(arr);
 }
 
-async function mainTests() {
-    doTests();
-}
+let con, mem, cpu, emu, mon, kbd;
 
-async function main() {
+async function emuInit() {
     await Promise.all([
         loadScript('../emu/github/emu8/js/js8080.js'),
         loadScript('../emu/github/emu8/js/disks.js')
     ]);
-    const con = await createCon(amber, 'VT220'),
-          mem = new CPM22MemIO(con, 0, 'PRG.ASM'),
-          cpu = new GenCpu(mem, 0),
-          emu = new Emulator(cpu, mem, 0),
-          mon = new CPMMonitor(emu),
-          kbd = new Kbd(con, mon);
+    con = await createCon(amber, 'VT220');
+    mem = new CPM22MemIO(con, 0, 'PRG.ASM');
+    cpu = new GenCpu(mem, 0);
+    emu = new Emulator(cpu, mem, 0);
+    mon = new CPMMonitor(emu);
+    kbd = new Kbd(con, mon);
     mem.CPM_DRIVES[0] = await CPMDisk('../emu/github/emu8/cpm/cpma.cpm');
+    await mon.exec('on 0');
+}
+
+async function emuRun(prg) {
+    await mon.exec('g 0');
+    mem.scrcopy = '';
+    mem.setData(toData(prg));
+    const cmd = 'mac prg\n load prg\n prg\n';
+    for (let i = 0, n = cmd.length; i < n; i++) con.kbd.push(cmd.charCodeAt(i));
+    while (cpu.RUN) {
+        await delay(0);
+        if (mem.scrcopy.indexOf('\nS ') >= 0) return null;
+    }
+    return mem.ram.slice(0x200, 0x200 + 255);
+}
+
+async function main() {
+    await emuInit();
+    await doTests();
+}
+
+async function mainDebug() {
+    await emuInit();
     term.setPrompt('> ');
     let prg = compiler(...compile(`
-byte arr := 45;
-word ar2 := [1, 2, 3];
-byte ar3 := "test";
+
     `, true, true));
-/*
-*/
 //0200:     true
 //      
 //0200:     false
-//    prg = prg.replace('a1:     DS   20', 'a1:     DB   1,1,2,2,3,3,4,4,5,5');
-//    prg = prg.replace('vc:     DW   0', 'vc:     DW   1');
-//    console.log(fmt(0x200 + 4 + 3 * 2 + 0x200 + 15 + 2), fmt(0x200 + 15 + 4 + 0x200 + 4 + 3 * 2));
     console.log(prg);
-    mem.setData(toData(prg));
-    const cmd = 'mac prg\n load prg\n';
-    for (let i = 0, n = cmd.length; i < n; i++) con.kbd.push(cmd.charCodeAt(i));
-    mon.exec('on 0');
+    console.log(await emuRun(prg));
     while (true) mon.exec(await term.prompt());
 }
