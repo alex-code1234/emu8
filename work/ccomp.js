@@ -391,6 +391,7 @@ function Codec8080() {
     jnc = val =>                                                       `        JNC  ${val}\n`,
     decr = (reg, adr) => { if (reg !== 'M') regs[reg] = adr;    return `        DCR  ${reg}\n`; },
     stax = reg =>                                                      `        STAX ${reg}\n`,
+    ldax = (reg, val) => { regs['A'] = val;                     return `        LDAX ${reg}\n`; },
     shl = `
 @SHLF:  DCR  E
         RM
@@ -412,7 +413,8 @@ function Codec8080() {
         base.phopt('MOV  A, (.)$', cnd => `MOV  ${cnd}, A`, cnd => {
             const pattern = [
                 `MOV  [A${cnd}], `, `MVI  [A${cnd}], `, 'LDA  ', 'CALL ', 'CMA', `INR  [A${cnd}]`, `DCR  [A${cnd}]`,
-                'ADI  ', 'ADD  ', 'SUI  ', 'SUB  ', 'XRI  ', 'XRA  ', 'ANI  ', 'ANA  ', 'ORI  ', 'ORA  ', 'RAL', 'RAR'
+                'ADI  ', 'ADD  ', 'SUI  ', 'SUB  ', 'XRI  ', 'XRA  ', 'ANI  ', 'ANA  ', 'ORI  ', 'ORA  ', 'RAL', 'RAR',
+                'LDAX '
             ];
             if (cnd === 'M') pattern.push('LXI  H, ', 'INX  H', 'DCX  H', 'DAD  ', 'LHLD ');
             return pattern;
@@ -422,7 +424,7 @@ function Codec8080() {
         // MOV  E, ?   match if ? not M, remove if ? not changed; repl. ? at begin and ren. ? before MOV  ?, . or CALL
         base.phopt('MOV  E, ([^M])$', cnd => `MOV  ${cnd}, `,
                 cnd => cnd === 'A' ?
-                        ['MOV  A, ', 'STA  ', 'LDA  ', 'MOV  E, ', 'ADI  '] :
+                        ['MOV  A, ', 'STA  ', 'LDA  ', 'MOV  E, ', 'ADI  ', 'LDAX '] :
                         [`MOV  ${cnd}, `, 'MOV  E, '],
                 (lines, start, i, cnd) => {
             lines.splice(i, 1);                                                   // remove match
@@ -476,7 +478,8 @@ function Codec8080() {
         base.phopt('MOV  L, (.)$', cnd => `MOV  ${cnd}, A`, cnd => {
             const pattern = [
                 `MOV  [A${cnd}], `, `MVI  [A${cnd}], `, 'LDA  ', 'CALL ', 'CMA', `INR  [A${cnd}]`, `DCR  [A${cnd}]`,
-                'ADI  ', 'ADD  ', 'SUI  ', 'SUB  ', 'XRI  ', 'XRA  ', 'ANI  ', 'ANA  ', 'ORI  ', 'ORA  ', 'RAL', 'RAR'
+                'ADI  ', 'ADD  ', 'SUI  ', 'SUB  ', 'XRI  ', 'XRA  ', 'ANI  ', 'ANA  ', 'ORI  ', 'ORA  ', 'RAL', 'RAR',
+                'LDAX '
             ];
             if (cnd === 'M') pattern.push('LXI  H, ');
             return pattern;
@@ -505,7 +508,8 @@ function Codec8080() {
                 ptrn = [`MOV  L, [^${cnd}]`, 'LXI  H, ', 'DAD  ', 'LHLD ', 'INX  H', 'DCX  H'];
                 if (cnd === 'A') ptrn.push(
                     'MOV  A, ', 'MVI  A, ', 'LDA  ', 'CALL ', 'CMA', 'INR  A', 'DCR  A', 'ADI  ', 'ADD  ',
-                    'SUI  ', 'SUB  ', 'XRI  ', 'XRA  ', 'ANI  ', 'ANA  ', 'ORI  ', 'ORA  ', 'RAL', 'RAR'
+                    'SUI  ', 'SUB  ', 'XRI  ', 'XRA  ', 'ANI  ', 'ANA  ', 'ORI  ', 'ORA  ', 'RAL', 'RAR',
+                    'LDAX '
                 );
                 if ((top = base.fndop(lines, start - 1, `MOV  L, ${cnd}`)) < 0 || // previous not found
                         base.chgop(lines, ptrn, top + 1, start - 1)[0])           // L or ? changed
@@ -534,7 +538,8 @@ function Codec8080() {
         // LDA  ?      match, remove if A and ? not changed
         base.phopt('LDA  (.+)$', cnd => `LDA  ${cnd}`, cnd => [
             'MOV  A, ', 'MVI  A, ', 'CALL ', 'CMA', 'INR  A', 'DCR  A',
-            'ADI  ', 'ADD  ', 'SUI  ', 'SUB  ', 'XRI  ', 'XRA  ', 'ANI  ', 'ANA  ', 'ORI  ', 'ORA  ', 'RAL', 'RAR'
+            'ADI  ', 'ADD  ', 'SUI  ', 'SUB  ', 'XRI  ', 'XRA  ', 'ANI  ', 'ANA  ', 'ORI  ', 'ORA  ', 'RAL', 'RAR',
+            'LDAX '
         ]);
         // PUSH H      begin
         //    ---
@@ -1143,6 +1148,18 @@ function CodeGen(codec) {
         }
         return swap;
     },
+    var0fromAddr = (val, acc) => {                             // load byte var from address in reg pair
+        if (valtype(val) === 'var' && vars[val].typ === 0)
+            if (acc && regs[codec.accW.charAt(0)] !== 0) {     // not loaded
+                code += codec.move(codec.accW.charAt(1), codec.ref);
+                code += codec.movi(codec.accW.charAt(0), 0);
+            }
+            else if (regs[codec.workW.charAt(0)] !== 0) {      // not loaded
+                code += codec.ldax(codec.workW.charAt(0), val);
+                code += codec.move(codec.workW.charAt(1), codec.acc);
+                code += codec.movi(codec.workW.charAt(0), 0);
+            }
+    },
     generateW = trp => {
         switch (trp.oper) {
             case 'inc': case 'dec':                            // unary operations
@@ -1160,7 +1177,11 @@ function CodeGen(codec) {
                     b1 = inreg(o2lc, codec.workW) ? 1 : inreg(o2lc, codec.accW) ? -1 : 0,
                     b2 = (b0 < 0 || b1 < 0) ? 1 : 0,
                     swap = false, rg = codec.workW.charAt(0);
-                if (b0 < 0 && b1 < 0) { b0 = 0; b1 = 0; }
+                if (b0 === 1) var0fromAddr(trp.val1, true);    // load in place if byte var addr in acc or work regs
+                else if (b0 === -1) var0fromAddr(trp.val1, false);
+                if (b1 === 1) var0fromAddr(trp.val2, false);   // load in place if byte var addr in work or acc regs
+                else if (b1 === -1) var0fromAddr(trp.val2, true);
+                if (b0 < 0 && b1 < 0) { b0 = 0; b1 = 0; }      // calculate oper code
                 else if (b0 === 1 && inreg(o1lc, codec.workW)) { b2 = 1; b1 = 1; b0 = 1; }
                 else { if (b0 < 0) b0 = 1; if (b1 < 0) b1 = 1; }
                 switch (b2 << 2 | b1 << 1 | b0) {              // possible operand combinations
@@ -1518,37 +1539,37 @@ e1 = &a1[2] + 1;
         SHLD e1
         MVI  M, 1
     `, [0x03, 0x02, 0x02, 0x00, 0x0a, 0x01, 0x04, 0x00, 0x05, 0x02, 0x16, 0x00]);
-    test(`
-word a[3], b; byte c, d, e;
-c = 32;
-a[2] = &d;
-a[2] = &b;
-b = &d;
+    await test(`
+word a1 := [1, 2, 3, 4], b1; byte c1, d1, e1;
+c1 = 32;
+a1[2] = &d1;
+a1[2] = &b1;
+b1 = &d1;
     `, `
-:0_ c__ asg 32_ 0 ____ ____ ____
-:1_ a__ idx 2__ 1 true ____ ____
-:2_ d__ adr ___ 1 ____ ____ ____
+:0_ c1_ asg 32_ 0 ____ ____ ____
+:1_ a1_ idx 2__ 1 true ____ ____
+:2_ d1_ adr ___ 1 ____ ____ ____
 :3_ :1_ asg :2_ 1 ____ ____ ____
-:5_ b__ adr ___ 1 ____ ____ ____
+:5_ b1_ adr ___ 1 ____ ____ ____
 :6_ :1_ asg :5_ 1 ____ ____ ____
-:8_ b__ asg :2_ 1 ____ ____ ____
+:8_ b1_ asg :2_ 1 ____ ____ ____
     `, `
-        LXI  H, c
+        LXI  H, c1
         MVI  M, 32
         LXI  H, 2
         DAD  H
         XCHG
-        LXI  H, a
+        LXI  H, a1
         DAD  D
         PUSH H
-        LXI  H, d
+        LXI  H, d1
         POP  D
         PUSH D
         XCHG
         MOV  M, E
         INX  H
         MOV  M, D
-        LXI  H, b
+        LXI  H, b1
         POP  B
         MOV  A, L
         STAX B
@@ -1556,195 +1577,207 @@ b = &d;
         MOV  A, H
         STAX B
         XCHG
-        SHLD b
-    `);
-    test(`
-word a[10], e; byte b, c;
-a[2] = &b;
-b = 12;
-*a[2] = 10 + b;
+        SHLD b1
+    `, [1, 0, 2, 0, 8, 2, 4, 0, 0x0b, 2, 32, 0, 0]);
+    await test(`
+word a1 := [1, 2, 3, 4], e1; byte b1, c1;
+a1[2] = &b1;
+b1 = 12;
+*a1[2] = 10 + b1;
     `, `
-:0_ a__ idx 2__ 1 true ____ ____
-:1_ b__ adr ___ 1 ____ ____ ____
+:0_ a1_ idx 2__ 1 true ____ ____
+:1_ b1_ adr ___ 1 ____ ____ ____
 :2_ :0_ asg :1_ 1 ____ ____ ____
-:3_ b__ asg 12_ 0 ____ ____ ____
-:5_ 10_ add b__ 0 ____ ____ ____
+:3_ b1_ asg 12_ 0 ____ ____ ____
+:5_ 10_ add b1_ 0 ____ ____ ____
 :6_ :0_ asg :5_ 0 ____ ____ true
     `, `
         LXI  H, 2
         DAD  H
         XCHG
-        LXI  H, a
+        LXI  H, a1
         DAD  D
         PUSH H
-        LXI  H, b
+        LXI  H, b1
         POP  D
         PUSH D
         XCHG
         MOV  M, E
         INX  H
         MOV  M, D
-        LXI  H, b
+        LXI  H, b1
         MVI  M, 12
         MOV  A, M
         ADI  10
         POP  H
+        MOV  B, M
+        INX  H
+        MOV  H, M
+        MOV  L, B
         MOV  M, A
-    `);
-    test(`
-word a[10], e; byte b, c;
-a[2] = &b;
-b = 12;
-*a[2] = c;
+    `, [1, 0, 2, 0, 0x0a, 2, 4, 0, 0, 0, 22, 0]);
+    await test(`
+word a1 := [1, 2, 3, 4], e1; byte b1, c1 := 10;
+a1[2] = &b1;
+b1 = 12;
+*a1[2] = c1;
     `, `
-:0_ a__ idx 2__ 1 true ____ ____
-:1_ b__ adr ___ 1 ____ ____ ____
+:0_ a1_ idx 2__ 1 true ____ ____
+:1_ b1_ adr ___ 1 ____ ____ ____
 :2_ :0_ asg :1_ 1 ____ ____ ____
-:3_ b__ asg 12_ 0 ____ ____ ____
-:5_ :0_ asg c__ 0 ____ ____ true
+:3_ b1_ asg 12_ 0 ____ ____ ____
+:5_ :0_ asg c1_ 0 ____ ____ true
     `, `
         LXI  H, 2
         DAD  H
         XCHG
-        LXI  H, a
+        LXI  H, a1
         DAD  D
         PUSH H
-        LXI  H, b
+        LXI  H, b1
         POP  D
         PUSH D
         XCHG
         MOV  M, E
         INX  H
         MOV  M, D
-        LXI  H, b
+        LXI  H, b1
         MVI  M, 12
         POP  H
-        LDA  c
+        MOV  B, M
+        INX  H
+        MOV  H, M
+        MOV  L, B
+        LDA  c1
         MOV  M, A
-    `);
-    test(`
-word a[10], e; byte b, c;
-a[2] = &b;
-b = 12;
-*a[2] = 7;
+    `, [1, 0, 2, 0, 10, 2, 4, 0, 0, 0, 10, 10]);
+    await test(`
+word a1 := [1, 2, 3, 4], e1; byte b1, c1;
+a1[2] = &b1;
+b1 = 12;
+*a1[2] = 7;
     `, `
-:0_ a__ idx 2__ 1 true ____ ____
-:1_ b__ adr ___ 1 ____ ____ ____
+:0_ a1_ idx 2__ 1 true ____ ____
+:1_ b1_ adr ___ 1 ____ ____ ____
 :2_ :0_ asg :1_ 1 ____ ____ ____
-:3_ b__ asg 12_ 0 ____ ____ ____
+:3_ b1_ asg 12_ 0 ____ ____ ____
 :5_ :0_ asg 7__ 0 ____ ____ true
     `, `
         LXI  H, 2
         DAD  H
         XCHG
-        LXI  H, a
+        LXI  H, a1
         DAD  D
         PUSH H
-        LXI  H, b
+        LXI  H, b1
         POP  D
         PUSH D
         XCHG
         MOV  M, E
         INX  H
         MOV  M, D
-        LXI  H, b
+        LXI  H, b1
         MVI  M, 12
         POP  H
+        MOV  B, M
+        INX  H
+        MOV  H, M
+        MOV  L, B
         MVI  M, 7
-    `);
-    test(`
-word a[3], b; byte c, d, e;
-c = 32;
-a[2] = &d;
-a[2] = &b;
+    `, [1, 0, 2, 0, 10, 2, 4, 0, 0, 0, 7, 0]);
+    await test(`
+word a1 := [1, 2, 3, 4], b1; byte c1, d1, e1;
+c1 = 32;
+a1[2] = &d1;
+a1[2] = &b1;
     `, `
-:0_ c__ asg 32_ 0 ____ ____ ____
-:1_ a__ idx 2__ 1 true ____ ____
-:2_ d__ adr ___ 1 ____ ____ ____
+:0_ c1_ asg 32_ 0 ____ ____ ____
+:1_ a1_ idx 2__ 1 true ____ ____
+:2_ d1_ adr ___ 1 ____ ____ ____
 :3_ :1_ asg :2_ 1 ____ ____ ____
-:5_ b__ adr ___ 1 ____ ____ ____
+:5_ b1_ adr ___ 1 ____ ____ ____
 :6_ :1_ asg :5_ 1 ____ ____ ____
     `, `
-        LXI  H, c
+        LXI  H, c1
         MVI  M, 32
         LXI  H, 2
         DAD  H
         XCHG
-        LXI  H, a
+        LXI  H, a1
         DAD  D
         PUSH H
-        LXI  H, d
+        LXI  H, d1
         POP  D
         PUSH D
         XCHG
         MOV  M, E
         INX  H
         MOV  M, D
-        LXI  H, b
+        LXI  H, b1
         POP  D
         XCHG
         MOV  M, E
         INX  H
         MOV  M, D
-    `);
-    test(`
-word a[10], b, c;
-a[2] = a[3] + b;
+    `, [1, 0, 2, 0, 8, 2, 4, 0, 0, 0, 32, 0, 0]);
+    await test(`
+word a1 := [1, 2, 3, 4], b1 := 12, c1;
+a1[2] = a1[3] + b1;
     `, `
-:0_ a__ idx 2__ 1 true ____ ____
-:1_ a__ idx 3__ 1 ____ ____ ____
-:2_ :1_ add b__ 1 ____ ____ ____
+:0_ a1_ idx 2__ 1 true ____ ____
+:1_ a1_ idx 3__ 1 ____ ____ ____
+:2_ :1_ add b1_ 1 ____ ____ ____
 :3_ :0_ asg :2_ 1 ____ ____ ____
     `, `
         LXI  H, 2
         DAD  H
         XCHG
-        LXI  H, a
+        LXI  H, a1
         DAD  D
         PUSH H
         LXI  H, 3
         DAD  H
         XCHG
-        LXI  H, a
+        LXI  H, a1
         DAD  D
         MOV  D, M
         INX  H
         MOV  H, M
         MOV  L, D
         XCHG
-        LHLD b
+        LHLD b1
         DAD  D
         POP  D
         XCHG
         MOV  M, E
         INX  H
         MOV  M, D
-    `);
-    test(`
-word a[10]; byte b;
-a[2] = a[3] + b;
+    `, [1, 0, 2, 0, 16, 0, 4, 0, 12, 0, 0, 0]);
+    await test(`
+word a1 := [1, 2, 3, 4]; byte b1 := 5;
+a1[2] = a1[3] + b1;
     `, `
-:0_ a__ idx 2__ 1 true ____ ____
-:1_ a__ idx 3__ 1 ____ ____ ____
-:2_ :1_ add b__ 1 ____ ____ ____
+:0_ a1_ idx 2__ 1 true ____ ____
+:1_ a1_ idx 3__ 1 ____ ____ ____
+:2_ :1_ add b1_ 1 ____ ____ ____
 :3_ :0_ asg :2_ 1 ____ ____ ____
     `, `
         LXI  H, 2
         DAD  H
         XCHG
-        LXI  H, a
+        LXI  H, a1
         DAD  D
         PUSH H
         LXI  H, 3
         DAD  H
         XCHG
-        LXI  H, a
+        LXI  H, a1
         DAD  D
         MOV  D, M
         INX  H
         MOV  H, M
         MOV  L, D
-        LDA  b
+        LDA  b1
         MOV  E, A
         MVI  D, 0
         DAD  D
@@ -1753,64 +1786,64 @@ a[2] = a[3] + b;
         MOV  M, E
         INX  H
         MOV  M, D
-    `);
-    test(`
-byte a[10], b;
-a[2] = a[3] + b;
+    `, [1, 0, 2, 0, 9, 0, 4, 0, 5]);
+    await test(`
+byte a1 := [1, 2, 3, 4], b1 := 5;
+a1[2] = a1[3] + b1;
     `, `
-:0_ a__ idx 2__ 0 true ____ ____
-:1_ a__ idx 3__ 0 ____ ____ ____
-:2_ :1_ add b__ 0 ____ ____ ____
+:0_ a1_ idx 2__ 0 true ____ ____
+:1_ a1_ idx 3__ 0 ____ ____ ____
+:2_ :1_ add b1_ 0 ____ ____ ____
 :3_ :0_ asg :2_ 0 ____ ____ ____
     `, `
-        LXI  H, a
+        LXI  H, a1
         INX  H
         INX  H
         PUSH H
-        LXI  H, a
+        LXI  H, a1
         INX  H
         INX  H
         INX  H
         MOV  A, M
-        LXI  H, b
+        LXI  H, b1
         ADD  M
         POP  H
         MOV  M, A
-    `);
-    test(`
-byte a[10], b;
-b = 32;
-a[2] = b;
+    `, [1, 2, 9, 4, 5]);
+    await test(`
+byte a1 := [1, 2, 3, 4], b1 := 5;
+b1 = 32;
+a1[2] = b1;
     `, `
-:0_ b__ asg 32_ 0 ____ ____ ____
-:1_ a__ idx 2__ 0 true ____ ____
-:2_ :1_ asg b__ 0 ____ ____ ____
+:0_ b1_ asg 32_ 0 ____ ____ ____
+:1_ a1_ idx 2__ 0 true ____ ____
+:2_ :1_ asg b1_ 0 ____ ____ ____
     `, `
-        LXI  H, b
+        LXI  H, b1
         MVI  M, 32
-        LXI  H, a
+        LXI  H, a1
         INX  H
         INX  H
-        LDA  b
+        LDA  b1
         MOV  M, A
-    `);
-    test(`
-word a, b[10], c;
-b[c + 1] = a + 10;
+    `, [1, 2, 32, 4, 32]);
+    await test(`
+word a1 := 2, b1 := [5, 6, 7, 8], c1 := 1;
+b1[c1 + 1] = a1 + 10;
     `, `
-:0_ c__ inc ___ 1 ____ ____ ____
-:1_ b__ idx :0_ 1 true ____ ____
-:2_ a__ add 10_ 1 ____ ____ ____
+:0_ c1_ inc ___ 1 ____ ____ ____
+:1_ b1_ idx :0_ 1 true ____ ____
+:2_ a1_ add 10_ 1 ____ ____ ____
 :3_ :1_ asg :2_ 1 ____ ____ ____
     `, `
-        LHLD c
+        LHLD c1
         INX  H
         DAD  H
         XCHG
-        LXI  H, b
+        LXI  H, b1
         DAD  D
         PUSH H
-        LHLD a
+        LHLD a1
         LXI  D, 10
         DAD  D
         POP  D
@@ -1818,26 +1851,26 @@ b[c + 1] = a + 10;
         MOV  M, E
         INX  H
         MOV  M, D
-    `);
-    test(`
-word a, b[10], c;
-b[c + 1] = a + 10; a = c + 10;
+    `, [2, 0, 5, 0, 6, 0, 12, 0, 8, 0, 1, 0]);
+    await test(`
+word a1 := 2, b1 := [5, 6, 7, 8], c1 := 1;
+b1[c1 + 1] = a1 + 10; a1 = c1 + 10;
     `, `
-:0_ c__ inc ___ 1 ____ ____ ____
-:1_ b__ idx :0_ 1 true ____ ____
-:2_ a__ add 10_ 1 ____ ____ ____
+:0_ c1_ inc ___ 1 ____ ____ ____
+:1_ b1_ idx :0_ 1 true ____ ____
+:2_ a1_ add 10_ 1 ____ ____ ____
 :3_ :1_ asg :2_ 1 ____ ____ ____
-:4_ c__ add 10_ 1 ____ ____ ____
-:5_ a__ asg :4_ 1 ____ ____ ____
+:4_ c1_ add 10_ 1 ____ ____ ____
+:5_ a1_ asg :4_ 1 ____ ____ ____
     `, `
-        LHLD c
+        LHLD c1
         INX  H
         DAD  H
         XCHG
-        LXI  H, b
+        LXI  H, b1
         DAD  D
         PUSH H
-        LHLD a
+        LHLD a1
         LXI  D, 10
         DAD  D
         POP  B
@@ -1846,28 +1879,28 @@ b[c + 1] = a + 10; a = c + 10;
         INX  B
         MOV  A, H
         STAX B
-        LHLD c
+        LHLD c1
         DAD  D
-        SHLD a
-    `);
-    test(`
-byte a[5], b[10];
-a[3] = 25 - b[a + 1];
+        SHLD a1
+    `, [11, 0, 5, 0, 6, 0, 12, 0, 8, 0, 1, 0]);
+    await test(`
+byte a1 := [1, 2, 3, 4, 5], b1 := [6, 7, 8, 9];
+a1[3] = 25 - b1[a1 + 1];
     `, `
-:0_ a__ idx 3__ 0 true ____ ____
-:1_ a__ inc ___ 0 ____ ____ ____
-:2_ b__ idx :1_ 0 ____ ____ ____
+:0_ a1_ idx 3__ 0 true ____ ____
+:1_ a1_ inc ___ 0 ____ ____ ____
+:2_ b1_ idx :1_ 0 ____ ____ ____
 :3_ 25_ sub :2_ 0 ____ ____ ____
 :4_ :0_ asg :3_ 0 ____ ____ ____
     `, `
-        LXI  H, a
+        LXI  H, a1
         INX  H
         INX  H
         INX  H
         PUSH H
-        LDA  a
+        LDA  a1
         INR  A
-        LXI  H, b
+        LXI  H, b1
         MOV  E, A
         MVI  D, 0
         DAD  D
@@ -1877,9 +1910,9 @@ a[3] = 25 - b[a + 1];
         ADI  25
         POP  H
         MOV  M, A
-    `);
-    test(`
-word arr[10], tmp, i;
+    `, [1, 2, 3, 17, 5, 6, 7, 8, 9]);
+    await test(`
+word arr := [1, 2, 3], tmp, i := 1;
 tmp = arr[i];
     `, `
 :0_ arr idx i__ 1 ____ ____ ____
@@ -1895,9 +1928,9 @@ tmp = arr[i];
         MOV  H, M
         MOV  L, D
         SHLD tmp
-    `);
-    test(`
-byte arr[10], tmp, i;
+    `, [1, 0, 2, 0, 3, 0, 2, 0, 1, 0]);
+    await test(`
+byte arr := [1, 2, 3], tmp, i := 1;
 tmp = arr[i];
     `, `
 :0_ arr idx i__ 0 ____ ____ ____
@@ -1910,104 +1943,104 @@ tmp = arr[i];
         DAD  D
         MOV  A, M
         STA  tmp
-    `);
-    test(`
-word a, b[5]; byte c, d[5];
-a = &b[3] + &d[2];
-a = &d[4] + &b[3];
+    `, [1, 2, 3, 2, 1]);
+    await test(`
+word a1, b1 := [1, 2, 3, 4, 5, 6]; byte c1, d1 := [7, 8, 9, 10, 11, 12];
+a1 = &b1[3] + &d1[2];
+a1 = &d1[4] + &b1[3];
     `, `
-:0_ b__ idx 3__ 1 true true ____
+:0_ b1_ idx 3__ 1 true true ____
 :1_ :0_ adr ___ 1 ____ ____ ____
-:2_ d__ idx 2__ 0 true true ____
+:2_ d1_ idx 2__ 0 true true ____
 :3_ :2_ adr ___ 1 ____ ____ ____
 :4_ :1_ add :3_ 1 ____ ____ ____
-:5_ a__ asg :4_ 1 ____ ____ ____
-:6_ d__ idx 4__ 0 true true ____
+:5_ a1_ asg :4_ 1 ____ ____ ____
+:6_ d1_ idx 4__ 0 true true ____
 :7_ :6_ adr ___ 1 ____ ____ ____
 :10 :7_ add :1_ 1 ____ ____ ____
-:11 a__ asg :10 1 ____ ____ ____
+:11 a1_ asg :10 1 ____ ____ ____
     `, `
         LXI  H, 3
         DAD  H
         XCHG
-        LXI  H, b
+        LXI  H, b1
         DAD  D
         PUSH H
-        LXI  H, d
+        LXI  H, d1
         INX  H
         INX  H
         POP  D
         DAD  D
-        SHLD a
-        LXI  H, d
+        SHLD a1
+        LXI  H, d1
         PUSH D
         LXI  D, 4
         DAD  D
         POP  D
         DAD  D
-        SHLD a
-    `);
-    test(`
-word a, b[10]; b = 0;
-a = b[b + 1];
+        SHLD a1
+    `, [27, 4, 1, 0, 2, 0, 3, 0, 4, 0, 5, 0, 6, 0, 0, 7, 8, 9, 10, 11, 12]);
+    await test(`
+word a1, b1 := [1, 2, 3, 4]; b1 = 0;
+a1 = b1[b1 + 1];
     `, `
-:0_ b__ asg ___ 1 ____ ____ ____
-:1_ b__ inc ___ 1 ____ ____ ____
-:2_ b__ idx :1_ 1 ____ ____ ____
-:3_ a__ asg :2_ 1 ____ ____ ____
+:0_ b1_ asg ___ 1 ____ ____ ____
+:1_ b1_ inc ___ 1 ____ ____ ____
+:2_ b1_ idx :1_ 1 ____ ____ ____
+:3_ a1_ asg :2_ 1 ____ ____ ____
     `, `
         LXI  H, 0
-        SHLD b
+        SHLD b1
         INX  H
         DAD  H
         XCHG
-        LXI  H, b
+        LXI  H, b1
         DAD  D
         MOV  D, M
         INX  H
         MOV  H, M
         MOV  L, D
-        SHLD a
-    `);
-    test(`
-byte a, b[10], c; b = 0;
-a = b[b + 1];
+        SHLD a1
+    `, [2, 0, 0, 0, 2, 0, 3, 0, 4, 0]);
+    await test(`
+byte a1, b1 := [1, 2, 3, 4], c1; b1 = 0;
+a1 = b1[b1 + 1];
     `, `
-:0_ b__ asg ___ 0 ____ ____ ____
-:1_ b__ inc ___ 0 ____ ____ ____
-:2_ b__ idx :1_ 0 ____ ____ ____
-:3_ a__ asg :2_ 0 ____ ____ ____
+:0_ b1_ asg ___ 0 ____ ____ ____
+:1_ b1_ inc ___ 0 ____ ____ ____
+:2_ b1_ idx :1_ 0 ____ ____ ____
+:3_ a1_ asg :2_ 0 ____ ____ ____
     `, `
-        LXI  H, b
+        LXI  H, b1
         MVI  M, 0
         MOV  E, M
         INR  E
         MVI  D, 0
         DAD  D
         MOV  A, M
-        STA  a
-    `);
-    test(`
-byte a, b, c[10]; b = 19; c = 27;
-a = (4 + b + c[1] + b) + (2 + c[1]) + (b + c[1]);
+        STA  a1
+    `, [2, 0, 2, 3, 4, 0]);
+    await test(`
+byte a1, b1, c1 := [1, 2, 3]; b1 = 19; c1 = 27;
+a1 = (4 + b1 + c1[1] + b1) + (2 + c1[1]) + (b1 + c1[1]);
     `, `
-:0_ b__ asg 19_ 0 ____ ____ ____
-:1_ c__ asg 27_ 0 ____ ____ ____
-:2_ 4__ add b__ 0 ____ ____ ____
-:3_ c__ idx 1__ 0 ____ ____ ____
+:0_ b1_ asg 19_ 0 ____ ____ ____
+:1_ c1_ asg 27_ 0 ____ ____ ____
+:2_ 4__ add b1_ 0 ____ ____ ____
+:3_ c1_ idx 1__ 0 ____ ____ ____
 :4_ :2_ add :3_ 0 ____ ____ ____
-:5_ :4_ add b__ 0 ____ ____ ____
+:5_ :4_ add b1_ 0 ____ ____ ____
 :7_ :3_ inc 2__ 0 ____ ____ ____
 :8_ :5_ add :7_ 0 ____ ____ ____
-:10 b__ add :3_ 0 ____ ____ ____
+:10 b1_ add :3_ 0 ____ ____ ____
 :11 :8_ add :10 0 ____ ____ ____
-:12 a__ asg :11 0 ____ ____ ____
+:12 a1_ asg :11 0 ____ ____ ____
     `, `
-        LXI  H, b
+        LXI  H, b1
         MVI  M, 19
-        LXI  H, c
+        LXI  H, c1
         MVI  M, 27
-        LDA  b
+        LDA  b1
         MOV  B, A
         ADI  4
         MOV  C, A
@@ -2025,50 +2058,52 @@ a = (4 + b + c[1] + b) + (2 + c[1]) + (b + c[1]);
         MOV  A, B
         ADD  D
         ADD  C
-        STA  a
-    `);
-    test(`
-byte a, b[10];
-a = b[a + 1];
+        STA  a1
+    `, [69, 19, 27, 2, 3]);
+    await test(`
+byte a1 := 1, b1 := [2, 3, 4, 5];
+a1 = b1[a1 + 1];
     `, `
-:0_ a__ inc ___ 0 ____ ____ ____
-:1_ b__ idx :0_ 0 ____ ____ ____
-:2_ a__ asg :1_ 0 ____ ____ ____
+:0_ a1_ inc ___ 0 ____ ____ ____
+:1_ b1_ idx :0_ 0 ____ ____ ____
+:2_ a1_ asg :1_ 0 ____ ____ ____
     `, `
-        LDA  a
+        LDA  a1
         INR  A
-        LXI  H, b
+        LXI  H, b1
         MOV  E, A
         MVI  D, 0
         DAD  D
         MOV  A, M
-        STA  a
-    `);
-    test(`
-word a; byte b, c;
-a = &b;
-b = 12;
-c = *(a + b + 7);
+        STA  a1
+    `, [4, 2, 3, 4, 5]);
+    await test(`
+word a1; byte b1, c1, d1 := [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 77, 0];
+a1 = &b1;
+b1 = 12;
+c1 = *(a1 + b1 + 7);
     `, `
-:0_ b__ adr ___ 1 ____ ____ ____
-:1_ a__ asg :0_ 1 ____ ____ ____
-:2_ b__ asg 12_ 0 ____ ____ ____
-:3_ a__ add b__ 1 ____ ____ ____
+:0_ b1_ adr ___ 1 ____ ____ ____
+:1_ a1_ asg :0_ 1 ____ ____ ____
+:2_ b1_ asg 12_ 0 ____ ____ ____
+:3_ a1_ add b1_ 1 ____ ____ ____
 :4_ :3_ add 7__ 1 ____ ____ ____
 :5_ :4_ ref ___ 0 ____ ____ ____
-:6_ c__ asg :5_ 0 ____ ____ ____
+:6_ c1_ asg :5_ 0 ____ ____ ____
     `, `
-        LXI  H, b
-        SHLD a
+        LXI  H, b1
+        SHLD a1
         MVI  M, 12
+        MOV  L, M
+        MVI  H, 0
         XCHG
-        LHLD a
+        LHLD a1
         DAD  D
         LXI  D, 7
         DAD  D
         MOV  A, M
-        STA  c
-    `);
+        STA  c1
+    `, [2, 2, 12, 77, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 77, 0]);
     test(`
 word a; byte b, c;
 a = &b;
@@ -3124,58 +3159,58 @@ a = b; c = a; d = a + b;
         ADD  B
         STA  d
     `);
-    test(`
-byte a, b;
-a = b + a - 1;
+    await test(`
+byte a1 := 1, b1 := 2;
+a1 = b1 + a1 - 1;
     `, `
-:0_ b__ add a__ 0 ____ ____ ____
+:0_ b1_ add a1_ 0 ____ ____ ____
 :1_ :0_ dec ___ 0 ____ ____ ____
-:2_ a__ asg :1_ 0 ____ ____ ____
+:2_ a1_ asg :1_ 0 ____ ____ ____
     `, `
-        LDA  b
-        LXI  H, a
+        LDA  b1
+        LXI  H, a1
         ADD  M
         DCR  A
         MOV  M, A
-    `);
-    test(`
-byte a, b, c;
-a = b + c; a = a; c = b - 1;
+    `, [2, 2]);
+    await test(`
+byte a1 := 1, b1 := 2, c1 := 3;
+a1 = b1 + c1; a1 = a1; c1 = b1 - 1;
     `, `
-:0_ b__ add c__ 0 ____ ____ ____
-:1_ a__ asg :0_ 0 ____ ____ ____
-:3_ b__ dec ___ 0 ____ ____ ____
-:4_ c__ asg :3_ 0 ____ ____ ____
+:0_ b1_ add c1_ 0 ____ ____ ____
+:1_ a1_ asg :0_ 0 ____ ____ ____
+:3_ b1_ dec ___ 0 ____ ____ ____
+:4_ c1_ asg :3_ 0 ____ ____ ____
     `, `
-        LDA  b
+        LDA  b1
         MOV  B, A
-        LXI  H, c
+        LXI  H, c1
         ADD  M
-        STA  a
+        STA  a1
         DCR  B
         MOV  M, B
-    `);
-    test(`
-byte a, b, c;
-a = b + c; a = a; c = b - 1; a = b;
+    `, [5, 2, 1]);
+    await test(`
+byte a1 := 1, b1 := 2, c1 := 3;
+a1 = b1 + c1; a1 = a1; c1 = b1 - 1; a1 = b1;
     `, `
-:0_ b__ add c__ 0 ____ ____ ____
-:1_ a__ asg :0_ 0 ____ ____ ____
-:3_ b__ dec ___ 0 ____ ____ ____
-:4_ c__ asg :3_ 0 ____ ____ ____
-:5_ a__ asg b__ 0 ____ ____ ____
+:0_ b1_ add c1_ 0 ____ ____ ____
+:1_ a1_ asg :0_ 0 ____ ____ ____
+:3_ b1_ dec ___ 0 ____ ____ ____
+:4_ c1_ asg :3_ 0 ____ ____ ____
+:5_ a1_ asg b1_ 0 ____ ____ ____
     `, `
-        LDA  b
+        LDA  b1
         MOV  B, A
-        LXI  H, c
+        LXI  H, c1
         ADD  M
-        STA  a
+        STA  a1
         MOV  A, B
         DCR  A
         MOV  M, A
         MOV  A, B
-        STA  a
-    `);
+        STA  a1
+    `, [2, 2, 1]);
 }
 
 function compiler(frg, vars) {
