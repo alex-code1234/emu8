@@ -1182,14 +1182,14 @@ function CodeGen(codec) {
                 if (b1 === 1) var0fromAddr(trp.val2, false);   // load in place if byte var addr in work or acc regs
                 else if (b1 === -1) var0fromAddr(trp.val2, true);
                 if (b0 < 0 && b1 < 0) { b0 = 0; b1 = 0; }      // calculate oper code
-                else if (b0 === 1 && inreg(o1lc, codec.workW)) { b2 = 1; b1 = 1; b0 = 1; }
+                else if (b0 === 1 && b1 !== 0 && inreg(o1lc, codec.workW)) { b2 = 1; b1 = 1; b0 = 1; }
                 else { if (b0 < 0) b0 = 1; if (b1 < 0) b1 = 1; }
                 switch (b2 << 2 | b1 << 1 | b0) {              // possible operand combinations
                     case 0:                                                                  // none none   000
                         loadW(trp, true, codec.accW, o1lc);    // load first
-                        if (o2lc === loc(1, trp.val2))         // different second after loadW, load ???
+                        if (o2lc === loc(1, trp.val2))         // different second after loadW, load
                             swap = loadW(trp, false, codec.workW, o2lc);
-                        else rg = codec.accW.charAt(0);        // same second, 111 case ???
+                        else rg = codec.accW.charAt(0);        // same second, 111 case
                         break;
                     case 1: swap = loadW(trp, false, codec.workW, o2lc); break;              // 1    none   001
                     case 2: loadW(trp, true, codec.accW, o1lc); break;                       // none 2      010
@@ -2104,65 +2104,65 @@ c1 = *(a1 + b1 + 7);
         MOV  A, M
         STA  c1
     `, [2, 2, 12, 77, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 77, 0]);
-    test(`
-word a; byte b, c;
-a = &b;
-b = 12;
-c = *120;
+    await test(`
+word a1; byte b1, c1, d1 := 18;
+a1 = &b1;
+b1 = 12;
+c1 = *516;
     `, `
-:0_ b__ adr ___ 1 ____ ____ ____
-:1_ a__ asg :0_ 1 ____ ____ ____
-:2_ b__ asg 12_ 0 ____ ____ ____
-:3_ 120 ref ___ 0 ____ ____ ____
-:4_ c__ asg :3_ 0 ____ ____ ____
+:0_ b1_ adr ___ 1 ____ ____ ____
+:1_ a1_ asg :0_ 1 ____ ____ ____
+:2_ b1_ asg 12_ 0 ____ ____ ____
+:3_ 516 ref ___ 0 ____ ____ ____
+:4_ c1_ asg :3_ 0 ____ ____ ____
     `, `
-        LXI  H, b
-        SHLD a
+        LXI  H, b1
+        SHLD a1
         MVI  M, 12
-        LXI  H, 120
+        LXI  H, 516
         MOV  A, M
-        STA  c
-    `);
-    test(`
-word a; byte b, c;
-a = &b;
-b = 12;
-c = *a;
+        STA  c1
+    `, [2, 2, 12, 18, 18]);
+    await test(`
+word a1; byte b1, c1;
+a1 = &b1;
+b1 = 12;
+c1 = *a1;
     `, `
-:0_ b__ adr ___ 1 ____ ____ ____
-:1_ a__ asg :0_ 1 ____ ____ ____
-:2_ b__ asg 12_ 0 ____ ____ ____
-:3_ a__ ref ___ 0 ____ ____ ____
-:4_ c__ asg :3_ 0 ____ ____ ____
+:0_ b1_ adr ___ 1 ____ ____ ____
+:1_ a1_ asg :0_ 1 ____ ____ ____
+:2_ b1_ asg 12_ 0 ____ ____ ____
+:3_ a1_ ref ___ 0 ____ ____ ____
+:4_ c1_ asg :3_ 0 ____ ____ ____
     `, `
-        LXI  H, b
-        SHLD a
+        LXI  H, b1
+        SHLD a1
         MVI  M, 12
         MOV  A, M
-        STA  c
-    `);
-    test(`
-word a, b; byte c, d;
-a = &b + &d;
-a = &b + &b;
+        STA  c1
+    `, [2, 2, 12, 12]);
+    await test(`
+word a1, b1; byte c1, d1;
+a1 = &b1 + &d1;
+a1 = &b1 + &b1;
     `, `
-:0_ b__ adr ___ 1 ____ ____ ____
-:1_ d__ adr ___ 1 ____ ____ ____
+:0_ b1_ adr ___ 1 ____ ____ ____
+:1_ d1_ adr ___ 1 ____ ____ ____
 :2_ :0_ add :1_ 1 ____ ____ ____
-:3_ a__ asg :2_ 1 ____ ____ ____
+:3_ a1_ asg :2_ 1 ____ ____ ____
 :6_ :0_ add :0_ 1 ____ ____ ____
-:7_ a__ asg :6_ 1 ____ ____ ____
+:7_ a1_ asg :6_ 1 ____ ____ ____
     `, `
-        LXI  H, b
+        LXI  H, b1
         PUSH H
-        LXI  H, d
+        LXI  H, d1
         POP  D
         DAD  D
-        SHLD a
+        SHLD a1
         XCHG
         DAD  H
-        SHLD a
-    `);
+        SHLD a1
+    `, [4, 4, 0, 0, 0, 0]);
     test(`
 word a, b; byte c, d;
 a = &b + &d;
