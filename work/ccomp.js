@@ -2448,114 +2448,114 @@ e1 = 2 + f1; d1 = f1 + 2; c1 = f1 + 2;
         SHLD d1
         SHLD c1
     `, [0, 0, 0, 0, 3, 0, 3, 0, 3, 1]);
-    test(`
-word a, b, c, d; byte e, f;
-e = 2 + f; d = f + 2; c = f + 2; a = f;
+    await test(`
+word a1, b1, c1, d1; byte e1, f1 := 1;
+e1 = 2 + f1; d1 = f1 + 2; c1 = f1 + 2; a1 = f1;
     `, `
-:0_ f__ inc 2__ 0 ____ ____ ____
-:1_ e__ asg :0_ 0 ____ ____ ____
-:3_ d__ asg :0_ 1 ____ ____ ____
-:5_ c__ asg :0_ 1 ____ ____ ____
-:6_ a__ asg f__ 1 ____ ____ ____
+:0_ f1_ inc 2__ 0 ____ ____ ____
+:1_ e1_ asg :0_ 0 ____ ____ ____
+:3_ d1_ asg :0_ 1 ____ ____ ____
+:5_ c1_ asg :0_ 1 ____ ____ ____
+:6_ a1_ asg f1_ 1 ____ ____ ____
     `, `
-        LDA  f
+        LDA  f1
         MOV  B, A
         INR  A
         INR  A
-        STA  e
+        STA  e1
         MOV  L, A
         MVI  H, 0
-        SHLD d
-        SHLD c
+        SHLD d1
+        SHLD c1
         MOV  L, B
-        SHLD a
-    `);
-    test(`
-word a, b, c, d; byte e, f;
-e = 2 + f; d = f + 2; c = f + 2; a = e;
+        SHLD a1
+    `, [1, 0, 0, 0, 3, 0, 3, 0, 3, 1]);
+    await test(`
+word a1, b1, c1, d1; byte e1, f1 := 1;
+e1 = 2 + f1; d1 = f1 + 2; c1 = f1 + 2; a1 = e1;
     `, `
-:0_ f__ inc 2__ 0 ____ ____ ____
-:1_ e__ asg :0_ 0 ____ ____ ____
-:3_ d__ asg :0_ 1 ____ ____ ____
-:5_ c__ asg :0_ 1 ____ ____ ____
-:6_ a__ asg e__ 1 ____ ____ ____
+:0_ f1_ inc 2__ 0 ____ ____ ____
+:1_ e1_ asg :0_ 0 ____ ____ ____
+:3_ d1_ asg :0_ 1 ____ ____ ____
+:5_ c1_ asg :0_ 1 ____ ____ ____
+:6_ a1_ asg e1_ 1 ____ ____ ____
     `, `
-        LDA  f
+        LDA  f1
         INR  A
         INR  A
-        STA  e
+        STA  e1
         MOV  L, A
         MVI  H, 0
-        SHLD d
-        SHLD c
-        SHLD a
-    `);
-    test(`
-word a, b, c, d; byte e, f;
-e = 2 + f; d = f + 2; c = f + 2; a = c;
+        SHLD d1
+        SHLD c1
+        SHLD a1
+    `, [3, 0, 0, 0, 3, 0, 3, 0, 3, 1]);
+    await test(`
+word a1, b1, c1, d1; byte e1, f1 := 1;
+e1 = 2 + f1; d1 = f1 + 2; c1 = f1 + 2; a1 = c1;
     `, `
-:0_ f__ inc 2__ 0 ____ ____ ____
-:1_ e__ asg :0_ 0 ____ ____ ____
-:3_ d__ asg :0_ 1 ____ ____ ____
-:5_ c__ asg :0_ 1 ____ ____ ____
-:6_ a__ asg c__ 1 ____ ____ ____
+:0_ f1_ inc 2__ 0 ____ ____ ____
+:1_ e1_ asg :0_ 0 ____ ____ ____
+:3_ d1_ asg :0_ 1 ____ ____ ____
+:5_ c1_ asg :0_ 1 ____ ____ ____
+:6_ a1_ asg c1_ 1 ____ ____ ____
     `, `
-        LDA  f
+        LDA  f1
         INR  A
         INR  A
-        STA  e
+        STA  e1
         MOV  L, A
         MVI  H, 0
-        SHLD d
-        SHLD c
-        SHLD a
-    `);
-    test(`
-word a, b, c, d; byte e, f;
-e = 2 + f; d = f + 2; c = f + 2; a = d;
+        SHLD d1
+        SHLD c1
+        SHLD a1
+    `, [3, 0, 0, 0, 3, 0, 3, 0, 3, 1]);
+    await test(`
+word a1, b1, c1, d1; byte e1, f1 := 1;
+e1 = 2 + f1; d1 = f1 + 2; c1 = f1 + 2; a1 = d1;
     `, `
-:0_ f__ inc 2__ 0 ____ ____ ____
-:1_ e__ asg :0_ 0 ____ ____ ____
-:3_ d__ asg :0_ 1 ____ ____ ____
-:5_ c__ asg :0_ 1 ____ ____ ____
-:6_ a__ asg d__ 1 ____ ____ ____
+:0_ f1_ inc 2__ 0 ____ ____ ____
+:1_ e1_ asg :0_ 0 ____ ____ ____
+:3_ d1_ asg :0_ 1 ____ ____ ____
+:5_ c1_ asg :0_ 1 ____ ____ ____
+:6_ a1_ asg d1_ 1 ____ ____ ____
     `, `
-        LDA  f
+        LDA  f1
         INR  A
         INR  A
-        STA  e
+        STA  e1
         MOV  L, A
         MVI  H, 0
-        SHLD d
-        SHLD c
-        SHLD a
-    `);
-    test(`
-word a, b, c, d; byte e, f;
-a = 3 + (7 + ((b + c) + (d + 4) + (c + 6) + 5));
+        SHLD d1
+        SHLD c1
+        SHLD a1
+    `, [3, 0, 0, 0, 3, 0, 3, 0, 3, 1]);
+    await test(`
+word a1, b1 := 1, c1 := 2, d1 := 3; byte e1, f1;
+a1 = 3 + (7 + ((b1 + c1) + (d1 + 4) + (c1 + 6) + 5));
     `, `
-:0_ b__ add c__ 1 ____ ____ ____
-:1_ d__ add 4__ 1 ____ ____ ____
+:0_ b1_ add c1_ 1 ____ ____ ____
+:1_ d1_ add 4__ 1 ____ ____ ____
 :2_ :0_ add :1_ 1 ____ ____ ____
-:3_ c__ add 6__ 1 ____ ____ ____
+:3_ c1_ add 6__ 1 ____ ____ ____
 :4_ :2_ add :3_ 1 ____ ____ ____
 :5_ :4_ add 5__ 1 ____ ____ ____
 :6_ 7__ add :5_ 1 ____ ____ ____
 :7_ :6_ inc 3__ 1 ____ ____ ____
-:8_ a__ asg :7_ 1 ____ ____ ____
+:8_ a1_ asg :7_ 1 ____ ____ ____
     `, `
-        LHLD b
+        LHLD b1
         XCHG
-        LHLD c
+        LHLD c1
         DAD  D
         PUSH H
-        LHLD d
+        LHLD d1
         LXI  D, 4
         DAD  D
         POP  D
         DAD  D
         PUSH H
-        LHLD c
+        LHLD c1
         LXI  D, 6
         DAD  D
         POP  D
@@ -2567,32 +2567,32 @@ a = 3 + (7 + ((b + c) + (d + 4) + (c + 6) + 5));
         INX  H
         INX  H
         INX  H
-        SHLD a
-    `);
-    test(`
-word a, b; byte c, d, e, f;
-a = 3 + (7 + ((b + c) + (d + 4) + (c + 6) + 5));
+        SHLD a1
+    `, [33, 0, 1, 0, 2, 0, 3, 0, 0, 0]);
+    await test(`
+word a1, b1 := 1; byte c1 := 2, d1 := 3, e1, f1;
+a1 = 3 + (7 + ((b1 + c1) + (d1 + 4) + (c1 + 6) + 5));
     `, `
-:0_ b__ add c__ 1 ____ ____ ____
-:1_ d__ add 4__ 0 ____ ____ ____
+:0_ b1_ add c1_ 1 ____ ____ ____
+:1_ d1_ add 4__ 0 ____ ____ ____
 :2_ :0_ add :1_ 1 ____ ____ ____
-:3_ c__ add 6__ 0 ____ ____ ____
+:3_ c1_ add 6__ 0 ____ ____ ____
 :4_ :2_ add :3_ 1 ____ ____ ____
 :5_ :4_ add 5__ 1 ____ ____ ____
 :6_ 7__ add :5_ 1 ____ ____ ____
 :7_ :6_ inc 3__ 1 ____ ____ ____
-:8_ a__ asg :7_ 1 ____ ____ ____
+:8_ a1_ asg :7_ 1 ____ ____ ____
     `, `
-        LHLD b
-        LDA  c
+        LHLD b1
+        LDA  c1
         MOV  E, A
         MVI  D, 0
         DAD  D
-        LDA  d
+        LDA  d1
         ADI  4
         MOV  E, A
         DAD  D
-        LDA  c
+        LDA  c1
         ADI  6
         MOV  E, A
         DAD  D
@@ -2603,8 +2603,8 @@ a = 3 + (7 + ((b + c) + (d + 4) + (c + 6) + 5));
         INX  H
         INX  H
         INX  H
-        SHLD a
-    `);
+        SHLD a1
+    `, [33, 0, 1, 0, 2, 3, 0, 0]);
     test(`
 word a, b, c, d;
 d = b + c - 8 - (a + 7 + b);
