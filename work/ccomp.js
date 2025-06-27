@@ -916,14 +916,8 @@ function CodeGen(codec) {
                             case 'neq': add = codec.jnz; break;
                             case 'grt': add = swapped ? codec.jc : codec.jnc; break;
                             case 'lst': add = swapped ? codec.jnc : codec.jc; break;
-                            case 'gre':
-                                code += codec.jz('$+4', trp.adr);
-                                add = swapped ? codec.jc : codec.jnc;
-                                break;
-                            case 'lse':
-                                code += codec.jz('$+4', trp.adr);
-                                add = swapped ? codec.jnc : codec.jc;
-                                break;
+                            case 'gre': add = swapped ? codec.jc : codec.jnc; break;
+                            case 'lse': add = swapped ? codec.jnc : codec.jc; break;
                         }
                         code += add('$+4', trp.adr);
                         code += codec.xra(codec.acc, trp.adr);
@@ -2803,7 +2797,6 @@ b1 = 2 >= a1 & b1 < 4;
         MOV  A, M
         CPI  2
         MVI  A, 1
-        JZ   $+4
         JC   $+4
         XRA  A
         MOV  B, A
@@ -2815,6 +2808,60 @@ b1 = 2 >= a1 & b1 < 4;
         ANA  B
         STA  b1
     `, [3, 0]);
+    await test(`
+byte a1 := 1, b1 := 3, c1;
+c1 = b1 >= a1 & b1 < 4;
+    `, `
+:0_ b1_ gre a1_ 0 ____ ____ ____
+:1_ b1_ lst 4__ 0 ____ ____ ____
+:2_ :0_ and :1_ 0 ____ ____ ____
+:3_ c1_ asg :2_ 0 ____ ____ ____
+    `, `
+        LDA  b1
+        MOV  B, A
+        LXI  H, a1
+        CMP  M
+        MVI  A, 1
+        JNC  $+4
+        XRA  A
+        MOV  C, A
+        MOV  A, B
+        CPI  4
+        MVI  A, 1
+        JC   $+4
+        XRA  A
+        ANA  C
+        STA  c1
+    `, [1, 3, 1]);
+    await test(`
+byte a1 := 1, b1 := 3, c1;
+a1 = a1 + 1;
+c1 = b1 >= a1 & b1 < 4;
+    `, `
+:0_ a1_ inc ___ 0 ____ ____ ____
+:1_ a1_ asg :0_ 0 ____ ____ ____
+:2_ b1_ gre a1_ 0 ____ ____ ____
+:3_ b1_ lst 4__ 0 ____ ____ ____
+:4_ :2_ and :3_ 0 ____ ____ ____
+:5_ c1_ asg :4_ 0 ____ ____ ____
+    `, `
+        LDA  a1
+        INR  A
+        STA  a1
+        LXI  H, b1
+        CMP  M
+        MVI  A, 1
+        JC   $+4
+        XRA  A
+        MOV  B, A
+        MOV  A, M
+        CPI  4
+        MVI  A, 1
+        JC   $+4
+        XRA  A
+        ANA  B
+        STA  c1
+    `, [2, 3, 1]);
     test(`
 byte a, b, c; b = 19; c = 27;
 a = (4 + b + c + b) + (2 + c) + (b + c);
