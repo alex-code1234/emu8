@@ -916,8 +916,14 @@ function CodeGen(codec) {
                             case 'neq': add = codec.jnz; break;
                             case 'grt': add = swapped ? codec.jc : codec.jnc; break;
                             case 'lst': add = swapped ? codec.jnc : codec.jc; break;
-                            case 'gre': add = swapped ? codec.jnc : codec.jc; break;
-                            case 'lse': add = swapped ? codec.jc : codec.jnc; break;
+                            case 'gre':
+                                code += codec.jz('$+4', trp.adr);
+                                add = swapped ? codec.jc : codec.jnc;
+                                break;
+                            case 'lse':
+                                code += codec.jz('$+4', trp.adr);
+                                add = swapped ? codec.jnc : codec.jc;
+                                break;
                         }
                         code += add('$+4', trp.adr);
                         code += codec.xra(codec.acc, trp.adr);
@@ -2605,184 +2611,184 @@ a1 = 3 + (7 + ((b1 + c1) + (d1 + 4) + (c1 + 6) + 5));
         INX  H
         SHLD a1
     `, [33, 0, 1, 0, 2, 3, 0, 0]);
-    test(`
-word a, b, c, d;
-d = b + c - 8 - (a + 7 + b);
+    await test(`
+word a1 := 1, b1 := 2, c1 := 30, d1;
+d1 = b1 + c1 - 8 - (a1 + 7 + b1);
     `, `
-:0_ b__ add c__ 1 ____ ____ ____
+:0_ b1_ add c1_ 1 ____ ____ ____
 :1_ :0_ sub 8__ 1 ____ ____ ____
-:2_ a__ add 7__ 1 ____ ____ ____
-:3_ :2_ add b__ 1 ____ ____ ____
+:2_ a1_ add 7__ 1 ____ ____ ____
+:3_ :2_ add b1_ 1 ____ ____ ____
 :4_ :1_ sub :3_ 1 ____ ____ ____
-:5_ d__ asg :4_ 1 ____ ____ ____
+:5_ d1_ asg :4_ 1 ____ ____ ____
     `, `
-        LHLD b
+        LHLD b1
         XCHG
-        LHLD c
+        LHLD c1
         DAD  D
         LXI  D, 8
         CALL @SUBW
         PUSH H
-        LHLD a
+        LHLD a1
         LXI  D, 7
         DAD  D
         XCHG
-        LHLD b
+        LHLD b1
         DAD  D
         POP  D
         XCHG
         CALL @SUBW
-        SHLD d
-    `);
-    test(`
-word a, b, c, d;
-d = b + c - 2 - (a + b + 7);
+        SHLD d1
+    `, [1, 0, 2, 0, 30, 0, 14, 0]);
+    await test(`
+word a1 := 1, b1 := 2, c1 := 30, d1;
+d1 = b1 + c1 - 2 - (a1 + b1 + 7);
     `, `
-:0_ b__ add c__ 1 ____ ____ ____
+:0_ b1_ add c1_ 1 ____ ____ ____
 :1_ :0_ dec 2__ 1 ____ ____ ____
-:2_ a__ add b__ 1 ____ ____ ____
+:2_ a1_ add b1_ 1 ____ ____ ____
 :3_ :2_ add 7__ 1 ____ ____ ____
 :4_ :1_ sub :3_ 1 ____ ____ ____
-:5_ d__ asg :4_ 1 ____ ____ ____
+:5_ d1_ asg :4_ 1 ____ ____ ____
     `, `
-        LHLD b
+        LHLD b1
         XCHG
-        LHLD c
+        LHLD c1
         DAD  D
         DCX  H
         DCX  H
         PUSH H
-        LHLD a
+        LHLD a1
         DAD  D
         LXI  D, 7
         DAD  D
         POP  D
         XCHG
         CALL @SUBW
-        SHLD d
-    `);
-    test(`
-word a, c; byte b, d; word e, f;
-a = 1234; c = 5678; b = 12; d = 56;
-a = c + b; c = a - d; e = a + c; f = a - c;
+        SHLD d1
+    `, [1, 0, 2, 0, 30, 0, 20, 0]);
+    await test(`
+word a1, c1; byte b1, d1; word e1, f1;
+a1 = 1234; c1 = 5678; b1 = 12; d1 = 56;
+a1 = c1 + b1; c1 = a1 - d1; e1 = a1 + c1; f1 = a1 - c1;
     `, `
-:0_ a__ asg 1234 1 ____ ____ ____
-:1_ c__ asg 5678 1 ____ ____ ____
-:2_ b__ asg 12_ 0 ____ ____ ____
-:3_ d__ asg 56_ 0 ____ ____ ____
-:4_ c__ add b__ 1 ____ ____ ____
-:5_ a__ asg :4_ 1 ____ ____ ____
-:6_ a__ sub d__ 1 ____ ____ ____
-:7_ c__ asg :6_ 1 ____ ____ ____
-:8_ a__ add c__ 1 ____ ____ ____
-:9_ e__ asg :8_ 1 ____ ____ ____
-:10 a__ sub c__ 1 ____ ____ ____
-:11 f__ asg :10 1 ____ ____ ____
+:0_ a1_ asg 1234 1 ____ ____ ____
+:1_ c1_ asg 5678 1 ____ ____ ____
+:2_ b1_ asg 12_ 0 ____ ____ ____
+:3_ d1_ asg 56_ 0 ____ ____ ____
+:4_ c1_ add b1_ 1 ____ ____ ____
+:5_ a1_ asg :4_ 1 ____ ____ ____
+:6_ a1_ sub d1_ 1 ____ ____ ____
+:7_ c1_ asg :6_ 1 ____ ____ ____
+:8_ a1_ add c1_ 1 ____ ____ ____
+:9_ e1_ asg :8_ 1 ____ ____ ____
+:10 a1_ sub c1_ 1 ____ ____ ____
+:11 f1_ asg :10 1 ____ ____ ____
     `, `
         LXI  H, 1234
-        SHLD a
+        SHLD a1
         LXI  H, 5678
-        SHLD c
-        LXI  H, b
+        SHLD c1
+        LXI  H, b1
         MVI  M, 12
-        LXI  H, d
+        LXI  H, d1
         MVI  M, 56
-        LHLD c
-        LDA  b
+        LHLD c1
+        LDA  b1
         MOV  E, A
         MVI  D, 0
         DAD  D
-        SHLD a
-        LDA  d
+        SHLD a1
+        LDA  d1
         MOV  E, A
         CALL @SUBW
-        SHLD c
+        SHLD c1
         XCHG
-        LHLD a
+        LHLD a1
         DAD  D
-        SHLD e
-        LHLD a
+        SHLD e1
+        LHLD a1
         CALL @SUBW
-        SHLD f
-    `);
-    test(`
-word a, b, c, d; byte e, f;
-a = 5 + b + b + 1;
+        SHLD f1
+    `, [58, 22, 2, 22, 12, 56, 60, 44, 56, 0]);
+    await test(`
+word a1, b1 := 1, c1, d1; byte e1, f1;
+a1 = 5 + b1 + b1 + 1;
     `, `
-:0_ 5__ add b__ 1 ____ ____ ____
-:1_ :0_ add b__ 1 ____ ____ ____
+:0_ 5__ add b1_ 1 ____ ____ ____
+:1_ :0_ add b1_ 1 ____ ____ ____
 :2_ :1_ inc ___ 1 ____ ____ ____
-:3_ a__ asg :2_ 1 ____ ____ ____
+:3_ a1_ asg :2_ 1 ____ ____ ____
     `, `
         LXI  D, 5
-        LHLD b
+        LHLD b1
         DAD  D
         XCHG
-        LHLD b
+        LHLD b1
         DAD  D
         INX  H
-        SHLD a
-    `);
-    test(`
-word a, b, c, d; byte e, f;
-a = b + 5 + b;
+        SHLD a1
+    `, [8, 0, 1, 0, 0, 0, 0, 0, 0, 0]);
+    await test(`
+word a1, b1 := 1, c1, d1; byte e1, f1;
+a1 = b1 + 5 + b1;
     `, `
-:0_ b__ add 5__ 1 ____ ____ ____
-:1_ :0_ add b__ 1 ____ ____ ____
-:2_ a__ asg :1_ 1 ____ ____ ____
+:0_ b1_ add 5__ 1 ____ ____ ____
+:1_ :0_ add b1_ 1 ____ ____ ____
+:2_ a1_ asg :1_ 1 ____ ____ ____
     `, `
-        LHLD b
+        LHLD b1
         LXI  D, 5
         DAD  D
         XCHG
-        LHLD b
+        LHLD b1
         DAD  D
-        SHLD a
-    `);
-    test(`
-word a, b, c, d; byte e, f;
-a = b + c + b;
+        SHLD a1
+    `, [7, 0, 1, 0, 0, 0, 0, 0, 0, 0]);
+    await test(`
+word a1, b1 := 1, c1 := 2, d1; byte e1, f1;
+a1 = b1 + c1 + b1;
     `, `
-:0_ b__ add c__ 1 ____ ____ ____
-:1_ :0_ add b__ 1 ____ ____ ____
-:2_ a__ asg :1_ 1 ____ ____ ____
+:0_ b1_ add c1_ 1 ____ ____ ____
+:1_ :0_ add b1_ 1 ____ ____ ____
+:2_ a1_ asg :1_ 1 ____ ____ ____
     `, `
-        LHLD b
+        LHLD b1
         XCHG
-        LHLD c
+        LHLD c1
         DAD  D
         DAD  D
-        SHLD a
-    `);
-    test(`
-word a; byte b;
-b = b + 1; a = a + a + b; b = b + b + b;
+        SHLD a1
+    `, [4, 0, 1, 0, 2, 0, 0, 0, 0, 0]);
+    await test(`
+word a1 := 1; byte b1 := 2;
+b1 = b1 + 1; a1 = a1 + a1 + b1; b1 = b1 + b1 + b1;
     `, `
-:0_ b__ inc ___ 0 ____ ____ ____
-:1_ b__ asg :0_ 0 ____ ____ ____
-:2_ a__ add a__ 1 ____ ____ ____
-:3_ :2_ add b__ 1 ____ ____ ____
-:4_ a__ asg :3_ 1 ____ ____ ____
-:5_ b__ add b__ 0 ____ ____ ____
-:6_ :5_ add b__ 0 ____ ____ ____
-:7_ b__ asg :6_ 0 ____ ____ ____
+:0_ b1_ inc ___ 0 ____ ____ ____
+:1_ b1_ asg :0_ 0 ____ ____ ____
+:2_ a1_ add a1_ 1 ____ ____ ____
+:3_ :2_ add b1_ 1 ____ ____ ____
+:4_ a1_ asg :3_ 1 ____ ____ ____
+:5_ b1_ add b1_ 0 ____ ____ ____
+:6_ :5_ add b1_ 0 ____ ____ ____
+:7_ b1_ asg :6_ 0 ____ ____ ____
     `, `
-        LDA  b
+        LDA  b1
         INR  A
-        STA  b
+        STA  b1
         MOV  B, A
-        LHLD a
+        LHLD a1
         DAD  H
         MOV  E, A
         MVI  D, 0
         DAD  D
-        SHLD a
+        SHLD a1
         ADD  A
         ADD  B
-        STA  b
-    `);
-    test(`
-byte a1, b1;
+        STA  b1
+    `, [5, 0, 9]);
+    await test(`
+byte a1, b1 := 1;
 a1 = 3;
 b1 = 2 >= a1 & b1 < 4;
     `, `
@@ -2797,7 +2803,8 @@ b1 = 2 >= a1 & b1 < 4;
         MOV  A, M
         CPI  2
         MVI  A, 1
-        JNC  $+4
+        JZ   $+4
+        JC   $+4
         XRA  A
         MOV  B, A
         LDA  b1
@@ -2807,7 +2814,7 @@ b1 = 2 >= a1 & b1 < 4;
         XRA  A
         ANA  B
         STA  b1
-    `);
+    `, [3, 0]);
     test(`
 byte a, b, c; b = 19; c = 27;
 a = (4 + b + c + b) + (2 + c) + (b + c);
