@@ -22,7 +22,7 @@ async function SpecCon() {
         }
         return true;
     }, 20);
-    con.canvas.canvas.style.backgroundColor = 'black';                      // show canvas after theme change
+    con.canvas.canvas.style.backgroundColor = '#202020';                    // show canvas after theme change
     return {...con, ...gmon, 'setMemo': v => vram = v.ram};
 }
 
@@ -192,7 +192,7 @@ class SpecKbd extends Kbd {
         if (a === 3) {
             this.p[3] = v;
             if (v === 0x82) { this.enabledB = true; this.enabledAC = false; } else
-            if (v === 0x91) { this.enabledAC = true; this.enabledB = false; }
+            if (v === 0x91) { this.enabledAC = true; this.enabledB = false; } else
             if ((v & 0x0a) === 0x0a) ; else                                 // sound (inverted)
             if ((v & 0x0c) === 0x0c) ; else                                 // rus/lat diod (inverted)
             if ((v & 0x0e) === 0x0e) this.tape.push((v & 0x01) ? 0 : 1);    // write bit to tape (inverted)
