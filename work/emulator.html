@@ -2,6 +2,7 @@
 <html lang='en' data-theme='dark'>
 <head>
     <meta name='viewport' content='width=device-width, initial-scale=1.0'/>
+    <meta charset='utf-8'/>
     <style type='text/css'>
 @font-face { font-family: 'CP437'; src: url('../emu/github/emu8/cp437.ttf'); }
 @font-face { font-family: 'VT220'; src: url('../emu/github/emu8/Glass_TTY_VT220.ttf'); }
@@ -124,6 +125,7 @@ input[type='checkbox'] {                /* check box */
     border-radius: calc(var(--key_size) / 10); grid-column: span 2;
     font-size: calc(var(--key_size) / 3.5); text-align: center; cursor: pointer;
     display: flex; flex-direction: column; align-items: center; justify-content: space-around;
+    user-select: none;
 }
 .key:active {
     border-color: var(--keypressed);
