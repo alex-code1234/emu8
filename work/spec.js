@@ -93,10 +93,14 @@ function Intel8255(onread = null, onwrite = null, onwritebit = null, readCW = 0x
                     ports[3] = val;
                     write(0, 0x00); write(1, 0x00); write(2, 0x00);
                 } else {
-                    const bitnum = (val & 0x0e) >>> 1, bit = val & 0x01;
-                    if (bit) ports[2] |= 0x01 << bitnum; else
-                    ports[2] &= ~(0x01 << bitnum);
-                    if (onwritebit) onwritebit(bitnum, bit);
+                    const bitnum = (val & 0x0e) >>> 1, cw = ports[3];
+                    if ((cw & 0xed) === 0x80 || ((cw & 0xe8) === 0x80 && bitnum > 3) ||
+                            ((cw & 0x85) === 0x80 && bitnum < 4)) {
+                        const bit = val & 0x01;
+                        if (bit) ports[2] |= 0x01 << bitnum;
+                        else ports[2] &= ~(0x01 << bitnum);
+                        if (onwritebit) onwritebit(bitnum, bit);
+                    }
                 }
                 break;
         }
