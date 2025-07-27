@@ -40,10 +40,13 @@ class SpecCpu extends GenCpu {
         super(memo, 0);
         con.setMemo(memo);                                                  // link con and memo
         this.con = con;
+        this.spk = memo.speaker;
     }
     async run() {
         this.con.start();
+        if (this.spk) this.spk.start();
         await super.run();
+        if (this.spk) this.spk.stop();
         this.con.stop();
     }
 }
@@ -88,8 +91,7 @@ function Intel8255(onread = null, onwrite = null, onwritebit = null, readCW = 0x
                 if ((cw & 0x85) === 0x80) dowrite(num, val, 1);
                 break;
             case 3:
-                const mode = val & 0x80;
-                if (mode) {
+                if (val & 0x80) {
                     ports[3] = val;
                     write(0, 0x00); write(1, 0x00); write(2, 0x00);
                 } else {
@@ -253,11 +255,308 @@ function SoftKeyboard(layout, kbd, kbdElem = document.getElementsByClassName('ke
     kbdElem.innerHTML = s;
 }
 
-function SpecKbd() {
+// Floppy disk controller
+function WD1793(Heads = 2, SecPerTrack = 5, SecSize = 1024) {
+    let Drive = 0, Side = 0, LastS = 0, IRQ = 0, Wait = 0, Cmd = 0xd0, DPtr = 0, DLength = 0;
+    const R = new Uint8Array([0x00, 0x00, 0x00, 0x00, 0x04 | 0x08]), // S_RESET | S_HALT
+          Disk = [null, null], Track = [0, 0],
+    read = num => {
+        switch (num) {
+            case 0: // WD1793_STATUS
+                let res = R[0];
+                if (Disk[Drive] === null) res |= 0x80;
+                if (Cmd < 0x80 || Cmd == 0xd0)
+                    R[0] = (R[0] ^ 0x02) & (0x02 | 0x01 | 0x80 | 0x40 | 0x04); else
+                    R[0] &= 0x01 | 0x80 | 0x40 | 0x02;
+                if ((R[0] & 0x01) && IRQ === 0x80) R[0] &= ~0x01;    // delay: reset busy bit if op completed
+                return res;
+            case 1: // WD1793_TRACK
+            case 2: // WD1793_SECTOR
+                return R[num];
+            case 3: // WD1793_DATA
+                if (DLength) {
+                    R[3] = Disk[Drive][DPtr++];
+                    if (--DLength) {
+                        Wait = 255;
+                        if (!(DLength & (SecSize - 1))) ++R[2];
+                    } else {
+                        R[0] &= ~0x02;                                                              // delay: busy bit
+                        IRQ = 0x80;
+                    }
+                }
+                else if ((Cmd & 0xf0) === 0xc0) {
+                    switch (DPtr) {
+                        case 0: R[3] = Track[Drive]; Wait = 255; break;
+                        case 1: R[3] = Side; Wait = 255; break;
+                        case 2: R[3] = R[2] ? R[2] : 1; Wait = 255; break;
+                        case 3:
+                            switch (SecSize) {
+                                case 128: R[3] = 0; break;
+                                case 256: R[3] = 1; break;
+                                case 512: R[3] = 2; break;
+                                default: R[3] = 3; break;
+                            }
+                            Wait = 255; break;
+                        case 4: R[3] = 0x00; Wait = 255; break;
+                        case 5:
+                            R[3] = 0x00;
+                            R[0] &= ~0x02;                                                          // delay: busy bit
+                            IRQ = 0x80;
+                            break;
+                    }
+                    DPtr++;
+                }
+                return R[3];
+            case 4: // WD1793_READY
+                if (Wait && !--Wait) {
+                    DLength = 0;
+                    R[0] = (R[0] & ~(0x02 | 0x01)) | 0x04;
+                    IRQ = 0x80;
+                }
+                return IRQ;
+            default:
+                console.warn(`FDC: unknown port - ${num}`);
+                return 0xff;
+        }
+    },
+    write = (num, val) => {
+        switch (num) {
+            case 0: // WD1793_COMMAND
+                IRQ = 0;
+                if ((val & 0xf0) === 0xd0) {
+                    DLength = 0;
+                    Cmd = 0xd0;
+                    if (R[0] & 0x01) R[0] &= ~0x01; else
+                                     R[0] = (Track[Drive] ? 0 : 0x04) | 0x02;
+                    if (val & 0x08) IRQ = 0x80;
+                    break;
+                }
+                if (R[0] & 0x01) break;
+                R[0] = 0x00;
+                Cmd = val;
+                switch (val & 0xf0) {
+                    case 0x00: // RESTORE (seek track 0)
+                        Track[Drive] = 0;
+                        R[0] = 0x02 | 0x04 | ((val & 0x08) ? 0x20 : 0) | 0x01;                      // delay: busy bit
+                        R[1] = 0;
+                        IRQ = 0x80;
+                        break;
+                    case 0x10: // SEEK
+                        DLength = 0;
+                        Track[Drive] = R[3];
+                        R[0] = 0x02 | (Track[Drive] ? 0 : 0x04) | ((val & 0x08) ? 0x20 : 0) | 0x01; // delay: busy bit
+                        R[1] = Track[Drive];
+                        IRQ = 0x80;
+                        break;
+                    case 0x20: // STEP
+                    case 0x30: // STEP-AND-UPDATE
+                    case 0x40: // STEP-IN
+                    case 0x50: // STEP-IN-AND-UPDATE
+                    case 0x60: // STEP-OUT
+                    case 0x70: // STEP-OUT-AND-UPDATE
+                        if (val & 0x40) LastS = val & 0x20; else val = (val & ~0x20) | LastS;
+                        if (val & 0x20) { if (Track[Drive]) --Track[Drive]; } else ++Track[Drive];
+                        if (val & 0x10) R[1] = Track[Drive];
+                        R[0] = 0x02 | (Track[Drive] ? 0 : 0x04) | 0x01;                             // delay: busy bit
+                        IRQ = 0x80;
+                        break;
+                    case 0x80:
+                    case 0x90: // READ-SECTORS
+                    case 0xa0:
+                    case 0xb0: // WRITE-SECTORS
+                        R[0] &= ~0x04;                                                              // reset tr0 bit
+                        const sec = R[2] ? R[2] - 1 : 0;
+                        DPtr = (Track[Drive] * SecPerTrack * Heads + SecPerTrack * Side + sec) * SecSize;
+                        if (Disk[Drive] === null || DPtr + SecSize > Disk[Drive].length) {
+                            R[0] = (R[0] & ~0x18) | 0x10 | 0x01;                                    // delay: busy bit
+                            if (Disk[Drive] === null) R[0] |= 0x80;
+                            IRQ = 0x80;
+                        } else {
+                            DLength = SecSize * ((val & 0x10) ? SecPerTrack - sec : 1);
+                            R[0] |= 0x01 | 0x02;
+                            IRQ = 0x40;
+                            Wait = 255;
+                        }
+                        break;
+                    case 0xc0: // READ-ADDRESS
+                        R[0] &= ~0x04;                                                              // reset tr0 bit
+                        DPtr = 0; DLength = 0;
+                        R[0] |= 0x01 | 0x02;
+                        IRQ = 0x40;
+                        Wait = 255;
+                        break;
+                    case 0xe0: // READ-TRACK
+                        break;
+                    case 0xf0: // WRITE-TRACK (format)
+                        R[0] &= ~0x04;                                                              // reset tr0 bit
+                        DPtr = Track[Drive] * SecPerTrack * Heads * SecSize;
+                        if (Disk[Drive] === null || DPtr + SecSize * SecPerTrack * Heads > Disk[Drive].length) {
+                            R[0] = (R[0] & ~0x18) | 0x10 | 0x01;                                    // delay: busy bit
+                            if (Disk[Drive] === null) R[0] |= 0x80;
+                            IRQ = 0x80;
+                        } else {
+                            R[0] |= 0x01 | 0x02;
+                            IRQ = 0x80;
+                            Disk[Drive].fill(0xe5, DPtr, DPtr + SecSize * SecPerTrack * Heads);
+                        }
+                        break;
+                }
+                break;
+            case 1: // WD1793_TRACK
+            case 2: // WD1793_SECTOR
+                if (!(R[0] & 0x01)) R[num] = val;
+                break;
+            case 3: // WD1793_DATA
+                if (DLength) {
+                    Disk[Drive][DPtr++] = val;
+                    if (--DLength) {
+                        Wait = 255;
+                        if (!(DLength & (SecSize - 1))) ++R[2];
+                    } else {
+                        R[0] &= ~0x02;                                                              // delay: busy bit
+                        IRQ = 0x80;
+                    }
+                }
+                R[3] = val;
+                break;
+            case 4: // WD1793_SYSTEM
+                if ((R[4] ^ val) & val & 0x04) {                     // S_RESET
+                    R[0] = 0x00; R[1] = 0x00; R[2] = 0x00; R[3] = 0x00;
+                    LastS = 0; IRQ = 0; Wait = 0; Cmd = 0xd0; DPtr = 0; DLength = 0;
+                }
+                if (val & 0x02)                                      // S_DRIVE
+                    Drive = (val & 0x01) ? 1 : 0;
+                if (Heads > 1 && (val & 0x10))                       // S_SIDE
+                    Side = (val & 0x01) ? 1 : 0;
+                R[4] = val;
+                break;
+            default:
+                console.warn(`FDC: unknown port - ${num}, value - ${fmt(val, 2)}`);
+                break;
+        }
+    },
+    state = () => { return {Drive, Side, LastS, IRQ, Wait, Cmd, DPtr, DLength, R, Track}; };
+    return {read, write, Disk, state};
+}
+
+// Speaker interface
+async function Speaker(volume = 0.03, canvas = null) {
+    function constructor() {                                         // AudioWorkletProcessor constructor
+        _super();                                                    // super call, fixed during class generation
+        this.ticks = [];                                             // data buffer
+        this.value = 0.5;                                            // sample value 50%
+        this.sample = 48000.0 / 2000000.0;                           // sampling ratio (48kHz - audio, 2MHz - CPU)
+        this.prevCycle = 0;
+        this.port.onmessage = e => {                                 // message handler
+            const data = e.data, length = data.length;
+            for (let i = 0; i < length; i++) {                       // preprocess data
+                const cycle = data[i];                               // calc audio half wave length in 1..1024 range
+                let hwlen = Math.round((cycle - this.prevCycle) * this.sample) | 0;
+                if (hwlen < 1) hwlen = 1; else if (hwlen > 1024) hwlen = 1024;
+                this.ticks.push(hwlen);                              // save in buffer
+                this.prevCycle = cycle;                              // remember cycle
+            }
+        };
+    }
+    function process(inps, outs, parms) {                            // AudioWorkletProcessor process method
+        const out = outs[0][0];                                      // mono output
+        let i = 0;
+        while (i < out.length) {                                     // fill in outputs
+            if (this.ticks.length === 0) {                           // no data in buffer
+                out[i++] = 0;                                        // no signal
+                continue;
+            }
+            let cnt = this.ticks[0];                                 // number of samples
+            while (cnt-- > 0) {
+                out[i++] = this.value;                               // output signal
+                if (i >= out.length) break;                          // finished samples buffer
+            }
+            if (cnt > 0) {                                           // samples batch not done
+                this.ticks[0] = cnt;                                 // remember rest
+                break;
+            }
+            this.ticks.shift();                                      // remove processed data
+            this.value = -this.value;                                // switch value sign for second half
+        }
+        return true;                                                 // keep alive
+    }
+    if (!(await navigator.mediaDevices.getUserMedia({'audio': true})))
+        return null;                                                 // audio disabled, no speaker
+    const p1 = ('' + constructor).substring(9).replace('_super', 'super'), p2 = ('' + process).substring(9),
+          code = `class AP extends AudioWorkletProcessor {${p1}${p2}}registerProcessor('audio-speaker', AP);`,
+          blob = new Blob([code], {type: 'text/javascript'}),        // AudioWorkletProcessor code
+          cntx = new AudioContext();                                 // audio context
+    let url = URL.createObjectURL(blob), prevBit = 0,                // AudioWorkletProcessor data
+        buff = [], bckg = null,                                      // data buffer for AudioWorkletProcessor
+        graph = null, points, ctx2;                                  // audio visualization
+    await cntx.audioWorklet.addModule(url);                          // register AudioWorkletProcessor
+    const proc = new AudioWorkletNode(cntx, 'audio-speaker'),        // AudioWorkletProcessor node
+          gain = cntx.createGain(),                                  // speaker volume node
+    timer = () => {                                                  // timer func
+        proc.port.postMessage(buff);                                 // send data buffer
+        bckg = null; buff = [];                                      // prepare next transfer
+    },
+    tick = (bit, cycles) => {                                        // speaker interface, prepare audio data
+        if (bit ^ prevBit) {                                         // bit changed, process
+            buff.push(cycles);                                       // save data
+            if (bckg !== null) clearTimeout(bckg);                   // re-schedule timeout
+            bckg = setTimeout(timer, 2);                             // send in 2ms (~2.6ms audio processor cycle)
+        }
+        prevBit = bit;                                               // remember bit
+    },
+    start = () => { cntx.resume(); if (graph) draw(); },             // start audio
+    stop = () => cntx.suspend(),                                     // stop audio
+    destroy = () => { cntx.close(); URL.revokeObjectURL(url); },     // free resources
+    draw = () => {                                                   // update audio visualization
+        if (cntx.state !== 'running') return;                        // audio not active, no update
+        graph.getByteTimeDomainData(points);                         // get data from analyser node
+        const length = points.length,
+              width = ctx2.canvas.width, height = ctx2.canvas.height,
+              height2 = (height / 2) | 0, width2 = (length / width) | 0;
+        ctx2.fillStyle = '#000000'; ctx2.fillRect(0, 0, width, height);
+        ctx2.lineWidth = 2; ctx2.strokeStyle = '#008000';            // clear view and set draw parameters
+        let x = 0;
+        ctx2.beginPath();                                            // draw points
+        for (let i = 0; i < length; i++) {
+            const y = ((points[i] / 128.0) * height2) | 0;
+            if (i === 0) ctx2.moveTo(x, y); else ctx2.lineTo(x, y);
+            x += width2;
+        }
+        ctx2.lineTo(width, height2);
+        ctx2.stroke();
+        requestAnimationFrame(draw);                                 // schedule next update
+    };
+    gain.connect(cntx.destination);                                  // connect audio nodes
+    let middle = gain;
+    if (canvas) {                                                    // visualization requested
+        graph = cntx.createAnalyser();                               // create analyser node
+        points = new Uint8Array(graph.frequencyBinCount);            // and data buffer
+        graph.connect(middle); middle = graph;                       // include into node chain
+        if (typeof canvas === 'string') canvas = document.getElementById(canvas);
+        ctx2 = canvas.getContext('2d');
+    }
+    proc.connect(middle);
+    gain.gain.value = volume;                                        // set audio volume
+    return {tick, start, stop, destroy};
+}
+
+function SpecKbd(mx = false) {
     const ports = new Uint8Array([0xff, 0xff, 0xff, 0]),
     checkKey = txt => {
-        switch (txt) {
-            case 'НР':     return [0xff, 0xfd, 0xff]; // НР
+        if (mx) switch (txt) {
+            case 'АР2':    return [0xff, 0x7f, 0xf7]; // АР2
+            case 'КОИ':    return [0xff, 0x7f, 0xfb]; // КОИ
+            case 'F1':     return [0xff, 0x7f, 0xfd]; // F1
+            case 'F2':     return [0xff, 0x7f, 0xfe]; // F2
+            case 'F3':     return [0x7f, 0x7f, 0xff]; // F3
+            case 'F4':     return [0xbf, 0x7f, 0xff]; // F4
+            case 'F5':     return [0xdf, 0x7f, 0xff]; // F5
+            case 'F6':     return [0xef, 0x7f, 0xff]; // F6
+            case 'F7':     return [0xf7, 0x7f, 0xff]; // F7
+            case 'F8':     return [0xfb, 0x7f, 0xff]; // F8
+            case 'F9':     return [0xfd, 0x7f, 0xff]; // F9
+            case 'СТР':    return [0xfe, 0x7f, 0xff]; // СТР
+        } else switch (txt) {
             case 'F1':     return [0xff, 0x7f, 0xf7]; // F1    F
             case 'F2':     return [0xff, 0x7f, 0xfb]; // F2    HELP
             case 'F3':     return [0xff, 0x7f, 0xfd]; // F3    NEW
@@ -270,6 +569,10 @@ function SpecKbd() {
             case '\u25a0': return [0xfb, 0x7f, 0xff]; // F10   СФ
             case '\u25a1': return [0xfd, 0x7f, 0xff]; // F11   ТФ
             case '\u2341': return [0xfe, 0x7f, 0xff]; // F12   СТР
+            case 'АР2':    return [0xbf, 0xfb, 0xff]; // АР2
+        }
+        switch (txt) {
+            case 'НР':     return [0xff, 0xfd, 0xff]; // НР
             case 'ВК':     return [0xfe, 0xfb, 0xff]; // ВК
             case '':       return [0xdf, 0xfb, 0xff]; // Space
             case ',<':     return [0xfb, 0xf7, 0xff]; // ,     <
@@ -326,7 +629,6 @@ function SpecKbd() {
             case '\u2191': return [0xff, 0xfb, 0xfd]; // ↑
             case '\u2193': return [0xff, 0xfb, 0xfe]; // ↓
             case 'ТАБ':    return [0x7f, 0xfb, 0xff]; // Tab
-            case 'АР2':    return [0xbf, 0xfb, 0xff]; // АР2
             case '\u2190': return [0xef, 0xfb, 0xff]; // ←
             case 'ПВ':     return [0xf7, 0xfb, 0xff]; // ПВТ
             case '\u2192': return [0xfb, 0xfb, 0xff]; // →
@@ -339,19 +641,25 @@ function SpecKbd() {
         for (let i = 0; i < 3; i++)
             if (down) ports[i] &= key[i]; else ports[i] |= ~key[i];
     };
+    const s1 = mx ?
+'1,АР2  1,КОИ      1,F1       1,F2       1,F3   1,F4   1,F5     1,F6 1,F7 1,F8       1,F9       1,СТР' :
+'1,F1   1,F2       1,F3       1,F4       1,F5   1,F6   1,F7     1,F8 1,F9 [1,\u25a0] [1,\u25a1] [1,\u2341]',
+          s2 = mx ?
+'4,\u0020' :
+'1,АР2  1,\u0020';
     SoftKeyboard(`sec
-3      1,F1   1,F2       1,F3       1,F4       1,F5   1,F6   1,F7     1,F8 1,F9 [1,\u25a0] [1,\u25a1] [1,\u2341] 2
+3      ${s1} 2
 3      1,;..+ 1,1..!     1,2.."     1,3..#     1,4..$ 1,5..% 1,6..&   1,7..'     1,8..(  1,9..)     1,0     1,-..=
 4      1,J..Й 1,C..Ц     1,U..У     1,K..К     1,E..Е 1,N..Н 1,G..Г   1,[..Ш     1,]..Щ  1,Z..З     1,H..Х  1,:..*
 5      1,F..Ф 1,Y..Ы     1,W..В     1,A..А     1,P..П 1,R..Р 1,O..О   1,L..Л     1,D..Д  1,V..Ж     1,\\..Э 1,...>
 3 3    1,Q..Я 1,^..Ч     1,S..С     1,M..М     1,I..И 1,T..Т 1,X..Ь   1,B..Б     1,@..Ю  1,,..<     1,/..?  1,_..Ъ
-3 3,НР 1,Р/Л  [1,\u21d6] [1,\u2191] [1,\u2193] 1,ТАБ  1,АР2  1,\u0020 [1,\u2190] 1,ПВ    [1,\u2192] 1,ПС    1,ВК`,
+3 3,НР 1,Р/Л  [1,\u21d6] [1,\u2191] [1,\u2193] 1,ТАБ  ${s2} [1,\u2190] 1,ПВ    [1,\u2192] 1,ПС    1,ВК`,
     update);
     return {ports};
 }
 
 class SpecMemIO extends MemIO {
-    constructor(con, ramdisks = 0, colors = 2) {
+    constructor(con, speaker = null, kbd = [0xff, 0xff, 0xff, 0], ramdisks = 0, colors = 2) {
         super(con, 0, false);
         this.colors = colors;
         if (colors > 2) {
@@ -366,9 +674,12 @@ class SpecMemIO extends MemIO {
             this.ramPage = 0;
             this.rd = this.rd_mx;
             this.wr = this.wr_mx;
+            this.fdc = WD1793();
         }
         this.tapeEnabled = false; this.tape = []; this.tapePos = 0; this.tapeFixed = false;
         this.ppi = Intel8255(this.ppiRd.bind(this), this.ppiWr.bind(this), this.ppiWrB.bind(this));
+        this.speaker = speaker;
+        this.kbd = kbd;
     }
     rd(a) {
         if ((a & 0xf800) === 0xf800) return this.ppi.read(a & 0x03);
@@ -389,7 +700,10 @@ class SpecMemIO extends MemIO {
             return (this.ramPage < this.ramdsks.length) ? this.ramdsks[this.ramPage][a] : 0x00;
         if (a < 0xffe0) return this.ram[a];
         if (a < 0xffe4) return this.ppi.read(a & 0x03);
-        return 0x00;
+        if (a < 0xffe8) return 0x00;
+        if (a < 0xffec) return this.fdc.read(a & 0x03);
+        if (a < 0xfff4) return 0x00;
+        return this.ram[a];
     }
     wr_mx(a, v) {
         if (a < 0xc000)
@@ -402,10 +716,20 @@ class SpecMemIO extends MemIO {
         } else
         if (a < 0xffe0) this.ram[a] = v; else
         if (a < 0xffe4) this.ppi.write(a & 0x03, v); else
-        if (a === 0xfff8) { if (this.colors === 16) this.cval = v; } else   // 16-bit color
-        if (a === 0xfffc) { this.romEnabled = false; this.ramPage = 0; } else
-        if (a === 0xfffd) this.ramPage = (v & 0x03) + 1; else
-        if (a === 0xfffe) this.romEnabled = true;
+        if (a < 0xffe8) ; else
+        if (a < 0xffec) this.fdc.write(a & 0x03, v); else
+        if (a < 0xfff0) ; else
+        if (a < 0xfff4) {
+            const num = a & 0x03
+            if (num === 2) this.fdc.write(4, (v & 0x01) | 0x10); else
+            if (num === 3) this.fdc.write(4, (v & 0x01) | 0x02);
+        } else {
+            if (a === 0xfff8) { if (this.colors === 16) this.cval = v; } else // 4-bit + 4-bit color
+            if (a === 0xfffc) { this.romEnabled = false; this.ramPage = 0; } else
+            if (a === 0xfffd) this.ramPage = (v & 0x07) + 1; else
+            if (a === 0xfffe) this.romEnabled = true;
+            this.ram[a] = v;
+        }
     }
     ppiRd(num) {
         const [p0, p1, p2] = this.ppi.ports,
@@ -424,8 +748,8 @@ class SpecMemIO extends MemIO {
                         this.tapePos--; this.tapeFixed = true;              // compensate extra read in
                     }                                                       // ROM 0xc377 (tape read byte)
                 }
-                if (down && ((p0 !== 0 && (p0 & k0) !== p0) ||
-                        ((p2 & 0x0f) !== 0 && (p2 & k2) !== p2)))           // port A or Cl set, compare with key
+                if (down && ((p0 !== 0 && (p0 & k0) !== k0) ||
+                        ((p2 & 0x0f) !== 0 && (p2 & k2) !== (k2 & 0x0f))))  // port A or Cl set, compare with key
                     return (k1 | ~0x02) & tapeBit;                          // no match, reset bits except НР
                 return k1 & tapeBit;
             case 2:                                                         // port C
@@ -435,11 +759,26 @@ class SpecMemIO extends MemIO {
         }
     }
     ppiWr(num) {
-        
+        if (num === 2) {
+            if (this.colors === 4) this.cval = this.ppi.ports[2] >>> 6;     // 2-bit color
+            else if (this.colors === 8) {                                   // 3-bit color
+                const pC = this.ppi.ports[2];
+                this.cval = (pC >>> 5 & 0x06) | (pC >>> 4 & 0x01);
+            }
+            if (this.speaker) this.speaker.tick((this.ppi.ports[2] & 0x20) ? 1 : 0, this.CPU.cpu.cycles);
+        }
     }
     ppiWrB(bit) {
         if (bit === 7 && this.tapeEnabled)                                  // write bit to tape (inverted)
             this.tape.push((this.ppi.ports[2] & 0x80) ? 0 : 1);
+        else if (bit === 5 && this.speaker)                                 // speaker
+            this.speaker.tick((this.ppi.ports[2] & 0x20) ? 1 : 0, this.CPU.cpu.cycles);
+    }
+    state() {
+        return {
+            'rdisks': this.ramdsks.length - 1, 'colors': this.colors,
+            'romEnabled': this.romEnabled, 'ramPage': this.ramPage, 'ppi': this.ppi.ports
+        };
     }
 }
 
@@ -505,6 +844,16 @@ class SpecMonitor extends Monitor {
                 this.emu.memo.tape.push(...new Uint8Array(await hndl.arrayBuffer()));
                 console.log(this.emu.memo.tape.length);
                 break;
+case 'ttt':
+this.emu.loadBin(
+new Uint8Array(await (await preLoadFile('xtree.rks')).arrayBuffer()).slice(4),
+0x0000
+);
+break;
+case 'state':
+console.log(this.emu.memo.state());
+console.log(this.emu.memo.fdc.state());
+break;
             case 'stop': this.emu.stop(); break;
             default: await super.handler(parms, cmd); break;
         }
@@ -513,22 +862,33 @@ class SpecMonitor extends Monitor {
 
 async function main() {
     await loadScript('../emu/github/emu8/js/js8080.js');
-    const con = await SpecCon(),
-          mem = new SpecMemIO(con, 0, 0),
+    const clrs04 = [0xffeeeeee, 0xff2020ff, 0xff20ff20, 0xffff2020],
+          cf04 = cb => [clrs04[cb], 0xff202020],
+          clrs08 = [0xffeeeeee, 0xff3fd0f4, 0xff8a4476, 0xff2020ff, 0xffd5b37f, 0xff20ff20, 0xffff2020, 0xff202020],
+          cf08 = cb => [clrs08[cb], 0xff202020],
+          clrs16 = [0xff202020, 0xffff2020, 0xff20ff20, 0xffaaaa20, 0xff2020ff, 0xff8a4476, 0xff0090b4, 0xffeeeeee,
+                    0xff505050, 0xffd5b37f, 0xff90ee90, 0xffffffb0, 0xffcbc0ff, 0xffff9fcf, 0xff3fd0f4, 0xffffffff],
+          cf16 = cb => [clrs16[cb >>> 4], clrs16[cb & 0x0f]];
+    const con = await SpecCon(/*cf16*/),
+          kbd = SpecKbd(/*true*/),
+          spk = await Speaker(undefined, 'audio'),
+          mem = new SpecMemIO(con, spk, kbd.ports/*, 8, 16*/),
           cpu = new SpecCpu(con, mem),
           emu = new Emulator(cpu, mem, 0),
-          mon = new SpecMonitor(emu),
-          kbd = SpecKbd();
-    mem.kbd = kbd.ports;                                                    // link kbd and memo
-//    await mon.exec('r c000 SPEC.ROM');
+          mon = new SpecMonitor(emu);
+    await mon.exec('r c000 SPEC.ROM');
 //await mon.exec('m 100 3e 91 32 03 ff 3e fb 32 01 ff 3a 02 ff 2f e6 03 47 3a 00 ff 2f e6 34 b0 c9 ' +
-//                     'cd 00 01 21 00 00 22 fc 8f cd 15 c8 c3 19 01');
-//    await mon.exec('r 0 loderun.bin');
-//    mon.exec('g c000');
-await mon.exec('r d400 spec_mx/test.i80');
-mon.exec('g d400');
+//                     'cd 00 01 21 00 00 22 fc 8f cd 15 c8 c3 19 01'); // G119
+    await mon.exec('r 0 loderun.bin');
+    mon.exec('g c000');
+//await mon.exec('r d400 spec_mx/test.i80');
+//await mon.exec('m dad4 40'); await mon.exec('m daeb 80'); await mon.exec('m daf5 c0'); await mon.exec('m dafc 00');
+//mon.exec('g d400');
 //await mon.exec('r 0 spec_mx/Specimx.rom');
 //await mon.exec('r 0 spec_mx/nc.rom');
+//await mon.exec('r 0 spec_mx/nc_orig.rom');
+//mem.fdc.Disk[1] = new Uint8Array(await (await preLoadFile('spec_mx/bst_mx0.odi')).arrayBuffer());
+//mem.fdc.Disk[0] = new Uint8Array(await (await preLoadFile('spec_mx/lafans2.odi')).arrayBuffer());
 //mon.exec('g 0');
     term.setPrompt('> ');
     while (true) await mon.exec(await term.prompt());
