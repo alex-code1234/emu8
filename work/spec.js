@@ -41,6 +41,46 @@ class SpecCpu extends GenCpu {
         con.setMemo(memo);                                                  // link con and memo
         this.con = con;
         this.spk = memo.speaker;
+        if (memo.pit) {                                                     // setup PIT update
+            const origStep = memo.CPU.cpu.step.bind(memo.CPU.cpu),
+                  pitCntrs = memo.pit.counters;
+            memo.CPU.cpu.step = () => {                                     // override CPU step
+                pitCntrs[0].tick(); pitCntrs[1].tick();                     // PIT clock 2MHz / ~[cycles per instr]
+                return origStep();
+            };
+        }
+    }
+    async runHz(freq) {                                                     // freq (Hz)
+        const frameRate = (1.0 / 60.0) * 1000.0,                            // animation frame rate in ms
+              rate = (1.0 / freq) * 1000.0,                                 // requested rate in ms
+              maxCycles = frameRate / rate | 0;                             // target cycles
+        this.RUN = true;
+        let print = true, res, cycles = this.cpu.cycles + maxCycles, time, currCycles = maxCycles;
+        do {
+            time = performance.now();
+            while (this.cpu.cycles < cycles) {
+                try { res = this.cpu.step(); }
+                catch(exc) {
+                    console.error(exc);
+                    this.RUN = false;
+                    break;
+                }
+                if (!res || (this.STOP >= 0 && this.cpu.getPC() === this.STOP)) {
+                    if (res) { console.info('STOP'); this.STOP = -1; }
+                    else if (!this.HLT_STOP) break;
+                    else console.info('HALT');
+                    this.RUN = false;
+                    print = false;
+                    break;
+                }
+                if (!this.RUN) break;
+            }
+            time = performance.now() - time;
+            currCycles = (time > frameRate) ? (frameRate - (time - frameRate)) / rate | 0 : maxCycles;
+            cycles += currCycles;
+            await (new Promise((resolve, reject) => requestAnimationFrame(resolve)));
+        } while (this.RUN);
+        if (print) console.info('stopped', `${(currCycles / frameRate / 1000.0).toFixed(2)}MHz`);
     }
     async run() {
         this.con.start();
@@ -112,7 +152,7 @@ function Intel8255(onread = null, onwrite = null, onwritebit = null, readCW = 0x
 
 // Intel 8253 PIT
 // onout(num) - output num activated
-function Intel8253(onout = null) {
+function Intel8253(onout = null, readCW = 0x00) {
     function Counter(idx) {
         let latch = null, armed = false, activate = false, reads = 0, mode = 0, format = 0, tmp;
         const values = new Uint16Array(2),
@@ -150,7 +190,7 @@ function Intel8253(onout = null) {
                 switch (mode) {
                     case 1: case 5: return;                                 // not supported
                     case 2: case 6: values[0]--; break;
-                    case 3: case 7: values[0] /= 2; break;
+                    case 3: case 7: values[0] = (values[0] / 2) | 0; break;
                 }
                 latch = null; armed = true; activate = true; values[1] = values[0];
             }
@@ -163,12 +203,13 @@ function Intel8253(onout = null) {
                 case 2: case 3: case 6: case 7: values[1] = values[0]; break;
                 case 4: armed = false; break;
             }
-        };
-        return {setup, read, write, tick};
+        },
+        state = () => { return {mode, format, values}; };
+        return {setup, read, write, tick, state};
     }
     const counters = [Counter(0), Counter(1), Counter(2)],
     read = num => {
-        if (num === 3) return 0x00;
+        if (num === 3) return readCW;
         return counters[num].read();
     },
     write = (num, val) => {
@@ -440,7 +481,7 @@ function WD1793(Heads = 2, SecPerTrack = 5, SecSize = 1024) {
 }
 
 // Speaker interface
-async function Speaker(volume = 0.03, canvas = null) {
+async function Speaker(volume = 0.03, filter = true, canvas = null) {
     function constructor() {                                         // AudioWorkletProcessor constructor
         _super();                                                    // super call, fixed during class generation
         this.ticks = [];                                             // data buffer
@@ -507,23 +548,28 @@ async function Speaker(volume = 0.03, canvas = null) {
     start = () => { cntx.resume(); if (graph) draw(); },             // start audio
     stop = () => cntx.suspend(),                                     // stop audio
     destroy = () => { cntx.close(); URL.revokeObjectURL(url); },     // free resources
-    draw = () => {                                                   // update audio visualization
-        if (cntx.state !== 'running') return;                        // audio not active, no update
-        graph.getByteTimeDomainData(points);                         // get data from analyser node
-        const length = points.length,
+    setPointAttrs = (wdt, bgd, fgd) => {                             // set canvas attributes
+        ctx2.lineWidth = wdt; ctx2.fillStyle = bgd; ctx2.strokeStyle = fgd;
+    },
+    drawPoints = (pts, clear) => {                                   // update canvas
+        const length = pts.length,
               width = ctx2.canvas.width, height = ctx2.canvas.height,
-              height2 = (height / 2) | 0, width2 = (length / width) | 0;
-        ctx2.fillStyle = '#000000'; ctx2.fillRect(0, 0, width, height);
-        ctx2.lineWidth = 2; ctx2.strokeStyle = '#008000';            // clear view and set draw parameters
+              height2 = (height / 2) | 0, width2 = width / length;
+        if (clear) ctx2.fillRect(0, 0, width, height);               // clear view
         let x = 0;
         ctx2.beginPath();                                            // draw points
         for (let i = 0; i < length; i++) {
-            const y = ((points[i] / 128.0) * height2) | 0;
+            const y = ((pts[i] / 128.0) * height2) | 0;
             if (i === 0) ctx2.moveTo(x, y); else ctx2.lineTo(x, y);
             x += width2;
         }
         ctx2.lineTo(width, height2);
         ctx2.stroke();
+    },
+    draw = () => {                                                   // update audio visualization
+        if (cntx.state !== 'running') return;                        // audio not active, no update
+        graph.getByteTimeDomainData(points);                         // get data from analyser node
+        drawPoints(points, true);
         requestAnimationFrame(draw);                                 // schedule next update
     };
     gain.connect(cntx.destination);                                  // connect audio nodes
@@ -534,10 +580,19 @@ async function Speaker(volume = 0.03, canvas = null) {
         graph.connect(middle); middle = graph;                       // include into node chain
         if (typeof canvas === 'string') canvas = document.getElementById(canvas);
         ctx2 = canvas.getContext('2d');
+        setPointAttrs(2, '#000000', '#008000');                      // set draw parameters
+    }
+    if (filter) {                                                    // create hi-lo filter 50..15000
+        const flt = cntx.createBiquadFilter();
+        flt.frequency.value = 15000; flt.type = 'lowpass'; flt.Q.value = 0.1;
+        flt.connect(middle);
+        const flt2 = cntx.createBiquadFilter();
+        flt2.frequency.value = 50; flt2.type = 'highpass'; flt2.Q.value = 0.1;
+        flt2.connect(flt); middle = flt2;
     }
     proc.connect(middle);
     gain.gain.value = volume;                                        // set audio volume
-    return {tick, start, stop, destroy};
+    return {tick, start, stop, destroy, setPointAttrs, drawPoints};
 }
 
 function SpecKbd(mx = false) {
@@ -659,8 +714,9 @@ function SpecKbd(mx = false) {
 }
 
 class SpecMemIO extends MemIO {
-    constructor(con, speaker = null, kbd = [0xff, 0xff, 0xff, 0], ramdisks = 0, colors = 2) {
+    constructor(con, speaker = null, kbd = [0xff, 0xff, 0xff, 0], ramdisks = 0, colors = 2, onepage = false) {
         super(con, 0, false);
+this.cycles = 0;
         this.colors = colors;
         if (colors > 2) {
             this.cram = new Uint8Array(0x3000); this.cval = 0;
@@ -675,11 +731,15 @@ class SpecMemIO extends MemIO {
             this.rd = this.rd_mx;
             this.wr = this.wr_mx;
             this.fdc = WD1793();
+            this.pit = Intel8253(this.pitOut.bind(this), 0xff);
+            this.pitBit = 0;
+            this.pitEnable = false;
         }
         this.tapeEnabled = false; this.tape = []; this.tapePos = 0; this.tapeFixed = false;
         this.ppi = Intel8255(this.ppiRd.bind(this), this.ppiWr.bind(this), this.ppiWrB.bind(this));
         this.speaker = speaker;
         this.kbd = kbd;
+        this.onepage = onepage;
     }
     rd(a) {
         if ((a & 0xf800) === 0xf800) return this.ppi.read(a & 0x03);
@@ -702,6 +762,7 @@ class SpecMemIO extends MemIO {
         if (a < 0xffe4) return this.ppi.read(a & 0x03);
         if (a < 0xffe8) return 0x00;
         if (a < 0xffec) return this.fdc.read(a & 0x03);
+        if (a < 0xfff0) return this.pit.read(a & 0x03);
         if (a < 0xfff4) return 0x00;
         return this.ram[a];
     }
@@ -718,7 +779,11 @@ class SpecMemIO extends MemIO {
         if (a < 0xffe4) this.ppi.write(a & 0x03, v); else
         if (a < 0xffe8) ; else
         if (a < 0xffec) this.fdc.write(a & 0x03, v); else
-        if (a < 0xfff0) ; else
+        if (a < 0xfff0) {
+            if (a === 0xffee) this.pitEnable = true;
+this.cycles = this.CPU.cpu.cycles;
+            this.pit.write(a & 0x03, v);
+        } else
         if (a < 0xfff4) {
             const num = a & 0x03
             if (num === 2) this.fdc.write(4, (v & 0x01) | 0x10); else
@@ -726,7 +791,7 @@ class SpecMemIO extends MemIO {
         } else {
             if (a === 0xfff8) { if (this.colors === 16) this.cval = v; } else // 4-bit + 4-bit color
             if (a === 0xfffc) { this.romEnabled = false; this.ramPage = 0; } else
-            if (a === 0xfffd) this.ramPage = (v & 0x07) + 1; else
+            if (a === 0xfffd) this.ramPage = this.onepage ? 1 : (v & 0x07) + 1; else
             if (a === 0xfffe) this.romEnabled = true;
             this.ram[a] = v;
         }
@@ -774,10 +839,27 @@ class SpecMemIO extends MemIO {
         else if (bit === 5 && this.speaker)                                 // speaker
             this.speaker.tick((this.ppi.ports[2] & 0x20) ? 1 : 0, this.CPU.cpu.cycles);
     }
+    pitOut(num) {
+        switch (num) {
+            case 0:
+                if (this.pitEnable) {
+for (let i = 0; i < 4; i++) {
+                    this.pitBit = this.pitBit ? 0 : 1;
+//                    this.speaker.tick(this.pitBit, this.CPU.cpu.cycles);
+this.speaker.tick(this.pitBit, this.cycles);
+this.cycles += 1000;
+}
+                }
+                break;
+            case 1: this.pit.counters[2].tick(); break;
+            case 2: this.pitEnable = false; break;
+        }
+    }
     state() {
         return {
-            'rdisks': this.ramdsks.length - 1, 'colors': this.colors,
-            'romEnabled': this.romEnabled, 'ramPage': this.ramPage, 'ppi': this.ppi.ports
+            'rdisks': this.ramdsks ? this.ramdsks.length - 1 : 0, 'colors': this.colors,
+            'romEnabled': this.romEnabled, 'ramPage': this.ramPage,
+            'ppi': this.ppi?.ports, 'pit': this.pit?.counters.map(c => c.state())
         };
     }
 }
@@ -850,10 +932,10 @@ new Uint8Array(await (await preLoadFile('xtree.rks')).arrayBuffer()).slice(4),
 0x0000
 );
 break;
-case 'state':
-console.log(this.emu.memo.state());
-console.log(this.emu.memo.fdc.state());
-break;
+            case 'state':
+                console.log(this.emu.memo.state());
+                console.log(this.emu.memo.fdc?.state());
+                break;
             case 'stop': this.emu.stop(); break;
             default: await super.handler(parms, cmd); break;
         }
@@ -869,27 +951,27 @@ async function main() {
           clrs16 = [0xff202020, 0xffff2020, 0xff20ff20, 0xffaaaa20, 0xff2020ff, 0xff8a4476, 0xff0090b4, 0xffeeeeee,
                     0xff505050, 0xffd5b37f, 0xff90ee90, 0xffffffb0, 0xffcbc0ff, 0xffff9fcf, 0xff3fd0f4, 0xffffffff],
           cf16 = cb => [clrs16[cb >>> 4], clrs16[cb & 0x0f]];
-    const con = await SpecCon(/*cf16*/),
-          kbd = SpecKbd(/*true*/),
-          spk = await Speaker(undefined, 'audio'),
-          mem = new SpecMemIO(con, spk, kbd.ports/*, 8, 16*/),
+    const con = await SpecCon(cf16),
+          kbd = SpecKbd(true),
+          spk = await Speaker(undefined, undefined),
+          mem = new SpecMemIO(con, spk, kbd.ports, 8, 16),
           cpu = new SpecCpu(con, mem),
           emu = new Emulator(cpu, mem, 0),
           mon = new SpecMonitor(emu);
-    await mon.exec('r c000 SPEC.ROM');
+//    await mon.exec('r c000 SPEC.ROM');
 //await mon.exec('m 100 3e 91 32 03 ff 3e fb 32 01 ff 3a 02 ff 2f e6 03 47 3a 00 ff 2f e6 34 b0 c9 ' +
 //                     'cd 00 01 21 00 00 22 fc 8f cd 15 c8 c3 19 01'); // G119
-    await mon.exec('r 0 loderun.bin');
-    mon.exec('g c000');
+//    await mon.exec('r 0 loderun.bin');
+//    mon.exec('g c000');
 //await mon.exec('r d400 spec_mx/test.i80');
 //await mon.exec('m dad4 40'); await mon.exec('m daeb 80'); await mon.exec('m daf5 c0'); await mon.exec('m dafc 00');
 //mon.exec('g d400');
-//await mon.exec('r 0 spec_mx/Specimx.rom');
+await mon.exec('r 0 spec_mx/Specimx.rom');
 //await mon.exec('r 0 spec_mx/nc.rom');
 //await mon.exec('r 0 spec_mx/nc_orig.rom');
-//mem.fdc.Disk[1] = new Uint8Array(await (await preLoadFile('spec_mx/bst_mx0.odi')).arrayBuffer());
-//mem.fdc.Disk[0] = new Uint8Array(await (await preLoadFile('spec_mx/lafans2.odi')).arrayBuffer());
-//mon.exec('g 0');
+mem.fdc.Disk[1] = new Uint8Array(await (await preLoadFile('spec_mx/bst_mx0.odi')).arrayBuffer());
+mem.fdc.Disk[0] = new Uint8Array(await (await preLoadFile('spec_mx/lafans2.odi')).arrayBuffer());
+mon.exec('g 0');
     term.setPrompt('> ');
     while (true) await mon.exec(await term.prompt());
 }
