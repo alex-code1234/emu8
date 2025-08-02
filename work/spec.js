@@ -8,7 +8,10 @@
 //            white[00xxxxxx] red[01xxxxxx] green[10xxxxxx] blue[11xxxxxx]
 // 8 colors - mk1990-08
 // test.i80 - test RAM, keyboard and 4-color video (mk1991-12), load at d400, start d400
-// MX - 
+// MX - http://xn----7sbombne2agmgm0c.xn--p1ai/index8.html
+// https://github.com/alemorf/retro_computers/tree/master/Specialist
+// http://www.nedopc.org/forum/viewtopic.php?t=9541&start=60
+// https://zx-pk.ru/archive/index.php/t-29118.html
 
 async function SpecCon(cdecode = cb => [0xffeeeeee, 0xff202020]) {          // color decode fnc: clr => [fg, bg]
     let vram = null, cram = null;
@@ -846,12 +849,15 @@ this.cycles = this.CPU.cpu.cycles;
 for (let i = 0; i < 4; i++) {
                     this.pitBit = this.pitBit ? 0 : 1;
 //                    this.speaker.tick(this.pitBit, this.CPU.cpu.cycles);
-this.speaker.tick(this.pitBit, this.cycles);
-this.cycles += 1000;
+this.speaker.tick(this.pitBit, this.cycles += 1000);
 }
                 }
                 break;
-            case 1: this.pit.counters[2].tick(); break;
+            case 1: 
+for (let i = 0; i < 4; i++) {
+            this.pit.counters[2].tick(); 
+}
+            break;
             case 2: this.pitEnable = false; break;
         }
     }
