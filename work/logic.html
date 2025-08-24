@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang='en' data-theme='dark'>
+<head>
+    <meta name='viewport' content='width=device-width, initial-scale=1.0'/>
+    <meta charset='utf-8'/>
+    <style type='text/css'>
+[data-theme='dark'] {
+    --background: #121212;                                      /* 0dp elevation surface */
+    --surface: rgba(255, 255, 255, 0.05);                       /* 1dp elevation surface */
+    --primary: #bb86fc;
+    --secondary: #03dac6;
+    --error: #cf6679;
+    --warning: #fdda0d;
+    --onbackground: #ffffff;
+    --onsurface: #ffffff;
+    --onprimary: #000000;
+    --onsecondary: #000000;
+    --onerror: #000000;
+    --textnormal: 0.6;                                          /* normal text (60% opacity) */
+    --keypressed: #bb86fc;                                      /* active soft key */
+    --dbgbckgrnd: #343434;                                      /* debugger background */
+    --dbgcolor: #9594a3;                                        /* debugger color */
+    --dbghilight: #575757;                                      /* debugger selected line */
+    --dbgborder: #707070;                                       /* debugger border */
+}
+[data-theme='light'] {
+    --background: #ffffff;
+    --primary: #6200ee;
+    --secondary: #00d7c3;
+    --error: #b00020;
+    --warning: #8b8000;
+    --onbackground: #000000;
+    --onsurface: #000000;
+    --onprimary: #ffffff;
+    --onsecondary: #000000;
+    --onerror: #ffffff;
+    --keypressed: #bb86fc;
+    --dbgbckgrnd: #fafafa;
+    --dbgcolor: #000000;
+    --dbghilight: #d7d7d7;
+    --dbgborder: #707070;
+}
+[data-theme='light'] .surface {                                 /* 1dp elevation surface */
+    box-shadow: 0 1px 4px 0 rgba(0, 0, 0, 0.05);
+}
+body {
+    font-family: Ubuntu Mono, Monaco, Courier, monospace;
+    font-size: 14px; margin: 0px;
+    background-color: var(--background); color: var(--onbackground);
+}
+#log { margin: 0px; }
+#wnd, #osc { display: none; }
+.content {
+    width: 100%; height: calc(100vh - 182px); overflow: hidden; cursor: default;
+    background-color: var(--surface);
+}
+body div.mxPopupMenu { position: absolute; padding: 3px; }
+[data-theme='dark'] div.mxPopupMenu {
+    -webkit-box-shadow: none; -moz-box-shadow: none; box-shadow: none;
+    background: #434343;
+}
+[data-theme='light'] div.mxPopupMenu {
+    -webkit-box-shadow: 0 1px 4px 0 rgba(0, 0, 0, 0.15);
+    -moz-box-shadow: 0 1px 4px 0 rgba(0, 0, 0, 0.15);
+    box-shadow: 0 1px 4px 0 rgba(0, 0, 0, 0.15);
+    background: var(--background);
+}
+body table.mxPopupMenu { border-collapse: collapse; margin: 0px; }
+body tr.mxPopupMenuItem { cursor: default; color: var(--onsurface); opacity: var(--textnormal); }
+body td.mxPopupMenuItem { padding: 10px 60px 10px 30px; font-family: Arial; font-size: 11pt; }
+body td.mxPopupMenuIcon { padding: 0px; background-color: var(--background); }
+body tr.mxPopupMenuItemHover { background-color: var(--primary); color: var(--onprimary); }
+body table.mxPopupMenu hr { border-top: solid 1px var(--primary); }
+body table.mxPopupMenu tr { font-size: 4pt; }
+body div.mxWindow { position: absolute; overflow: hidden; z-index: 1; }
+[data-theme='dark'] div.mxWindow {
+    -webkit-box-shadow: none; -moz-box-shadow: none; box-shadow: none;
+    border: 1px solid black; background: #434343bf;
+}
+[data-theme='light'] body div.mxWindow {
+    -webkit-box-shadow: 0 1px 4px 0 rgba(0, 0, 0, 0.15);
+    -moz-box-shadow: 0 1px 4px 0 rgba(0, 0, 0, 0.15);
+    box-shadow: 0 1px 4px 0 rgba(0, 0, 0, 0.15);
+    border: none; background: #ffffffbf;
+}
+body div.mxWindowPane { overflow: hidden; position: relative; }
+body table.mxWindow { border-collapse: collapse; table-layout: fixed; font-family: Arial; font-size: 11pt; }
+body td.mxWindowTitle {
+    text-overflow: ellipsis; white-space: nowrap; text-align: center; font-weight: bold; overflow: hidden;
+    height: 13px; padding: 2px; padding-top: 4px; padding-bottom: 6px;
+    background: var(--primary); color: var(--onprimary);
+}
+body td.mxWindowPane { vertical-align: top; padding: 10px; }
+body td.mxWindowPane input, body td.mxWindowPane button {
+    border-color: none; border-style: none; border-width: 0px;
+    font-family: Arial; font-size: 11pt;
+}
+body td.mxWindowPane label { color: var(--dbgcolor); }
+body td.mxWindowPane input {
+    background: var(--dbgbckgrnd); color: var(--dbgcolor);
+    width: 100%; margin-bottom: 10px; outline: none;
+}
+body td.mxWindowPane button {
+    background: var(--primary); color: var(--onprimary);
+    margin-top: 10px; padding: 5px 10px 5px 10px; float: right;
+}
+    </style>
+    <script type='text/javascript'>
+window.onerror = function(event, source, line, col, error) {
+    const text = `Error: ${error.message} at ${source}:${line}:${col}`;
+    document.write(`<span style="color: red;">${text}</span><br/>`);
+};
+    </script>
+    <script src='../emu/github/emu8/js/utils.js'></script>
+    <script type='text/javascript'>
+const mxBasePath = 'libs';
+    </script>
+    <script src='libs/mxClient.min.js'></script>
+    <script src='logic.js'></script>
+</head>
+<body>
+    <div class='content surface' id='diagram'></div>
+    <pre id='log'></pre>
+    <div id='wnd'></div>
+    <div id='osc'></div>
+    <script type='text/javascript'>
+'use strict';
+
+(async () => {
+    try {
+        await main();
+    } catch(e) {
+        console.error(e.stack);
+    }
+})();
+    </script>
+</body>
+</html>
