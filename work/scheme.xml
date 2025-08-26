@@ -150,7 +150,7 @@
     <mxCell id="20" value="H" style="shape=ellipse;resizable=0" parent="1" vertex="1">
       <mxGeometry x="70" y="232" width="32" height="32" as="geometry" />
     </mxCell>
-    <mxCell id="21" value="~" style="shape=ellipse;resizable=0" parent="1" vertex="1">
+    <mxCell id="21" value="=" style="shape=ellipse;resizable=0" parent="1" vertex="1">
       <mxGeometry x="420" y="120" width="32" height="32" as="geometry" />
     </mxCell>
     <mxCell id="22" value="~" style="shape=ellipse;resizable=0" parent="1" vertex="1">

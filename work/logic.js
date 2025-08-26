@@ -43,11 +43,12 @@ async function main() {
     graph.popupMenuHandler.isSelectOnPopup = me => mxEvent.isMouseEvent(me.getEvent());
     const wnd = document.getElementById('wnd'),  // options window element
           osc = document.getElementById('osc'),  // graphics window element
+          oscillators = new Map(),               // graph canvases
     getStrAttr = (style, name) => (style &&
             (m = style.match(new RegExp(`${name}=(.*?)(;|$)`)))) ? m[1] : null,
-    setProps = view => {                         // update properties view
+    setProps = cell => {                         // update properties view
         wnd.innerHTML = `
-<label for="stl">Style:</label><input id="stl" type="text" value="${view.style}"/>
+<label for="stl">Style:</label><input id="stl" type="text" value="${cell.style}"/>
 <button id="update">Update</button>`;
         document.getElementById('update').onclick = e => {
             let style = document.getElementById('stl').value;
@@ -56,9 +57,10 @@ async function main() {
                 const ga = getStrAttr(style, 'gate');
                 if (ga === '1') style = style.replace('gate=1', 'gate=one');
                 const num = getStrAttr(style, 'inputs').split(',').length;
-                view.geometry.height = num * 20;
+                cell.geometry.height = num * 20;
             }
-            graph.getModel().setStyle(view, style);
+            graph.getModel().setStyle(cell, style);
+            if (cell.value === '=') updateOsc(cell);
         };
     },
     alignEdge = (view, left) => {                // remove edge bend
@@ -110,6 +112,92 @@ async function main() {
             else points[1].y = points[0].y;                              // same as left
         graph.getModel().setGeometry(vcell, geom);
     },
+    edgeError = (edges, msg, color = 'red') => { // highlite nodes and exit Array.some loop
+        graph.setCellStyles(mxConstants.STYLE_STROKECOLOR, color, edges);
+        if (msg) console.error(msg);
+        return true;
+    },
+    getOutput = (edge, term) => {                // find output for opposite terminal
+        if (!term) return edgeError([edge], 'Disconnected wire');
+        const result = [];
+        if (term.edge) {                                                 // joined wire
+            let tmp = getOutput(term, term.source);                      // output for source
+            if (tmp === true) return true;                               // propagate error
+            if (tmp !== null) result.push(tmp);
+            tmp = getOutput(term, term.target);                          // output for target
+            if (tmp === true) return true;
+            if (tmp !== null) result.push(tmp);
+        }
+        else if (['H', 'L', '~'].includes(term.value)) result.push([null, term]);
+        else if (term.value !== '=') {                                   // not input
+            const style = edge.style;
+            if (edge.source === term && getStrAttr(style, 'exitX') === '1')
+                result.push([getStrAttr(style, 'exitY'), term]);
+            else if (edge.target === term && getStrAttr(style, 'entryX') === '1')
+                result.push([getStrAttr(style, 'entryY'), term]);
+        }
+        const joined = graph.model.filterDescendants(cell =>             // find joined wires
+                cell.edge && (cell.source === edge || cell.target === edge));
+        if (joined.some(e => {                                           // joined wires
+            const tmp = getOutput(e, (e.source === edge) ? e.target : e.source);
+            if (tmp === true) return true;                               // propagate error
+            if (tmp !== null) result.push(tmp);
+        })) return true;
+        if (result.length > 1) {
+            for (let i = 0, n = result.length; i < n; i++) result[i] = result[i][1];
+            return edgeError(result, 'More than 1 output');              // report all outputs
+        }
+        return (result.length === 0) ? null : result[0];
+    },
+    oscFunc = function() {                       // oscillograph
+        const canvas = document.createElement('canvas');
+        canvas.width = 1000; canvas.height = 30;
+        const ctx = canvas.getContext('2d'),
+              points = new Uint8Array(1000),
+        colorAtr = v => (v === undefined) ? ctx.strokeStyle : ctx.strokeStyle = v,
+        draw = () => {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.beginPath();
+            let x = 0, y = points[oscStart] ? 2 : canvas.height - 2;
+            ctx.moveTo(x, y);
+            for (let i = oscStart + 1; i < oscCount; i++) {
+                x += oscStep; if (x > canvas.width) x = canvas.width;
+                ctx.lineTo(x, y);
+                if (x === canvas.width) break;
+                const ny = points[i] ? 2 : canvas.height - 2;
+                if (ny !== y) { y = ny; ctx.lineTo(x, y); }
+            }
+            ctx.stroke();
+        };
+        ctx.lineWidth = 1; colorAtr('#aaaaaa');
+        return {canvas, colorAtr, draw};
+    },
+    addOsc = cell => {                           // create oscillograph
+        const elem = new oscFunc();
+        osc.appendChild(elem.canvas);
+        oscillators.set(cell.id, elem);
+    },
+    updateOsc = cell => {                        // update oscillograph parameters
+        const elem = oscillators.get(cell.id),
+              color = getStrAttr(cell.style, 'fillColor');
+        if (color !== null && color !== elem.colorAtr()) { elem.colorAtr(color); elem.draw(); }
+        let step = getStrAttr(cell.style, 'step') | 0,
+            start = getStrAttr(cell.style, 'start') | 0;
+        if (step === oscStep || step < 1 || step > 100) step = null;
+        if (start === oscStart || start < 0 || start >= 1000) start = null;
+        if (step !== null || start !== null) {
+            if (step !== null) oscStep = step;
+            if (start !== null) oscStart = start;
+            for (const e of oscillators.values()) e.draw();
+        }
+    },
+    removeOsc = cell => {                        // delete oscillograph
+        const elem = oscillators.get(cell.id);
+        if (elem) {
+            oscillators.delete(cell.id);
+            elem.canvas.remove();
+        }
+    },
     optwndlst = e => {
         optwnd.removeListener(mxEvent.CLOSE, optwndlst);
         optwnd.destroy(); optwnd = null;
@@ -121,7 +209,8 @@ async function main() {
         osc.style.display = 'none';
     };
     let theme = 'light', grid = 'Show', optwnd = null, m, oscwnd = null,
-        parent = graph.getDefaultParent();       // first child of the root (layer 0)
+        parent = graph.getDefaultParent(),       // first child of the root (layer 0)
+        oscStep = 8, oscStart = 0, oscCount = 0; // shared data for oscillographs
     graph.getSelectionModel().addListener(mxEvent.CHANGE, (sender, evt) => {
         if (optwnd === null) return;             // options view not active
         wnd.innerHTML = '';                      // clear properties view
@@ -171,7 +260,7 @@ async function main() {
         menu.addItem('Cancel zoom', null, () => graph.zoomActual(), sysmenu);
         if (oscwnd === null) menu.addItem('View oscillograph', null, () => {
             osc.style.display = 'block';
-            oscwnd = new mxWindow('Oscillograph', wnd, 50, 190, 700, 300, false, true);
+            oscwnd = new mxWindow('Oscillograph', osc, 50, 190, 700, 282, false, true);
             oscwnd.addListener(mxEvent.CLOSE, oscwndlst); oscwnd.setClosable(true); oscwnd.show();
         }, sysmenu);
         menu.addItem('View graph', null, () => {
@@ -203,6 +292,7 @@ async function main() {
                     model.endUpdate();
                 }
                 parent = graph.getDefaultParent(); // refresh default parent
+                model.filterDescendants(cell => cell.vertex && cell.value === '=').forEach(addOsc);
             } catch(e) {
                 console.error(e.stack);
             }
@@ -215,7 +305,62 @@ async function main() {
         }, sysmenu);
         menu.addSeparator();
         menu.addItem('Verify', null, () => {
-            
+let debug = false;
+            const terminals = graph.model.filterDescendants(cell => cell.vertex && cell.value === '='),
+            /*getOutput = (edge, term) => {
+                if (!term) return edgeError([edge], 'Disconnected wire');
+                if (term.edge) {
+                    let tmp1 = getOutput(term, term.source);
+                    if (tmp1 === true) return true;
+                    let tmp2 = getOutput(term, term.target);
+                    if (tmp2 === true) return true;
+                    if (tmp1 !== null && tmp2 !== null) return edgeError([term], 'More than 1 output');
+                    if (tmp1 === null && tmp2 === null) return edgeError([term], 'No output');
+                    return (tmp1 === null) ? tmp2 : tmp1;
+                }
+                if (term.value === 'H' || term.value === 'L' || term.value === '~') return [null, term];
+                if (term.value === '=') return null;
+                const style = edge.style;
+                if (edge.source === term && getStrAttr(style, 'exitX') === '1')
+                    return [getStrAttr(style, 'exitY'), term];
+                if (edge.target === term && getStrAttr(style, 'entryX') === '1')
+                    return [getStrAttr(style, 'entryY'), term];
+                return null;
+            },*/
+            layers = [],
+            getCellInputs = cell => {
+//                const inputs = [...graph.getIncomingEdges(cell), ...graph.getOutgoingEdges(cell)];
+//console.log(inputs.length, cell.edges.length);
+// add joining edges
+const goals = new Set(/*inputs*/cell.edges);
+const joins = graph.model.filterDescendants(cell => cell.edge && !goals.has(cell) &&
+(goals.has(cell.source) || goals.has(cell.target)));
+//if (debug) inputs.push(...joins);
+                if (/*inputs*/cell.edges.some(edge => {
+                    const input = getOutput(edge, (edge.source === cell) ? edge.target : edge.source);
+                    if (input === true) return true;
+                    if (input !== null) layers.push(input);
+                })) return true;
+                if (layers.length === 0) return edgeError([cell], 'No input');
+//if (debug) edgeError(joins, null, 'green');
+            };
+//debug = true;
+            terminals.some(getCellInputs);
+//debug = false;
+console.log(layers.map(l => l.map((g, i) => i ? g.id : g)));
+//edgeError([layers[0][1]], '');
+let ttt = layers[0][1]; layers.length = 0;
+//debug = true;
+getCellInputs(ttt);
+//debug = false;
+console.log(layers.map(l => l.map((g, i) => i ? g.id : g)));
+//edgeError([layers[0][1],layers[1][1]], '');
+ttt = layers[0][1]; layers.length = 0;
+debug = true;
+getCellInputs(ttt);
+debug = false;
+console.log(layers.map(l => l.map((g, i) => i ? g.id : g)));
+edgeError([layers[0][1], layers[1][1], layers[2][1]], '');
         });
     };
     let cellSelected = false,
@@ -243,10 +388,14 @@ async function main() {
         mxPopupMenuHandler.prototype.mouseUp.apply(this, arguments);
     };
     graph.addListener(mxEvent.CELLS_REMOVED, (sender, evt) => {
-//console.log(evt.properties.cells);
+        evt.properties.cells.forEach(cell => {
+            if (cell.vertex && cell.value === '=') removeOsc(cell);
+        });
     });
     graph.addListener(mxEvent.LABEL_CHANGED, (sender, evt) => {
-//console.log(evt.properties.cell);
+        const cell = evt.properties.cell;
+        if (evt.properties.old === '=') removeOsc(cell);
+        else if (evt.properties.value === '=') addOsc(cell);
     });
 
     mxEvent.addMouseWheelListener((evt, up) => { // mouse wheel for zoom
