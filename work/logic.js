@@ -44,6 +44,7 @@ async function main() {
     const wnd = document.getElementById('wnd'),  // options window element
           osc = document.getElementById('osc'),  // graphics window element
           oscillators = new Map(),               // graph canvases
+          logicFncs = new Map(),                 // logic processors
     getStrAttr = (style, name) => (style &&
             (m = style.match(new RegExp(`${name}=(.*?)(;|$)`)))) ? m[1] : null,
     setProps = cell => {                         // update properties view
@@ -66,16 +67,22 @@ async function main() {
     alignEdge = (view, left) => {                // remove edge bend
         const vcell = view.cell,
               tcell = left ? vcell.source : vcell.target;
-        if (!tcell) return;                                              // not connected
+        if (!tcell) {                                                    // not connected
+            console.warn('Not connected');
+            return;
+        }
         const geom = vcell.geometry.clone(),
               points = geom.points,                                      // only 1 bend (2 points) expected
               term = left ? geom.sourcePoint : geom.targetPoint;         // terminal point
-        if (!points || points.length === 0) return;                      // no bends/offsets
+        if (!points || points.length === 0) {                            // no bends/offsets
+            console.warn('No bends/offsets');
+            return;
+        }
         let delta;
         switch (points.length) {
             case 1:                                                      // offset only
                 if (term.y === points[0].y) {                            // offset on different side
-                    console.warn(points);
+                    console.warn('Offset on different side');
                     return;
                 }
                 delta = term.y - points[0].y;
@@ -84,21 +91,21 @@ async function main() {
             case 3:                                                      // 1 bend and vertical offset
                 if (points[0].x === points[1].x) {                       // target offset
                     points[1].y = points[2].y;                           // include to bend
-                    points.splice(2);                                    // remove offset
+                    points.splice(2, 1);                                 // remove offset
                 }
                 else if (points[1].x === points[2].x) {                  // source offset
                     points[1].y = points[0].y;                           // include to bend
-                    points.splice(0);                                    // remove offset
+                    points.splice(0, 1);                                 // remove offset
                 }
             case 2:                                                      // 1 bend (2 points)
                 if (points[0].x !== points[1].x) {                       // not vertical bend
-                    console.warn(points);
+                    console.warn('Not vertical bend');
                     return;
                 }
                 delta = left ? points[1].y - points[0].y : points[0].y - points[1].y;
                 break;
             default:
-                console.warn(points);
+                console.warn('Too many bends/offsets');
                 return;
         }
         if (!tcell.edge) {                                               // connected vertex
@@ -112,11 +119,40 @@ async function main() {
             else points[1].y = points[0].y;                              // same as left
         graph.getModel().setGeometry(vcell, geom);
     },
-    edgeError = (edges, msg, color = 'red') => { // highlite nodes and exit Array.some loop
+    alignJoin = view => {                        // remove bend at edges join
+        const vcell = view.cell,
+              geom = vcell.geometry.clone(),
+              points = geom.points, len = points.length;
+        if (len < 2 || (len % 2) !== 0) {
+            console.warn('No bends');
+            return;
+        }
+        if ((len % 2) !== 0) {
+            console.warn('Offsets not supported');
+            return;
+        }
+        let jpoint, point, vert;
+        if (vcell.source.edge) {
+            jpoint = geom.sourcePoint; point = points[0];
+            vert = point.x === points[1].x;
+        } else if (vcell.target.edge) {
+            jpoint = geom.targetPoint; point = points[len - 1];
+            vert = point.x === points[len - 2].x;
+        } else {
+            console.warn('No joins');
+            return;
+        }
+        if (vert) jpoint.x = point.x;
+        else jpoint.y = point.y;
+        graph.getModel().setGeometry(vcell, geom);
+    },
+    edgeError = (edges, msg, color = 'red') => { // highlight nodes and exit Array.some loop
         graph.setCellStyles(mxConstants.STYLE_STROKECOLOR, color, edges);
         if (msg) console.error(msg);
         return true;
     },
+    isGenCell = cell => ['H', 'L', '~'].includes(cell.value), // check for generator cell
+    isOscCell = cell => cell.value === '=',                   // check for oscillograph cell
     getOutput = (edge, term) => {                // find output for opposite terminal
         if (!term) return edgeError([edge], 'Disconnected wire');
         const result = [];
@@ -128,8 +164,8 @@ async function main() {
             if (tmp === true) return true;
             if (tmp !== null) result.push(tmp);
         }
-        else if (['H', 'L', '~'].includes(term.value)) result.push([null, term]);
-        else if (term.value !== '=') {                                   // not input
+        else if (isGenCell(term)) result.push([null, term]);             // generator cell
+        else if (!isOscCell(term)) {                                     // not oscillograph cell
             const style = edge.style;
             if (edge.source === term && getStrAttr(style, 'exitX') === '1')
                 result.push([getStrAttr(style, 'exitY'), term]);
@@ -143,11 +179,144 @@ async function main() {
             if (tmp === true) return true;                               // propagate error
             if (tmp !== null) result.push(tmp);
         })) return true;
+        if (result.length > 1) {                                         // remove duplicates
+            const uniq = new Set();                                      // (because of join wires)
+            let i = 0;
+            while (i < result.length) {
+                const obj = result[i][1];
+                if (uniq.has(obj)) result.splice(i, 1);
+                else { uniq.add(obj); i++; }
+            }
+        }
         if (result.length > 1) {
             for (let i = 0, n = result.length; i < n; i++) result[i] = result[i][1];
             return edgeError(result, 'More than 1 output');              // report all outputs
         }
         return (result.length === 0) ? null : result[0];
+    },
+    getInputs = cell => {                        // find inputs for logic cell
+        if (isGenCell(cell)) return null;                                // no inputs for generator cell
+        const result = [];
+        if (cell.edges.some(edge => {                                    // check all edges
+            const style = edge.style;
+            let term, attr = null;                                       // other terminal and constraint
+            if (edge.source === cell) {
+                term = edge.target;
+                if (!isOscCell(cell) && getStrAttr(style, 'exitX') === '0')
+                    attr = getStrAttr(style, 'exitY');
+            } else {
+                term = edge.source;
+                if (!isOscCell(cell) && getStrAttr(style, 'entryX') === '0')
+                    attr = getStrAttr(style, 'entryY');
+            }
+            const input = getOutput(edge, term);
+            if (input === true) return true;                             // propagate error
+            if (input !== null) result.push([attr, ...input]);
+        })) return true;                                                 // propagate error
+        if (result.length === 0) return edgeError([cell], 'No input(s)');
+        return result;
+    },
+    createFnc = (funcs, cell) => {               // create logic processor
+        let result = funcs.get(cell.id);                                 // check if created
+        if (!result) {
+            let atr = getStrAttr(cell.style, 'logic');
+            if (!atr) atr = getStrAttr(cell.style, 'gate');
+            if (!atr) atr = cell.value;
+            if (!atr) return edgeError([cell], 'Logic processor not set');
+            const fnc = logicFncs.get(atr);                              // get processor
+            if (!fnc) return edgeError([cell], `Logic processor not found: ${atr}`);
+            result = fnc(cell);                                          // initialize processor
+            funcs.set(cell.id, result);
+        }
+        return result;
+    },
+    convertInputs = (cell, inps, funcs) => {     // convert cell inputs for execution structure
+        const result = new Map(),
+              getNum = (state, atr, input) => atr ? state.pts[input ? 0 : 1].indexOf(atr) : 0,
+        createState = elem => {
+            const points = graph.getAllConnectionConstraints(graph.view.getState(elem));
+            let pts = [[], []];
+            if (points) points.forEach(p => pts[p.point.x ? 1 : 0].push(p.point.y.toString()));
+            else if (isOscCell(cell)) pts[0].push('0');                  // osc node has 1 input
+            const fnc = createFnc(funcs, elem);
+            if (fnc === true) return true;                               // propagate error
+            return {pts, 'inputs': pts[0].length, fnc, 'arr': []};
+        },
+        numError = (elem, str, atr) => {
+            const elems = [elem], edge = elem.edges.find(e =>
+                    getStrAttr(e.style, (e.source === elem) ? 'exitY' : 'entryY') === atr);
+            if (edge) elems.push(edge);
+            return edgeError(elems, `Invalid ${str} index: ${atr}`);
+        },
+        thisState = createState(cell);
+        if (thisState === true) return true;                             // propagate error
+        if (inps.length !== thisState.inputs) return edgeError([cell], 'Not connected input(s)');
+        for (let i = 0, n = inps.length; i < n; i++) {
+            const [inp, out, elem] = inps[i];
+            let state = result.get(elem.id);
+            if (!state) {
+                state = createState(elem);
+                if (state === true) return true;                         // propagate error
+                result.set(elem.id, state);
+            }
+            const inIdx = getNum(thisState, inp, true);
+            if (inIdx < 0) return numError(cell, 'input', inp);
+            const outIdx = getNum(state, out, false);
+            if (outIdx < 0) return numError(elem, 'output', out);
+            state.arr.push([inIdx, outIdx]);
+        }
+        return [thisState.fnc, [...result].map(e => [e[0], e[1].fnc, e[1].arr])];
+    },
+    getScheme = () => {                          // validate scheme and generate execution structure
+        const result = new Map(),                                        // id => inputs
+              errors = [],                                               // previous errors
+              funcs = new Map(),                                         // processors cache
+        processInputs = cell => {
+            if (result.get(cell.id)) return;                             // skip processed cell
+            const inps = getInputs(cell);
+            if (inps === true) return true;                              // propagate error
+            if (inps === null) return;                                   // skip generator cells
+            const indexes = convertInputs(cell, inps, funcs);
+            if (indexes === true) return true;                           // propagate error
+            result.set(cell.id, indexes);
+            if (inps.some(elem => processInputs(elem[2]))) return true;  // process dependent cells
+        },
+        terms = graph.model.filterDescendants(cell => {                  // all oscillographs
+            if (getStrAttr(cell.style, mxConstants.STYLE_STROKECOLOR) === 'red') errors.push(cell);
+            return isOscCell(cell);                                      // find oscillographs
+        });
+        if (errors.length > 0)                                           // clear previous errors
+            graph.setCellStyles(mxConstants.STYLE_STROKECOLOR, 'var(--dbgborder)', errors);
+        if (terms.some(processInputs)) return null;                      // validation error
+        return [terms.map(e => e.id), result];
+    },
+    runScheme = validated => {
+        const [roots, scheme] = validated,
+              cache = new Map(),                 // currently processed nodes
+        processNode = id => {
+            const proc = cache.get(id);
+            if (proc) return proc(t);            // processing, return initial value
+            const [fnc, parms] = scheme.get(id),
+                  inputs = new Array(parms.length);
+            cache.set(id, fnc);                  // start processing
+            for (let i = 0, n = parms.length; i < n; i++) {
+                const [out_id, out_fnc, maps] = parms[i],
+                      out_res = scheme.has(out_id) ?
+                              processNode(out_id) :                      // process
+                              out_fnc(t);                                // terminal node (no inputs)
+                for (let j = 0, m = maps.length; j < m; j++) {
+                    const [in_idx, out_idx] = maps[j];                   // map output bits to input
+                    inputs[in_idx] = out_res[out_idx];
+                }
+            }
+            cache.delete(id);                    // finished processing
+            return fnc(t, inputs);
+        };
+        let t = 0;
+        while (t < 200) {
+            roots.forEach(processNode);
+            t++;
+        }
     },
     oscFunc = function() {                       // oscillograph
         const canvas = document.createElement('canvas');
@@ -160,7 +329,7 @@ async function main() {
             ctx.beginPath();
             let x = 0, y = points[oscStart] ? 2 : canvas.height - 2;
             ctx.moveTo(x, y);
-            for (let i = oscStart + 1; i < oscCount; i++) {
+            for (let i = oscStart + 1; i < current; i++) {
                 x += oscStep; if (x > canvas.width) x = canvas.width;
                 ctx.lineTo(x, y);
                 if (x === canvas.width) break;
@@ -168,9 +337,15 @@ async function main() {
                 if (ny !== y) { y = ny; ctx.lineTo(x, y); }
             }
             ctx.stroke();
-        };
+        },
+        addPoint = bit => {
+            points[current++] = bit;
+// shift points left if > points.length
+        },
+        clear = () => { points.fill(0); current = 0; };
+        let current = 0;
         ctx.lineWidth = 1; colorAtr('#aaaaaa');
-        return {canvas, colorAtr, draw};
+        return {canvas, colorAtr, draw, addPoint, clear};
     },
     addOsc = cell => {                           // create oscillograph
         const elem = new oscFunc();
@@ -210,7 +385,48 @@ async function main() {
     };
     let theme = 'light', grid = 'Show', optwnd = null, m, oscwnd = null,
         parent = graph.getDefaultParent(),       // first child of the root (layer 0)
-        oscStep = 8, oscStart = 0, oscCount = 0; // shared data for oscillographs
+        oscStep = 8, oscStart = 0;               // shared data for oscillographs
+    logicFncs.set('&', cell => {                 // NAND gate
+        const result = [0];
+        return (t, inputs) => {
+            if (inputs) result[0] = inputs.includes(0) ? 1 : 0;
+            return result;
+        };
+    });
+    logicFncs.set('one', cell => {               // NOR gate
+        const result = [0];
+        return (t, inputs) => {
+            if (inputs) result[0] = inputs.includes(1) ? 0 : 1;
+            return result;
+        };
+    });
+    logicFncs.set('H', cell => {                 // HI signal
+        const result = [1]; return () => result;
+    });
+    logicFncs.set('L', cell => {                 // LO signal
+        const result = [0]; return () => result;
+    });
+    logicFncs.set('~', cell => {                 // generator
+        const result = [0], freq = getStrAttr(cell.style, 'freq') ?? 8;
+        let counter = 0;
+        return t => {
+            if (t === undefined) return result;  // skip init call
+            counter++;
+            if (counter >= freq) {
+                counter = 0;
+                result[0] = result[0] ? 0 : 1;
+            }
+            return result;
+        };
+    });
+    logicFncs.set('=', cell => {                 // oscillograph
+        const oscillograph = oscillators.get(cell.id);
+        return (t, inputs) => {
+            if (t === undefined) return;         // skip init call
+            oscillograph.addPoint(inputs[0]);
+            oscillograph.draw();
+        };
+    });
     graph.getSelectionModel().addListener(mxEvent.CHANGE, (sender, evt) => {
         if (optwnd === null) return;             // options view not active
         wnd.innerHTML = '';                      // clear properties view
@@ -231,6 +447,7 @@ async function main() {
             } else {                             // setup selected edge menu
                 menu.addItem('Align left', null, () => alignEdge(view, true));
                 menu.addItem('Align right', null, () => alignEdge(view, false));
+                menu.addItem('Align join', null, () => alignJoin(view));
             }
             menu.addItem('Delete', null, () => graph.removeCells(null, true));
             menu.addSeparator();
@@ -263,6 +480,9 @@ async function main() {
             oscwnd = new mxWindow('Oscillograph', osc, 50, 190, 700, 282, false, true);
             oscwnd.addListener(mxEvent.CLOSE, oscwndlst); oscwnd.setClosable(true); oscwnd.show();
         }, sysmenu);
+        else menu.addItem('Clear oscillograph', null, () => {
+            for (const e of oscillators.values()) { e.clear(); e.draw(); }
+        }, sysmenu);
         menu.addItem('View graph', null, () => {
             const enc = new mxCodec(), doc = enc.encode(graph.getModel());
             console.log(mxUtils.getPrettyXml(doc));
@@ -285,6 +505,7 @@ async function main() {
                       model = graph.getModel(),
                       error = node.querySelector('parsererror');
                 if (error) throw new Error(error.querySelector('div').childNodes[0].nodeValue.trim());
+                oscillators.clear();               // remove old osclillators
                 model.beginUpdate();
                 try {
                     enc.decode(node, model);
@@ -304,63 +525,11 @@ async function main() {
             theme = (theme === 'dark') ? 'light' : 'dark';
         }, sysmenu);
         menu.addSeparator();
-        menu.addItem('Verify', null, () => {
-let debug = false;
-            const terminals = graph.model.filterDescendants(cell => cell.vertex && cell.value === '='),
-            /*getOutput = (edge, term) => {
-                if (!term) return edgeError([edge], 'Disconnected wire');
-                if (term.edge) {
-                    let tmp1 = getOutput(term, term.source);
-                    if (tmp1 === true) return true;
-                    let tmp2 = getOutput(term, term.target);
-                    if (tmp2 === true) return true;
-                    if (tmp1 !== null && tmp2 !== null) return edgeError([term], 'More than 1 output');
-                    if (tmp1 === null && tmp2 === null) return edgeError([term], 'No output');
-                    return (tmp1 === null) ? tmp2 : tmp1;
-                }
-                if (term.value === 'H' || term.value === 'L' || term.value === '~') return [null, term];
-                if (term.value === '=') return null;
-                const style = edge.style;
-                if (edge.source === term && getStrAttr(style, 'exitX') === '1')
-                    return [getStrAttr(style, 'exitY'), term];
-                if (edge.target === term && getStrAttr(style, 'entryX') === '1')
-                    return [getStrAttr(style, 'entryY'), term];
-                return null;
-            },*/
-            layers = [],
-            getCellInputs = cell => {
-//                const inputs = [...graph.getIncomingEdges(cell), ...graph.getOutgoingEdges(cell)];
-//console.log(inputs.length, cell.edges.length);
-// add joining edges
-const goals = new Set(/*inputs*/cell.edges);
-const joins = graph.model.filterDescendants(cell => cell.edge && !goals.has(cell) &&
-(goals.has(cell.source) || goals.has(cell.target)));
-//if (debug) inputs.push(...joins);
-                if (/*inputs*/cell.edges.some(edge => {
-                    const input = getOutput(edge, (edge.source === cell) ? edge.target : edge.source);
-                    if (input === true) return true;
-                    if (input !== null) layers.push(input);
-                })) return true;
-                if (layers.length === 0) return edgeError([cell], 'No input');
-//if (debug) edgeError(joins, null, 'green');
-            };
-//debug = true;
-            terminals.some(getCellInputs);
-//debug = false;
-console.log(layers.map(l => l.map((g, i) => i ? g.id : g)));
-//edgeError([layers[0][1]], '');
-let ttt = layers[0][1]; layers.length = 0;
-//debug = true;
-getCellInputs(ttt);
-//debug = false;
-console.log(layers.map(l => l.map((g, i) => i ? g.id : g)));
-//edgeError([layers[0][1],layers[1][1]], '');
-ttt = layers[0][1]; layers.length = 0;
-debug = true;
-getCellInputs(ttt);
-debug = false;
-console.log(layers.map(l => l.map((g, i) => i ? g.id : g)));
-edgeError([layers[0][1], layers[1][1], layers[2][1]], '');
+        menu.addItem('Verify', null, () => getScheme());
+        menu.addItem('Run', null, () => {
+            const verified = getScheme();
+            if (verified === null) return;       // validation error
+            runScheme(verified);
         });
     };
     let cellSelected = false,
