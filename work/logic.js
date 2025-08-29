@@ -295,7 +295,7 @@ async function main() {
               cache = new Map(),                 // currently processed nodes
         processNode = id => {
             const proc = cache.get(id);
-            if (proc) return proc(t);            // processing, return initial value
+            if (proc) return proc();             // processing, return initial value
             const [fnc, parms] = scheme.get(id),
                   inputs = new Array(parms.length);
             cache.set(id, fnc);                  // start processing
@@ -313,38 +313,67 @@ async function main() {
             return fnc(t, inputs);
         };
         let t = 0;
-        while (t < 200) {
+        while (t < 50) {
             roots.forEach(processNode);
             t++;
         }
     },
     oscFunc = function() {                       // oscillograph
-        const canvas = document.createElement('canvas');
-        canvas.width = 1000; canvas.height = 30;
+        const width = 1000, horz = 2, vert = 0.5,
+              canvas = document.createElement('canvas');
+        canvas.width = width; canvas.height = 30;
         const ctx = canvas.getContext('2d'),
-              points = new Uint8Array(1000),
-        colorAtr = v => (v === undefined) ? ctx.strokeStyle : ctx.strokeStyle = v,
+              points = new Uint8Array(width),
+        colorAtr = (v, refresh = true) => {
+            if (v === undefined) return ctx.strokeStyle;
+            ctx.strokeStyle = v; if (refresh) draw();
+        },
         draw = () => {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
-            ctx.beginPath();
             let x = 0, y = points[oscStart] ? 2 : canvas.height - 2;
-            ctx.moveTo(x, y);
+            ctx.lineWidth = horz; ctx.beginPath(); ctx.moveTo(x, y);
             for (let i = oscStart + 1; i < current; i++) {
                 x += oscStep; if (x > canvas.width) x = canvas.width;
                 ctx.lineTo(x, y);
                 if (x === canvas.width) break;
                 const ny = points[i] ? 2 : canvas.height - 2;
-                if (ny !== y) { y = ny; ctx.lineTo(x, y); }
+                if (ny !== y) {
+                    ctx.stroke();
+                    ctx.lineWidth = vert; ctx.beginPath(); ctx.moveTo(x, y);
+                    y = ny; ctx.lineTo(x, y);
+                    ctx.stroke();
+                    ctx.lineWidth = horz; ctx.beginPath(); ctx.moveTo(x, y);
+                }
             }
             ctx.stroke();
         },
-        addPoint = bit => {
+        addPoint = (bit, refresh = true) => {
             points[current++] = bit;
-// shift points left if > points.length
+            if (current >= points.length) {
+                current--;                       // shift left 1 point
+                points.set(points.slice(1), 0);
+            }
+            if (refresh) draw();
         },
-        clear = () => { points.fill(0); current = 0; };
-        let current = 0;
-        ctx.lineWidth = 1; colorAtr('#aaaaaa');
+        clear = (refresh = true) => { points.fill(0); current = 0; if (refresh) draw(); };
+        let current = 0, drag = false, dragStart, oldStart, thisFnc = this;
+        colorAtr('#aaaaaa');
+        const getPoint = e => e.changedTouches ? e.changedTouches[0].clientX : e.pageX;
+        canvas.ontouchstart = canvas.onmousedown = e => {
+            dragStart = getPoint(e); oldStart = oscStart; drag = true;
+        };
+        canvas.ontouchend = canvas.onmouseup = e => {
+            drag = false;
+            if (oscStart !== oldStart)           // refresh other oscillographs
+                for (const fnc of oscillators.values()) if (fnc !== thisFnc) fnc.draw();
+        };
+        canvas.ontouchmove = canvas.onmousemove = e => {
+            if (!drag) return false;
+            let delta = null, point = getPoint(e);
+            if (point < dragStart) if (oscStart < current - 1) delta = 1;
+            if (point > dragStart) if (oscStart > 0) delta = -1;
+            if (delta !== null) { oscStart += delta; draw(); }
+        };
         return {canvas, colorAtr, draw, addPoint, clear};
     },
     addOsc = cell => {                           // create oscillograph
@@ -355,7 +384,7 @@ async function main() {
     updateOsc = cell => {                        // update oscillograph parameters
         const elem = oscillators.get(cell.id),
               color = getStrAttr(cell.style, 'fillColor');
-        if (color !== null && color !== elem.colorAtr()) { elem.colorAtr(color); elem.draw(); }
+        if (color !== null && color !== elem.colorAtr()) elem.colorAtr(color);
         let step = getStrAttr(cell.style, 'step') | 0,
             start = getStrAttr(cell.style, 'start') | 0;
         if (step === oscStep || step < 1 || step > 100) step = null;
@@ -407,24 +436,18 @@ async function main() {
         const result = [0]; return () => result;
     });
     logicFncs.set('~', cell => {                 // generator
-        const result = [0], freq = getStrAttr(cell.style, 'freq') ?? 8;
-        let counter = 0;
+        const result = [0], freq = (getStrAttr(cell.style, 'freq') ?? '8') | 0;
         return t => {
-            if (t === undefined) return result;  // skip init call
-            counter++;
-            if (counter >= freq) {
-                counter = 0;
-                result[0] = result[0] ? 0 : 1;
-            }
+            if (t === undefined) return result;  // initial result
+            if (t > 0 && (t % freq) === 0) result[0] = result[0] ? 0 : 1;
             return result;
         };
     });
     logicFncs.set('=', cell => {                 // oscillograph
         const oscillograph = oscillators.get(cell.id);
         return (t, inputs) => {
-            if (t === undefined) return;         // skip init call
+            if (t === undefined) return;         // initial result
             oscillograph.addPoint(inputs[0]);
-            oscillograph.draw();
         };
     });
     graph.getSelectionModel().addListener(mxEvent.CHANGE, (sender, evt) => {
@@ -481,7 +504,7 @@ async function main() {
             oscwnd.addListener(mxEvent.CLOSE, oscwndlst); oscwnd.setClosable(true); oscwnd.show();
         }, sysmenu);
         else menu.addItem('Clear oscillograph', null, () => {
-            for (const e of oscillators.values()) { e.clear(); e.draw(); }
+            for (const e of oscillators.values()) e.clear();
         }, sysmenu);
         menu.addItem('View graph', null, () => {
             const enc = new mxCodec(), doc = enc.encode(graph.getModel());
@@ -506,6 +529,7 @@ async function main() {
                       error = node.querySelector('parsererror');
                 if (error) throw new Error(error.querySelector('div').childNodes[0].nodeValue.trim());
                 oscillators.clear();               // remove old osclillators
+                osc.innerHTML = '';                // remove canvases
                 model.beginUpdate();
                 try {
                     enc.decode(node, model);
