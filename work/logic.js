@@ -211,7 +211,7 @@ async function main() {
             }
             const input = getOutput(edge, term);
             if (input === true) return true;                             // propagate error
-            if (input !== null) result.push([attr, ...input]);
+            if (input !== null && input[1].id !== cell.id) result.push([attr, ...input]);
         })) return true;                                                 // propagate error
         if (result.length === 0) return edgeError([cell], 'No input(s)');
         return result;
@@ -436,7 +436,12 @@ async function main() {
         const result = [0]; return () => result;
     });
     logicFncs.set('~', cell => {                 // generator
-        const result = [0], freq = (getStrAttr(cell.style, 'freq') ?? '8') | 0;
+        const result = [0];
+        let freq = (getStrAttr(cell.style, 'freq') ?? '8') | 0;
+        if (freq < 2) {
+            console.warn(`Frequency set to minimum (2) at id: ${cell.id}`);
+            freq = 2;
+        }
         return t => {
             if (t === undefined) return result;  // initial result
             if (t > 0 && (t % freq) === 0) result[0] = result[0] ? 0 : 1;
