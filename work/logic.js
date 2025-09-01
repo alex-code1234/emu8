@@ -41,12 +41,16 @@ async function main() {
 
     graph.popupMenuHandler.autoExpand = true;    // setup popup menu
     graph.popupMenuHandler.isSelectOnPopup = me => mxEvent.isMouseEvent(me.getEvent());
+    let gsaTemp;
     const wnd = document.getElementById('wnd'),  // options window element
-          osc = document.getElementById('osc'),  // graphics window element
-          oscillators = new Map(),               // graph canvases
+          osc = document.getElementById('osc'),  // oscillators window element
+          sys = document.getElementById('sys'),  // settings window element
+          sysfn = document.getElementById('sysfn'), // graph name
+          sysmt = document.getElementById('sysmt'), // execution max ticks
+          oscillators = new Map(),               // oscillator canvases
           logicFncs = new Map(),                 // logic processors
     getStrAttr = (style, name) => (style &&
-            (m = style.match(new RegExp(`${name}=(.*?)(;|$)`)))) ? m[1] : null,
+            (gsaTemp = style.match(new RegExp(`${name}=(.*?)(;|$)`)))) ? gsaTemp[1] : null,
     setProps = cell => {                         // update properties view
         wnd.innerHTML = `
 <label for="stl">Style:</label><input id="stl" type="text" value="${cell.style}"/>
@@ -64,27 +68,18 @@ async function main() {
             if (cell.value === '=') updateOsc(cell);
         };
     },
-    alignEdge = (view, left) => {                // remove edge bend
+    alignEdge = (view, left) => {                // remove edge horizontal bend
         const vcell = view.cell,
               tcell = left ? vcell.source : vcell.target;
-        if (!tcell) {                                                    // not connected
-            console.warn('Not connected');
-            return;
-        }
+        if (!tcell) { console.warn('Not connected'); return; }
         const geom = vcell.geometry.clone(),
               points = geom.points,                                      // only 1 bend (2 points) expected
               term = left ? geom.sourcePoint : geom.targetPoint;         // terminal point
-        if (!points || points.length === 0) {                            // no bends/offsets
-            console.warn('No bends/offsets');
-            return;
-        }
+        if (!points || points.length === 0) { console.warn('No bends/offsets'); return; }
         let delta;
         switch (points.length) {
             case 1:                                                      // offset only
-                if (term.y === points[0].y) {                            // offset on different side
-                    console.warn('Offset on different side');
-                    return;
-                }
+                if (term.y === points[0].y) { console.warn('Offset on different side'); return; }
                 delta = term.y - points[0].y;
                 points.length = 0;                                       // remove offset
                 break;
@@ -98,15 +93,10 @@ async function main() {
                     points.splice(0, 1);                                 // remove offset
                 }
             case 2:                                                      // 1 bend (2 points)
-                if (points[0].x !== points[1].x) {                       // not vertical bend
-                    console.warn('Not vertical bend');
-                    return;
-                }
+                if (points[0].x !== points[1].x) { console.warn('Not vertical bend'); return; }
                 delta = left ? points[1].y - points[0].y : points[0].y - points[1].y;
                 break;
-            default:
-                console.warn('Too many bends/offsets');
-                return;
+            default: console.warn('Too many bends/offsets'); return;
         }
         if (!tcell.edge) {                                               // connected vertex
             const cgeom = tcell.geometry.clone();
@@ -119,18 +109,12 @@ async function main() {
             else points[1].y = points[0].y;                              // same as left
         graph.getModel().setGeometry(vcell, geom);
     },
-    alignJoin = view => {                        // remove bend at edges join
+    alignJoin = view => {                        // remove vertical bend at edges join
         const vcell = view.cell,
               geom = vcell.geometry.clone(),
               points = geom.points, len = points.length;
-        if (len < 2 || (len % 2) !== 0) {
-            console.warn('No bends');
-            return;
-        }
-        if ((len % 2) !== 0) {
-            console.warn('Offsets not supported');
-            return;
-        }
+        if (len < 2 || (len % 2) !== 0) { console.warn('No bends'); return; }
+        if ((len % 2) !== 0) { console.warn('Offsets not supported'); return; }
         let jpoint, point, vert;
         if (vcell.source.edge) {
             jpoint = geom.sourcePoint; point = points[0];
@@ -138,12 +122,22 @@ async function main() {
         } else if (vcell.target.edge) {
             jpoint = geom.targetPoint; point = points[len - 1];
             vert = point.x === points[len - 2].x;
-        } else {
-            console.warn('No joins');
-            return;
         }
+        else { console.warn('No joins'); return; }
         if (vert) jpoint.x = point.x;
         else jpoint.y = point.y;
+        graph.getModel().setGeometry(vcell, geom);
+    },
+    moveJoin = (view, left)  => {                // move edges join to x coordinate of vertical line
+        const vcell = view.cell,
+              geom = vcell.geometry.clone(),
+              points = geom.points, len = points.length;
+        if (len !== 2 || points[0].x !== points[1].x) { console.warn('No vertical line'); return; }
+        let jpoint, point, edge;
+        if (left) { edge = vcell.source.edge; jpoint = geom.sourcePoint; point = points[0]; }
+        else { edge = vcell.target.edge; jpoint = geom.targetPoint; point = points[1]; }
+        if (!edge) { console.warn('Not join'); return; }
+        jpoint.x = point.x; jpoint.y = point.y;
         graph.getModel().setGeometry(vcell, geom);
     },
     edgeError = (edges, msg, color = 'red') => { // highlight nodes and exit Array.some loop
@@ -216,7 +210,7 @@ async function main() {
         if (result.length === 0) return edgeError([cell], 'No input(s)');
         return result;
     },
-    createFnc = (funcs, cell) => {               // create logic processor
+    createFnc = async (funcs, cell) => {         // create logic processor
         let result = funcs.get(cell.id);                                 // check if created
         if (!result) {
             let atr = getStrAttr(cell.style, 'logic');
@@ -225,20 +219,20 @@ async function main() {
             if (!atr) return edgeError([cell], 'Logic processor not set');
             const fnc = logicFncs.get(atr);                              // get processor
             if (!fnc) return edgeError([cell], `Logic processor not found: ${atr}`);
-            result = fnc(cell);                                          // initialize processor
+            result = await fnc(cell);                                    // initialize processor
             funcs.set(cell.id, result);
         }
         return result;
     },
-    convertInputs = (cell, inps, funcs) => {     // convert cell inputs for execution structure
+    convertInputs = async (cell, inps, funcs) => { // convert cell inputs for execution structure
         const result = new Map(),
               getNum = (state, atr, input) => atr ? state.pts[input ? 0 : 1].indexOf(atr) : 0,
-        createState = elem => {
+        createState = async elem => {
             const points = graph.getAllConnectionConstraints(graph.view.getState(elem));
             let pts = [[], []];
             if (points) points.forEach(p => pts[p.point.x ? 1 : 0].push(p.point.y.toString()));
             else if (isOscCell(cell)) pts[0].push('0');                  // osc node has 1 input
-            const fnc = createFnc(funcs, elem);
+            const fnc = await createFnc(funcs, elem);
             if (fnc === true) return true;                               // propagate error
             return {pts, 'inputs': pts[0].length, fnc, 'arr': []};
         },
@@ -248,14 +242,14 @@ async function main() {
             if (edge) elems.push(edge);
             return edgeError(elems, `Invalid ${str} index: ${atr}`);
         },
-        thisState = createState(cell);
+        thisState = await createState(cell);
         if (thisState === true) return true;                             // propagate error
         if (inps.length !== thisState.inputs) return edgeError([cell], 'Not connected input(s)');
         for (let i = 0, n = inps.length; i < n; i++) {
             const [inp, out, elem] = inps[i];
             let state = result.get(elem.id);
             if (!state) {
-                state = createState(elem);
+                state = await createState(elem);
                 if (state === true) return true;                         // propagate error
                 result.set(elem.id, state);
             }
@@ -267,34 +261,35 @@ async function main() {
         }
         return [thisState.fnc, [...result].map(e => [e[0], e[1].fnc, e[1].arr])];
     },
-    getScheme = () => {                          // validate scheme and generate execution structure
+    getScheme = async () => {                    // validate scheme and generate execution structure
         const result = new Map(),                                        // id => inputs
               errors = [],                                               // previous errors
               funcs = new Map(),                                         // processors cache
-        processInputs = cell => {
+        processInputs = async cell => {
             if (result.get(cell.id)) return;                             // skip processed cell
             const inps = getInputs(cell);
             if (inps === true) return true;                              // propagate error
             if (inps === null) return;                                   // skip generator cells
-            const indexes = convertInputs(cell, inps, funcs);
+            const indexes = await convertInputs(cell, inps, funcs);
             if (indexes === true) return true;                           // propagate error
             result.set(cell.id, indexes);
-            if (inps.some(elem => processInputs(elem[2]))) return true;  // process dependent cells
+            for (let i = 0, n = inps.length; i < n; i++)
+                if (await processInputs(inps[i][2])) return true;        // process dependent cells
         },
         terms = graph.model.filterDescendants(cell => {                  // all oscillographs
             if (getStrAttr(cell.style, mxConstants.STYLE_STROKECOLOR) === 'red') errors.push(cell);
-            return isOscCell(cell);                                      // find oscillographs
+            return isOscCell(cell);                                      // find output terminals
         });
         if (errors.length > 0)                                           // clear previous errors
             graph.setCellStyles(mxConstants.STYLE_STROKECOLOR, 'var(--dbgborder)', errors);
-        if (terms.some(processInputs)) return null;                      // validation error
+        for (let i = 0, n = terms.length; i < n; i++)
+            if (await processInputs(terms[i])) return null;              // validation error
         return [terms.map(e => e.id), result];
     },
-    runScheme = validated => {
+    runScheme = (validated, cache = new Map(), tick = null) => {
         const [roots, scheme] = validated,
-              cache = new Map(),                 // currently processed nodes
         processNode = id => {
-            const proc = cache.get(id);
+            const proc = cache.get(id);          // check if already processing
             if (proc) return proc();             // processing, return initial value
             const [fnc, parms] = scheme.get(id),
                   inputs = new Array(parms.length);
@@ -312,11 +307,11 @@ async function main() {
             cache.delete(id);                    // finished processing
             return fnc(t, inputs);
         };
-        let t = 0;
-        while (t < 50) {
-            roots.forEach(processNode);
-            t++;
-        }
+        let t, maxt;
+        if (tick !== null) { t = tick; roots.forEach(processNode); return; }
+        t = 0; maxt = sysmt.value | 0;
+        if (maxt === 0) { maxt = 50; console.warn(`Max time ticks set to ${maxt}`); }
+        while (t < maxt) { roots.forEach(processNode); t++; }
     },
     oscFunc = function() {                       // oscillograph
         const width = 1000, horz = 2, vert = 0.5,
@@ -357,7 +352,7 @@ async function main() {
         },
         clear = (refresh = true) => { points.fill(0); current = 0; if (refresh) draw(); };
         let current = 0, drag = false, dragStart, oldStart, thisFnc = this;
-        colorAtr('#aaaaaa');
+        colorAtr(getComputedStyle(document.querySelector(':root')).getPropertyValue('--osccolor'));
         const getPoint = e => e.changedTouches ? e.changedTouches[0].clientX : e.pageX;
         canvas.ontouchstart = canvas.onmousedown = e => {
             dragStart = getPoint(e); oldStart = oscStart; drag = true;
@@ -402,17 +397,99 @@ async function main() {
             elem.canvas.remove();
         }
     },
-    optwndlst = e => {
-        optwnd.removeListener(mxEvent.CLOSE, optwndlst);
-        optwnd.destroy(); optwnd = null;
-        wnd.style.display = 'none';
+    loadXml = async name => {                    // load XML
+        const node = mxUtils.parseXml(await loadFile(name, true)).documentElement,
+              error = node.querySelector('parsererror');
+        if (error) throw new Error(error.querySelector('div').childNodes[0].nodeValue.trim());
+        return node;
     },
-    oscwndlst = e => {
-        oscwnd.removeListener(mxEvent.CLOSE, oscwndlst);
-        oscwnd.destroy(); oscwnd = null;
-        osc.style.display = 'none';
+    loadGraph = async name => {                  // load graph
+        try {
+            const node = await loadXml(name),
+                  model = graph.getModel();
+            oscillators.clear();                                         // clear oscillators
+            osc.innerHTML = '';                                          // clear oscillators window
+            model.beginUpdate();
+            try {
+                new mxCodec(node.ownerDocument).decode(node, model);
+            } finally {
+                model.endUpdate();
+            }
+            parent = graph.getDefaultParent();                           // refresh default parent
+            model.filterDescendants(isOscCell).forEach(addOsc);          // add oscillators
+        } catch(e) {
+            console.error(e.stack);
+        }
+    },
+    loadScheme = async name => {                 // load scheme
+        let scheme;
+        try {
+            scheme = new mxCodec().decode(await loadXml(name));
+            const cache = new Map();                                     // processors cache
+            for (const [key, list] of scheme[1]) {                       // replace cells with processors
+                const [cell, list2] = list,
+                      fnc = await createFnc(cache, cell);
+                if (fnc === true) throw new Error(`Create processor error for cell: ${cell.id}`);
+                list[0] = fnc;                                           // replace level 1 cell
+                for (const list3 of list2) {
+                    const [id, cell2] = list3,
+                          fnc2 = await createFnc(cache, cell2);
+                    if (fnc2 === true) throw new Error(`Create processor error for cell: ${cell2.id}`);
+                    list3[1] = fnc2;                                     // replace level 2 cell
+                }
+            }
+        } catch(e) {
+            console.error(e.stack);
+            scheme = null;
+        }
+        return scheme;
+    },
+    openWnd = (elem, title, x, y, w, h) => {     // open window for element
+        elem.style.display = 'block';
+        const result = new mxWindow(title, elem, x, y, w, h, false, true);
+        result.addListener(mxEvent.CLOSE, wndListener(elem));
+        result.setClosable(true); result.show();
+        elem.instance = result;
+    },
+    wndListener = elem => {                      // window closed listener
+        const result = e => {
+            elem.instance.removeListener(mxEvent.CLOSE, result);
+            elem.instance.destroy(); elem.instance = undefined;
+            elem.style.display = 'none';
+        };
+        return result;
     };
-    let theme = 'light', grid = 'Show', optwnd = null, m, oscwnd = null,
+    let lastId, encoder;                         // scheme serialization
+    mxObjectCodec.prototype.beforeEncode = function(sender, obj, node) {
+        if (obj instanceof Map) return [...obj];                         // Map as array
+        return obj;
+    };
+    mxObjectCodec.prototype.convertAttributeToXml = function(sender, obj, name, value) {
+        if (!Array.isArray(obj)) return value;
+        if (typeof value === 'string' && Array.isArray(obj[1])) lastId = value;
+        else if (typeof value === 'function') {                          // processor as associated cell
+            const cell = graph.model.getCell((obj[0] === value) ? lastId : obj[0]);
+            return sender.encode(cell).outerHTML;
+        }
+        return value;
+    };
+    mxObjectCodec.prototype.beforeDecode = function(sender, node, obj) {
+        encoder = sender;
+        return node;
+    };
+    mxObjectCodec.prototype.addObjectValue = (obj, fieldname, value, template) => {
+        if (value === null || value === template) return;
+        if (typeof value === 'string' && value.startsWith('<mxCell ')) { // create cell for processor
+            const cell = encoder.decode(mxUtils.parseXml(value).documentElement);
+            if (isGenCell(cell)) cell.value = 'inp';                     // substitute sources
+            else if (isOscCell(cell)) cell.value = 'out';                // substitute outputs
+            value = cell;
+        }
+        if (fieldname !== null && fieldname.length > 0) obj[fieldname] = value;
+        else if (obj instanceof Map) obj.set(value[0], value[1]);
+        else obj.push(value);
+    };
+    let theme = 'light', grid = 'Show',
         parent = graph.getDefaultParent(),       // first child of the root (layer 0)
         oscStep = 8, oscStart = 0;               // shared data for oscillographs
     logicFncs.set('&', cell => {                 // NAND gate
@@ -430,33 +507,77 @@ async function main() {
         };
     });
     logicFncs.set('H', cell => {                 // HI signal
-        const result = [1]; return () => result;
+        const result = [1]; return (t) => result;
     });
     logicFncs.set('L', cell => {                 // LO signal
-        const result = [0]; return () => result;
+        const result = [0]; return (t) => result;
     });
     logicFncs.set('~', cell => {                 // generator
         const result = [0];
-        let freq = (getStrAttr(cell.style, 'freq') ?? '8') | 0;
+        let freq = (getStrAttr(cell.style, 'freq') ?? '8') | 0, prevT = 0, counter = 0;
         if (freq < 2) {
             console.warn(`Frequency set to minimum (2) at id: ${cell.id}`);
             freq = 2;
         }
         return t => {
-            if (t === undefined) return result;  // initial result
-            if (t > 0 && (t % freq) === 0) result[0] = result[0] ? 0 : 1;
+            if (t !== prevT) {
+                prevT = t; counter++;
+                if (counter >= freq) { counter = 0; result[0] = result[0] ? 0 : 1; }
+            }
             return result;
         };
     });
     logicFncs.set('=', cell => {                 // oscillograph
         const oscillograph = oscillators.get(cell.id);
         return (t, inputs) => {
-            if (t === undefined) return;         // initial result
             oscillograph.addPoint(inputs[0]);
         };
     });
+    logicFncs.set('inp', cell => {               // input terminal
+        const index = cell.geometry.y,           // for sorting
+              result = [0];
+        return (t, input) => {
+            if (t === true) return index;               // sorting call
+            if (input !== undefined) result[0] = input; // external call
+            else return result;                         // normal call
+        }
+    });
+    logicFncs.set('out', cell => {               // output terminal
+        const index = cell.geometry.y;           // for sorting
+        let result = 0;
+        return (t, inputs) => {
+            if (t === true) return index;               // sorting call
+            if (inputs === undefined) return result;    // external call
+            else result = inputs[0];                    // normal call
+        }
+    });
+    logicFncs.set('group', async cell => {       // sub-graph node
+        const scheme = await loadScheme(getStrAttr(cell.style, 'scm')),
+              inps = [], outs = [], cache = new Map(),
+        result = scheme[0].map(e => {
+            outs.push(scheme[1].get(e)[0]);      // prepare outputs
+            return 0;                            // prepare result
+        });
+        outs.sort((a, b) => a(true) - b(true));  // sort by vertical placement
+        const map = scheme[1];
+        [...map.values()].forEach(e => e[1].forEach(e => {
+            const [id, fnc] = e;
+            if (!map.has(id) && !inps.includes(fnc))
+                inps.push(fnc);                  // find all inputs
+        }));
+        inps.sort((a, b) => a(true) - b(true));  // sort by vertical placement
+        return (t, inputs) => {
+            if (t === undefined) return result;  // loopback, return current value
+            for (let i = 0, n = inputs.length; i < n; i++)
+                inps[i](t, inputs[i]);           // map inputs
+            runScheme(scheme, cache, t);         // execute one step
+            for (let i = 0, n = outs.length; i < n; i++)
+                result[i] = outs[i]();           // merge outputs
+            return result;
+        };
+    });
     graph.getSelectionModel().addListener(mxEvent.CHANGE, (sender, evt) => {
-        if (optwnd === null) return;             // options view not active
+        if (wnd.instance === undefined) return;  // options view not active
         wnd.innerHTML = '';                      // clear properties view
         let l, view;
         if ((l = evt.getProperty('removed')) && l.length > 0 && (view = l[l.length - 1]) && view.vertex)
@@ -466,16 +587,16 @@ async function main() {
         const view = graph.view.getState(cell, false);
         if (view) {                              // setup selected cell menu
             if (view.style?.['points'] || view.style?.['resizable'] === 0) { // setup selected logic menu
-                if (optwnd === null) menu.addItem('Edit...', null, () => {
-                    wnd.style.display = 'block';
-                    optwnd = new mxWindow('Options', wnd, 350, 500, 400, 300, false, true);
-                    optwnd.addListener(mxEvent.CLOSE, optwndlst); optwnd.setClosable(true); optwnd.show();
+                if (wnd.instance === undefined) menu.addItem('Edit...', null, () => {
+                    openWnd(wnd, 'Options', 350, 500, 400, 114);
                     setProps(view.cell);
                 });
             } else {                             // setup selected edge menu
                 menu.addItem('Align left', null, () => alignEdge(view, true));
                 menu.addItem('Align right', null, () => alignEdge(view, false));
                 menu.addItem('Align join', null, () => alignJoin(view));
+                menu.addItem('Move left join', null, () => moveJoin(view, true));
+                menu.addItem('Move right join', null, () => moveJoin(view, false));
             }
             menu.addItem('Delete', null, () => graph.removeCells(null, true));
             menu.addSeparator();
@@ -496,18 +617,17 @@ async function main() {
         menu.addItem('Gate', null, () =>
             graph.insertVertex(parent, null, '', 20, 20, 30, 40, 'inputs=,;outputs=/;gate=&'),
             addmenu);
-// add more elements
+        menu.addItem('JKFlipFlop', null, () =>
+            graph.insertVertex(parent, null, '', 20, 20, 40, 40,
+                    'inputs=J,^,K;outputs=Q,/Q;logic=group;xml=jktrigger.xml'), addmenu);
         const sysmenu = menu.addItem('System', null, null);
         menu.addItem('UnDo', null, () => undoManager.undo(), sysmenu);
         menu.addItem('ReDo', null, () => undoManager.redo(), sysmenu);
         menu.addItem('ZoomIn', null, () => graph.zoomIn(), sysmenu);
         menu.addItem('ZoomOut', null, () => graph.zoomOut(), sysmenu);
         menu.addItem('Cancel zoom', null, () => graph.zoomActual(), sysmenu);
-        if (oscwnd === null) menu.addItem('View oscillograph', null, () => {
-            osc.style.display = 'block';
-            oscwnd = new mxWindow('Oscillograph', osc, 50, 190, 700, 282, false, true);
-            oscwnd.addListener(mxEvent.CLOSE, oscwndlst); oscwnd.setClosable(true); oscwnd.show();
-        }, sysmenu);
+        if (osc.instance === undefined) menu.addItem('View oscillograph', null, () =>
+                openWnd(osc, 'Oscillograph', 50, 210, 700, 282), sysmenu);
         else menu.addItem('Clear oscillograph', null, () => {
             for (const e of oscillators.values()) e.clear();
         }, sysmenu);
@@ -522,31 +642,11 @@ async function main() {
         }, sysmenu);
         menu.addItem('Save graph', null, () => {
             const enc = new mxCodec(), doc = enc.encode(graph.getModel());
-            downloadFile('scheme.xml', mxUtils.getPrettyXml(doc));
+            downloadFile(sysfn.value, mxUtils.getPrettyXml(doc));
         }, sysmenu);
-        menu.addItem('Load graph', null, async () => {
-            try {
-                const txt = await loadFile('scheme.xml', true),
-                      doc = mxUtils.parseXml(txt),
-                      node = doc.documentElement,
-                      enc = new mxCodec(node.ownerDocument),
-                      model = graph.getModel(),
-                      error = node.querySelector('parsererror');
-                if (error) throw new Error(error.querySelector('div').childNodes[0].nodeValue.trim());
-                oscillators.clear();               // remove old osclillators
-                osc.innerHTML = '';                // remove canvases
-                model.beginUpdate();
-                try {
-                    enc.decode(node, model);
-                } finally {
-                    model.endUpdate();
-                }
-                parent = graph.getDefaultParent(); // refresh default parent
-                model.filterDescendants(cell => cell.vertex && cell.value === '=').forEach(addOsc);
-            } catch(e) {
-                console.error(e.stack);
-            }
-        }, sysmenu);
+        menu.addItem('Load graph', null, async () => await loadGraph(sysfn.value), sysmenu);
+        if (sys.instance === undefined) menu.addItem('Settings...', null, () =>
+                openWnd(sys, 'Settings', 250, 18, 500, 282), sysmenu);
         menu.addSeparator(sysmenu);
         menu.addItem('Clear console', null, () => console.clear(), sysmenu);
         menu.addItem(`Set ${theme} theme`, null, () => {
@@ -554,11 +654,20 @@ async function main() {
             theme = (theme === 'dark') ? 'light' : 'dark';
         }, sysmenu);
         menu.addSeparator();
-        menu.addItem('Verify', null, () => getScheme());
-        menu.addItem('Run', null, () => {
-            const verified = getScheme();
+        menu.addItem('Verify scheme', null, async () => await getScheme());
+        menu.addItem('Save scheme', null, async () => {
+            const scheme = await getScheme();
+            if (scheme === null) return;
+            downloadFile(sysfn.value, mxUtils.getPrettyXml(new mxCodec().encode(scheme)));
+        });
+        menu.addItem('Run', null, async () => {
+            const verified = await getScheme();
             if (verified === null) return;       // validation error
-            runScheme(verified);
+            try {
+                runScheme(verified);
+            } catch(e) {
+                console.error(e.stack);
+            }
         });
     };
     let cellSelected = false,

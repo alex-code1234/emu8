@@ -108,13 +108,16 @@
         </Array>
       </mxGeometry>
     </mxCell>
-    <mxCell id="22" value="=" style="shape=ellipse;resizable=0" vertex="true" parent="1">
-      <mxGeometry x="70" y="284" width="32" height="32" as="geometry" />
+    <mxCell id="22" value="=" style="shape=ellipse;resizable=0" parent="1" vertex="true">
+      <mxGeometry x="590" y="310" width="32" height="32" as="geometry" />
     </mxCell>
-    <mxCell id="23" value="" style="endArrow=none;edgeStyle=orthogonalEdgeStyle;strokeColor=var(--dbgborder);" edge="true" parent="1" source="22" target="3">
+    <mxCell id="23" value="" style="endArrow=none;edgeStyle=orthogonalEdgeStyle;strokeColor=var(--dbgborder);" parent="1" source="22" target="3" edge="true">
       <mxGeometry relative="true" as="geometry">
         <mxPoint x="20" y="20" as="sourcePoint" />
         <mxPoint x="60" y="20" as="targetPoint" />
+        <Array as="points">
+          <mxPoint x="86" y="326" />
+        </Array>
       </mxGeometry>
     </mxCell>
   </root>
