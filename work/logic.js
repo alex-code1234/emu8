@@ -444,6 +444,45 @@ async function main() {
         }
         return scheme;
     },
+    loadGroup = async name => {                  // load graph as group
+        try {
+            const node = await loadXml(name), visited = new Set();
+            let root = [...node.childNodes].find(n => n.nodeName === 'root'), tmp;
+            if (!root) return;
+            let cells = [...root.childNodes];
+            const ref = (idx, src, trg) => cells.slice(idx + 1).find(n => n.nodeName === 'mxCell' &&
+                    ((src && (tmp = n.getAttribute('id')) === src) || (trg && tmp === trg)));
+            for (let i = 0, n = cells.length; i < n; i++) {
+                const c = cells[i];
+                if (c.nodeName !== 'mxCell') continue;
+                const id = c.getAttribute('id'), edge = c.getAttribute('edge');
+                if (edge !== '1' && edge !== 'true') continue;
+                visited.add(c.id);
+                const elem = ref(i, c.getAttribute('source'), c.getAttribute('target'));
+                if (elem) {                                              // found forward ref
+                    root.removeChild(elem);                              // swap nodes
+                    root.insertBefore(elem, c);
+                    visited.add(elem.getAttribute('id'));
+                    cells = [...root.childNodes];                        // refresh list
+                }
+            }
+            if (visited.size === 0) return;
+            const mod = new mxCodec().decode(node), layer = mod.root.children[0],
+                  model = graph.getModel(), owner = graph.getDefaultParent();
+            model.beginUpdate();
+            try {
+                model.add(owner, mod.root.children[0], model.getChildCount(owner));
+                graph.setSelectionCells(graph.ungroupCells([layer]));
+            } finally {
+                model.endUpdate();
+            }
+            model.filterDescendants(cell => {                            // process added oscillators
+                if (isOscCell(cell) && !oscillators.has(cell.id)) addOsc(cell);
+            });
+        } catch(e) {
+            console.error(e.stack);
+        }
+    },
     openWnd = (elem, title, x, y, w, h) => {     // open window for element
         elem.style.display = 'block';
         const result = new mxWindow(title, elem, x, y, w, h, false, true);
@@ -629,7 +668,9 @@ async function main() {
         if (osc.instance === undefined) menu.addItem('View oscillograph', null, () =>
                 openWnd(osc, 'Oscillograph', 50, 210, 700, 282), sysmenu);
         else menu.addItem('Clear oscillograph', null, () => {
-            for (const e of oscillators.values()) e.clear();
+            for (const [id, fnc] of oscillators)
+                if (!graph.model.getCell(id)) removeOsc({id});           // cell removed
+                else fnc.clear();
         }, sysmenu);
         menu.addItem('View graph', null, () => {
             const enc = new mxCodec(), doc = enc.encode(graph.getModel());
@@ -645,6 +686,7 @@ async function main() {
             downloadFile(sysfn.value, mxUtils.getPrettyXml(doc));
         }, sysmenu);
         menu.addItem('Load graph', null, async () => await loadGraph(sysfn.value), sysmenu);
+        menu.addItem('Load as group', null, async () => await loadGroup(sysfn.value), sysmenu);
         if (sys.instance === undefined) menu.addItem('Settings...', null, () =>
                 openWnd(sys, 'Settings', 250, 18, 500, 282), sysmenu);
         menu.addSeparator(sysmenu);
@@ -715,6 +757,10 @@ async function main() {
     mxGraphHandler.prototype.previewColor = 'var(--dbgborder)';
     mxConstants.GUIDE_COLOR = 'var(--secondary)';
     mxConstants.GUIDE_STROKEWIDTH = 1;
+    mxConstants.VERTEX_SELECTION_COLOR = 'var(--selection)';
+    mxConstants.VERTEX_SELECTION_STROKEWIDTH = 1.5;
+    mxConstants.EDGE_SELECTION_COLOR = 'var(--selection)';
+    mxConstants.EDGE_SELECTION_STROKEWIDTH = 1.5;
     mxEdgeHandler.prototype.snapToTerminals = true;
 
     ((style) => {                                // default vertex style
