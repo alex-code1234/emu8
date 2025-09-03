@@ -62,11 +62,17 @@ async function main() {
                 const ga = getStrAttr(style, 'gate');
                 if (ga === '1') style = style.replace('gate=1', 'gate=one');
                 const num = getStrAttr(style, 'inputs').split(',').length;
-                cell.geometry.height = num * 20;
+                cell.geometry.height = num * graph.gridSize * 2;         // grid alignment
             }
             graph.getModel().setStyle(cell, style);
             if (cell.value === '=') updateOsc(cell);
         };
+    },
+    toGrid = (num, height) => {                                          // grid alignment
+        if (!height) return Math.round(num * graph.gridSize) / graph.gridSize;
+        const n = height / graph.gridSize, n1 = 1.0 / n, m = n * num,
+              low = n1 * Math.floor(m), high = n1 * Math.ceil(m);
+        return (high - num > num - low) ? low : high;
     },
     alignEdge = (view, left) => {                // remove edge horizontal bend
         const vcell = view.cell,
@@ -794,7 +800,7 @@ async function main() {
                 else if (txt.charAt(0) === '^') { txt = txt.substring(1).trim(); mod |= 2; }
                 txtd = mxUtils.getSizeForString(txt, fsize);
             }
-            res.push([input ? 5 : w - txtd.width - 5, hhh, txtd.width, txt, mod]);
+            res.push([input ? 5 : w - txtd.width - 5, toGrid(hhh) | 0, txtd.width, txt, mod]);
             hhh += deltaH;
         }
         return res;
@@ -891,7 +897,7 @@ async function main() {
             for (let j = 0, m = data.length; j < m; j++) {
                 const [, dy, , , mod] = data[j],
                       offs = (mod & 1) ? i ? 5.0 : -5.0 : undefined,
-                      pct = (dy + 5.0) / geom.height;
+                      pct = toGrid((dy + 5.0) / geom.height, geom.height);
                 res.push(new mxConnectionConstraint(new mxPoint(i, pct), false, undefined, offs));
             }
         }
