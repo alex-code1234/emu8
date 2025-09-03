@@ -672,6 +672,7 @@ async function main() {
         menu.addItem('ZoomIn', null, () => graph.zoomIn(), sysmenu);
         menu.addItem('ZoomOut', null, () => graph.zoomOut(), sysmenu);
         menu.addItem('Cancel zoom', null, () => graph.zoomActual(), sysmenu);
+        menu.addItem('Cancel pan', null, () => graph.getView().setTranslate(0, 0), sysmenu);
         if (osc.instance === undefined) menu.addItem('View oscillograph', null, () =>
                 openWnd(osc, 'Oscillograph', 50, 210, 700, 282), sysmenu);
         else menu.addItem('Clear oscillograph', null, () => {
