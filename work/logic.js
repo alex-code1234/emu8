@@ -7,6 +7,10 @@ async function main() {
     console.warn = console._logwrapper('var(--warning)');
     console.info = console._logwrapper('var(--secondary)');
 
+    window.onbeforeunload = e => {               // prevent right mouse click exit
+        e.returnValue = true; e.preventDefault();
+    };
+
     const container = document.getElementById('diagram'),
           textEditing = evt => graph.isEditing();
 
