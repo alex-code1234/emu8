@@ -131,7 +131,7 @@ async function main() {
     moveJoin = (view, left)  => {                // move edges join to x coordinate of vertical line
         const vcell = view.cell,
               geom = vcell.geometry.clone(),
-              points = geom.points, len = points.length;
+              points = geom.points, len = points?.length;
         if (len !== 2 || points[0].x !== points[1].x) { console.warn('No vertical line'); return; }
         let jpoint, point, edge;
         if (left) { edge = vcell.source.edge; jpoint = geom.sourcePoint; point = points[0]; }
