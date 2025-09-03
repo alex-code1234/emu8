@@ -65,6 +65,7 @@ async function main() {
                 cell.geometry.height = num * graph.gridSize * 2;         // grid alignment
             }
             graph.getModel().setStyle(cell, style);
+            graph.getView().invalidate(cell);                            // update constraints
             if (cell.value === '=') updateOsc(cell);
         };
     },
