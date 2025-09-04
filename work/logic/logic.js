@@ -7,6 +7,18 @@ async function main() {
     console.warn = console._logwrapper('var(--warning)');
     console.info = console._logwrapper('var(--secondary)');
 
+    const loadExt = async name => {              // load extension
+        const txt = await (await fetch(name, {cache: 'no-store'})).text();
+        if (txt.indexOf('404 Not Found') >= 0) return null;
+        const result = [];
+        txt.split('\n').forEach(s => {
+            if (s.trim().length > 0) result.push(s.split(':'));
+        });
+        return result;
+    },
+    fragments = await loadExt('fragments.dat'),
+    components = await loadExt('components.dat');
+
     window.onbeforeunload = e => {               // prevent right mouse click exit
         e.returnValue = true; e.preventDefault();
     };
@@ -667,9 +679,15 @@ async function main() {
         menu.addItem('Gate', null, () =>
             graph.insertVertex(parent, null, '', 20, 20, 30, 40, 'inputs=,;outputs=/;gate=&'),
             addmenu);
-        menu.addItem('JKFlipFlop', null, () =>
-            graph.insertVertex(parent, null, '', 20, 20, 40, 40,
-                    'inputs=J,^,K;outputs=Q,/Q;logic=group;xml=jktrigger.xml'), addmenu);
+        if (fragments !== null) {
+            const smenu = menu.addItem('Fragment', null, null, addmenu);
+            fragments.forEach(d => menu.addItem(d[0], null, async () => await loadGroup(d[1]), smenu));
+        }
+        if (components !== null) {
+            const smenu = menu.addItem('Component', null, null, addmenu);
+            components.forEach(d => menu.addItem(d[0], null, () =>
+                    graph.insertVertex(parent, null, '', 20, 20, 40, 40, d[1]), smenu));
+        }
         const sysmenu = menu.addItem('System', null, null);
         menu.addItem('UnDo', null, () => undoManager.undo(), sysmenu);
         menu.addItem('ReDo', null, () => undoManager.redo(), sysmenu);
