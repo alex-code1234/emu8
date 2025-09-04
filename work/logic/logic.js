@@ -67,6 +67,11 @@ async function main() {
           logicFncs = new Map(),                 // logic processors
     getStrAttr = (style, name) => (style &&
             (gsaTemp = style.match(new RegExp(`${name}=(.*?)(;|$)`)))) ? gsaTemp[1] : null,
+    getAdjHeight = style => {                    // get adjusted cell height
+        const num1 = getStrAttr(style, 'inputs').split(',').length,
+              num2 = getStrAttr(style, 'outputs').split(',').length;
+        return ((num1 > num2) ? num1 : num2) * graph.gridSize * 2;       // grid alignment
+    },
     setProps = cell => {                         // update properties view
         wnd.innerHTML = `
 <label for="stl">Style:</label><input id="stl" type="text" value="${cell.style}"/>
@@ -77,19 +82,13 @@ async function main() {
             if (style.indexOf('gate') >= 0) {
                 const ga = getStrAttr(style, 'gate');
                 if (ga === '1') style = style.replace('gate=1', 'gate=one');
-                const num = getStrAttr(style, 'inputs').split(',').length;
-                cell.geometry.height = num * graph.gridSize * 2;         // grid alignment
             }
+            const update = style.indexOf('inputs') >= 0 || style.indexOf('outputs') >= 0;
+            if (update) cell.geometry.height = getAdjHeight(style);      // grid alignment
             graph.getModel().setStyle(cell, style);
-            graph.getView().invalidate(cell);                            // update constraints
+            if (update) graph.getView().getState(cell).style['points'] = null; // update constraints
             if (cell.value === '=') updateOsc(cell);
         };
-    },
-    toGrid = (num, height) => {                                          // grid alignment
-        if (!height) return Math.round(num * graph.gridSize) / graph.gridSize;
-        const n = height / graph.gridSize, n1 = 1.0 / n, m = n * num,
-              low = n1 * Math.floor(m), high = n1 * Math.ceil(m);
-        return (high - num > num - low) ? low : high;
     },
     alignEdge = (view, left) => {                // remove edge horizontal bend
         const vcell = view.cell,
@@ -686,7 +685,7 @@ async function main() {
         if (components !== null) {
             const smenu = menu.addItem('Component', null, null, addmenu);
             components.forEach(d => menu.addItem(d[0], null, () =>
-                    graph.insertVertex(parent, null, '', 20, 20, 40, 40, d[1]), smenu));
+                    graph.insertVertex(parent, null, '', 20, 20, 40, getAdjHeight(d[1]), d[1]), smenu));
         }
         const sysmenu = menu.addItem('System', null, null);
         menu.addItem('UnDo', null, () => undoManager.undo(), sysmenu);
@@ -807,7 +806,7 @@ async function main() {
         style[mxConstants.STYLE_FONTSIZE] = '14';
     })(graph.getStylesheet().getDefaultEdgeStyle());
 
-    const defFntTop = 5/*0*/, defFntBot = 2/*7*/, defFntSiz = 14/*11*/, defFntClr = 'var(--dbgborder)',
+    const defFntTop = 5, defFntBot = 5, defFntSiz = 10, defFntClr = 'var(--dbgborder)',
     genPoints = (data, w, h, ftop, fbot, fsize, input) => {
         if (data === null) return null;
         const res = [], vals = data.split(','),
@@ -824,7 +823,8 @@ async function main() {
                 else if (txt.charAt(0) === '^') { txt = txt.substring(1).trim(); mod |= 2; }
                 txtd = mxUtils.getSizeForString(txt, fsize);
             }
-            res.push([input ? 5 : w - txtd.width - 5, toGrid(hhh) | 0, txtd.width, txt, mod]);
+            const adj = Math.round(hhh * graph.gridSize) / graph.gridSize;              // snap to grid
+            res.push([input ? 5 : w - txtd.width - 5, adj, txtd.width, txt, mod]);
             hhh += deltaH;
         }
         return res;
@@ -844,8 +844,7 @@ async function main() {
                 this.style['verticalLabelPosition'] = 'top'; // default label position
                 this.style['verticalAlign'] = 'bottom';
                 const fntTop = this.style['fnttop'] ?? defFntTop,
-                      fntBot = this.style['fntbot'] ?? defFntBot,
-                      txtd = mxUtils.getSizeForString('W', fntSiz);
+                      fntBot = this.style['fntbot'] ?? defFntBot;
                 points = []; this.style['points'] = points;
                 points.push(genPoints(inps, w, h, fntTop, fntBot, fntSiz, true));
                 points.push(genPoints(outs, w, h, fntTop, fntBot, fntSiz, false));
@@ -859,14 +858,14 @@ async function main() {
                         this.plainText(c, x + dx, y + dy, w, h, txt, fntBld, fntScl);
                         if (mod & 1) { // negate label
                             c.begin();
-                            c.moveTo(x + dx, y + dy - 2);
-                            c.lineTo(x + dx + tw, y + dy - 2);
+                            c.moveTo(x + dx, y + dy);
+                            c.lineTo(x + dx + tw, y + dy);
                             c.stroke();
                         }
                     }
                     if (mod & 1) {     // negate contact
                         c.begin();
-                        c.ellipse((i === 0) ? x - 5 : x + w, y + dy + 3, 5, 5);
+                        c.ellipse((i === 0) ? x - 5 : x + w, y + dy + 2, 5, 5);
                         c.stroke();
                     }
                     if (mod & 2) {     // clock contact
@@ -921,7 +920,7 @@ async function main() {
             for (let j = 0, m = data.length; j < m; j++) {
                 const [, dy, , , mod] = data[j],
                       offs = (mod & 1) ? i ? 5.0 : -5.0 : undefined,
-                      pct = toGrid((dy + 5.0) / geom.height, geom.height);
+                      pct = (dy + 5.0) / geom.height;
                 res.push(new mxConnectionConstraint(new mxPoint(i, pct), false, undefined, offs));
             }
         }
