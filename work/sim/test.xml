@@ -1,0 +1,88 @@
+<mxGraphModel>
+  <root>
+    <mxCell id="0" />
+    <mxCell id="1" style="a=0;b=8;dt=0.01;iv=0;" parent="0" />
+    <Object label="Step" id="2">
+      <mxCell style="shape=rectangle;type=simSignal;signal=0;ini=-1;fin=0;shift=1;prd=0;slope=0;sdt=0.1;tbold=1;tsize=14;output=1;" parent="1" vertex="1">
+        <mxGeometry x="50" y="50" width="60" height="60" as="geometry" />
+      </mxCell>
+    </Object>
+    <Object label="Scope" id="3">
+      <Array as="constraints">
+        <mxConnectionConstraint>
+          <mxPoint y="0.5" as="point" />
+        </mxConnectionConstraint>
+      </Array>
+      <mxCell style="shape=rectangle;type=simScope;clrs=grey cyan green red;wdts=1 1 1 1;dots=0 0 0 0;ymia=-0.8 1.2;ngxy=8 10;" parent="1" vertex="1">
+        <mxGeometry x="410" y="175" width="60" height="60" as="geometry" />
+      </mxCell>
+    </Object>
+    <Object label="Step" id="5">
+      <mxCell style="shape=rectangle;type=simSignal;signal=1;ini=1;fin=0;shift=3;prd=0;slope=2;sdt=0.1;tbold=1;tsize=14;output=1;" parent="1" vertex="1">
+        <mxGeometry x="50" y="190" width="60" height="60" as="geometry" />
+      </mxCell>
+    </Object>
+    <Object label="" id="8">
+      <Array as="constraints">
+        <mxConnectionConstraint>
+          <mxPoint y="0.5" as="point" />
+        </mxConnectionConstraint>
+        <mxConnectionConstraint>
+          <mxPoint x="0.5" y="1" as="point" />
+        </mxConnectionConstraint>
+      </Array>
+      <mxCell style="shape=ellipse;type=simSum;tbold=1;tsize=14;sopers=pp;output=1;" parent="1" vertex="1">
+        <mxGeometry x="150" y="60" width="40" height="40" as="geometry" />
+      </mxCell>
+    </Object>
+    <mxCell id="4" style="exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" parent="1" source="2" target="8" edge="1" simNum="0">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+    <mxCell id="9" style="exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" parent="1" source="8" target="13" edge="1" simNum="0">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+    <mxCell id="12" style="exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;" parent="1" source="5" target="8" edge="1" simNum="1">
+      <mxGeometry relative="1" as="geometry">
+        <Array as="points">
+          <mxPoint x="170" y="170" />
+        </Array>
+      </mxGeometry>
+    </mxCell>
+    <Object label="Plant" id="13">
+      <Array as="constraints">
+        <mxConnectionConstraint>
+          <mxPoint y="0.5" as="point" />
+        </mxConnectionConstraint>
+      </Array>
+      <mxCell style="shape=rectangle;type=simText2;subtype=simTransfer;tbold=1;tsize=14;text1=5 5;text2=1 6 9;mtd=DP5;ini=0 0;output=1;" vertex="1" parent="1">
+        <mxGeometry x="240" y="50" width="60" height="60" as="geometry" />
+      </mxCell>
+    </Object>
+    <mxCell id="14" style="exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.2;entryDx=0;entryDy=0;" edge="1" parent="1" source="13" target="15" simNum="0">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+    <Object label="" id="15">
+      <Array as="constraints">
+        <mxConnectionConstraint>
+          <mxPoint y="0.2" as="point" />
+        </mxConnectionConstraint>
+        <mxConnectionConstraint>
+          <mxPoint y="0.8" as="point" />
+        </mxConnectionConstraint>
+      </Array>
+      <mxCell style="shape=rectangle;type=simArray;inps=2;output=1;" vertex="1" parent="1">
+        <mxGeometry x="360" y="170" width="10" height="70" as="geometry" />
+      </mxCell>
+    </Object>
+    <mxCell id="16" style="exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="15" target="3" simNum="0">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+    <mxCell id="17" style="exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.8;entryDx=0;entryDy=0;" edge="1" parent="1" source="8" target="15" simNum="1">
+      <mxGeometry relative="1" as="geometry">
+        <Array as="points">
+          <mxPoint x="210" y="170" />
+        </Array>
+      </mxGeometry>
+    </mxCell>
+  </root>
+</mxGraphModel>

@@ -1,0 +1,258 @@
+<mxGraphModel>
+  <root>
+    <mxCell id="0" />
+    <mxCell id="1" style="a=0;b=160;dt=0.1;iv=0;" parent="0" />
+    <Object label="Step" id="2">
+      <mxCell style="shape=rectangle;type=simSignal;signal=0;ini=10;fin=5;shift=80;prd=0;slope=1;sdt=0.1;tbold=1;tsize=14;output=1;" parent="1" vertex="1">
+        <mxGeometry x="30" y="50" width="60" height="60" as="geometry" />
+      </mxCell>
+    </Object>
+    <Object label="Ki" id="3">
+      <Array as="constraints">
+        <mxConnectionConstraint>
+          <mxPoint y="0.5" as="point" />
+        </mxConnectionConstraint>
+      </Array>
+      <mxCell style="shape=triangle;type=simText;subtype=simGain;tbold=1;tsize=14;tpad=4;text=0.2;output=1;" parent="1" vertex="1">
+        <mxGeometry x="220" y="60" width="40" height="40" as="geometry" />
+      </mxCell>
+    </Object>
+    <Object label="" id="5">
+      <Array as="constraints">
+        <mxConnectionConstraint>
+          <mxPoint y="0.5" as="point" />
+        </mxConnectionConstraint>
+      </Array>
+      <mxCell style="shape=rectangle;type=simText2;subtype=sim1s;tbold=1;tsize=12;text1=1;text2=s;mtd=DP5;ini=0;output=1;" parent="1" vertex="1">
+        <mxGeometry x="360" y="60" width="40" height="40" as="geometry" />
+      </mxCell>
+    </Object>
+    <Object label="Scope" id="7">
+      <Array as="constraints">
+        <mxConnectionConstraint>
+          <mxPoint y="0.5" as="point" />
+        </mxConnectionConstraint>
+      </Array>
+      <mxCell style="shape=rectangle;type=simScope;clrs=grey cyan green red;wdts=1 1 1 1;dots=0 0 0 0;ymia=;" parent="1" vertex="1">
+        <mxGeometry x="650" y="450" width="60" height="60" as="geometry" />
+      </mxCell>
+    </Object>
+    <Object label="" id="9">
+      <Array as="constraints">
+        <mxConnectionConstraint>
+          <mxPoint y="0.5" as="point" />
+        </mxConnectionConstraint>
+        <mxConnectionConstraint>
+          <mxPoint x="0.5" y="1" as="point" />
+        </mxConnectionConstraint>
+      </Array>
+      <mxCell style="shape=ellipse;type=simSum;tbold=1;tsize=14;sopers=pp;output=1;" parent="1" vertex="1">
+        <mxGeometry x="290" y="60" width="40" height="40" as="geometry" />
+      </mxCell>
+    </Object>
+    <Object label="Saturation" id="14">
+      <Array as="constraints">
+        <mxConnectionConstraint>
+          <mxPoint y="0.5" as="point" />
+        </mxConnectionConstraint>
+      </Array>
+      <mxCell style="shape=rectangle;type=simSat;min=-10;max=10;output=1;" parent="1" vertex="1">
+        <mxGeometry x="520" y="60" width="40" height="40" as="geometry" />
+      </mxCell>
+    </Object>
+    <Object label="" id="17">
+      <Array as="constraints">
+        <mxConnectionConstraint>
+          <mxPoint x="1" y="0.5" as="point" />
+        </mxConnectionConstraint>
+        <mxConnectionConstraint>
+          <mxPoint x="0.5" as="point" />
+        </mxConnectionConstraint>
+      </Array>
+      <mxCell style="shape=ellipse;type=simSum;tbold=1;tsize=14;sopers=pm;output=1;flipx=1;flipy=1;" parent="1" vertex="1">
+        <mxGeometry x="470" y="160" width="40" height="40" as="geometry" />
+      </mxCell>
+    </Object>
+    <Object label="Windup 0-off, 1-on" id="21">
+      <Array as="constraints">
+        <mxConnectionConstraint>
+          <mxPoint x="1" y="0.5" as="point" />
+        </mxConnectionConstraint>
+      </Array>
+      <mxCell style="shape=triangle;type=simText;subtype=simGain;tbold=1;tsize=14;tpad=-4;text=1;output=1;flipx=1;flipH=1;" parent="1" vertex="1">
+        <mxGeometry x="370" y="160" width="40" height="40" as="geometry" />
+      </mxCell>
+    </Object>
+    <Object label="Kp" id="24">
+      <Array as="constraints">
+        <mxConnectionConstraint>
+          <mxPoint y="0.5" as="point" />
+        </mxConnectionConstraint>
+      </Array>
+      <mxCell style="shape=triangle;type=simText;subtype=simGain;tbold=1;tsize=14;tpad=4;text=1;output=1;" parent="1" vertex="1">
+        <mxGeometry x="220" y="-20" width="40" height="40" as="geometry" />
+      </mxCell>
+    </Object>
+    <Object label="" id="26">
+      <Array as="constraints">
+        <mxConnectionConstraint>
+          <mxPoint y="0.5" as="point" />
+        </mxConnectionConstraint>
+        <mxConnectionConstraint>
+          <mxPoint x="0.5" as="point" />
+        </mxConnectionConstraint>
+      </Array>
+      <mxCell style="shape=ellipse;type=simSum;tbold=1;tsize=14;sopers=pp;output=1;flipy=1;" parent="1" vertex="1">
+        <mxGeometry x="430" y="60" width="40" height="40" as="geometry" />
+      </mxCell>
+    </Object>
+    <Object label="Plant" id="32">
+      <Array as="constraints">
+        <mxConnectionConstraint>
+          <mxPoint y="0.5" as="point" />
+        </mxConnectionConstraint>
+      </Array>
+      <mxCell style="shape=rectangle;type=simText2;subtype=simTransfer;tbold=1;tsize=14;text1=1;text2=10 1;mtd=DP5;ini=0;output=1;" parent="1" vertex="1">
+        <mxGeometry x="600" y="50" width="60" height="60" as="geometry" />
+      </mxCell>
+    </Object>
+    <Object label="" id="38">
+      <Array as="constraints">
+        <mxConnectionConstraint>
+          <mxPoint y="0.5" as="point" />
+        </mxConnectionConstraint>
+        <mxConnectionConstraint>
+          <mxPoint x="0.5" y="1" as="point" />
+        </mxConnectionConstraint>
+      </Array>
+      <mxCell style="shape=ellipse;type=simSum;tbold=1;tsize=14;sopers=pm;output=1;" parent="1" vertex="1">
+        <mxGeometry x="130" y="60" width="40" height="40" as="geometry" />
+      </mxCell>
+    </Object>
+    <mxCell id="10" style="exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" parent="1" source="3" target="9" edge="1" simNum="0">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+    <mxCell id="11" style="exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" parent="1" source="9" target="5" edge="1" simNum="0">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+    <mxCell id="18" style="exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;" parent="1" source="14" target="17" edge="1" simNum="0">
+      <mxGeometry relative="1" as="geometry">
+        <Array as="points">
+          <mxPoint x="580" y="140" />
+        </Array>
+      </mxGeometry>
+    </mxCell>
+    <mxCell id="22" style="exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;" parent="1" source="17" target="21" edge="1" simNum="0">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+    <mxCell id="23" style="exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;" parent="1" source="21" target="9" edge="1" simNum="1">
+      <mxGeometry relative="1" as="geometry">
+        <Array as="points">
+          <mxPoint x="310" y="120" />
+        </Array>
+      </mxGeometry>
+    </mxCell>
+    <mxCell id="27" style="exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" parent="1" source="24" target="26" edge="1" simNum="1">
+      <mxGeometry relative="1" as="geometry">
+        <Array as="points">
+          <mxPoint x="450" y="30" />
+        </Array>
+      </mxGeometry>
+    </mxCell>
+    <mxCell id="28" style="exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" parent="1" source="5" target="26" edge="1" simNum="0">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+    <mxCell id="29" style="exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" parent="1" source="26" target="14" edge="1" simNum="0">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+    <mxCell id="30" style="exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" parent="1" source="26" target="17" edge="1" simNum="1">
+      <mxGeometry relative="1" as="geometry">
+        <Array as="points">
+          <mxPoint x="490" y="170" />
+        </Array>
+      </mxGeometry>
+    </mxCell>
+    <mxCell id="33" style="exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" parent="1" source="14" target="32" edge="1" simNum="0">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+    <mxCell id="34" style="exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.1;entryDx=0;entryDy=0;edgeStyle=orthogonalEdgeStyle;" parent="1" source="32" target="44" edge="1" simNum="0">
+      <mxGeometry relative="1" as="geometry">
+        <Array as="points">
+          <mxPoint x="690" y="80" />
+          <mxPoint x="690" y="300" />
+          <mxPoint x="550" y="300" />
+          <mxPoint x="550" y="424" />
+        </Array>
+      </mxGeometry>
+    </mxCell>
+    <mxCell id="39" style="exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" parent="1" source="38" target="24" edge="1" simNum="0">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+    <mxCell id="40" style="exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" parent="1" source="38" target="3" edge="1" simNum="0">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+    <mxCell id="42" style="exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" parent="1" source="2" target="38" edge="1" simNum="0">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+    <Object label="" id="44">
+      <Array as="constraints">
+        <mxConnectionConstraint>
+          <mxPoint y="0.1" as="point" />
+        </mxConnectionConstraint>
+        <mxConnectionConstraint>
+          <mxPoint y="0.5" as="point" />
+        </mxConnectionConstraint>
+        <mxConnectionConstraint>
+          <mxPoint y="0.9" as="point" />
+        </mxConnectionConstraint>
+      </Array>
+      <mxCell style="shape=rectangle;type=simArray;inps=3;output=1;" vertex="1" parent="1">
+        <mxGeometry x="600" y="410" width="10" height="140" as="geometry" />
+      </mxCell>
+    </Object>
+    <mxCell id="45" style="exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="44" target="7" simNum="0">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+    <Object label="Loop" id="52">
+      <Array as="constraints">
+        <mxConnectionConstraint>
+          <mxPoint x="1" y="0.5" as="point" />
+        </mxConnectionConstraint>
+      </Array>
+      <mxCell style="shape=triangle;type=simText;subtype=simGain;tbold=1;tsize=14;tpad=-4;text=1;output=1;flipx=1;flipH=1;" vertex="1" parent="1">
+        <mxGeometry x="240" y="230" width="40" height="40" as="geometry" />
+      </mxCell>
+    </Object>
+    <mxCell id="53" style="exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;edgeStyle=orthogonalEdgeStyle;" edge="1" simNum="0" parent="1" source="32" target="52">
+      <mxGeometry relative="1" as="geometry">
+        <Array as="points">
+          <mxPoint x="690" y="80" />
+          <mxPoint x="690" y="250" />
+        </Array>
+        <mxPoint x="660" y="80" as="sourcePoint" />
+        <mxPoint x="150" y="100" as="targetPoint" />
+      </mxGeometry>
+    </mxCell>
+    <mxCell id="54" style="exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;" edge="1" parent="1" source="52" target="38" simNum="1">
+      <mxGeometry relative="1" as="geometry">
+        <Array as="points">
+          <mxPoint x="150" y="180" />
+        </Array>
+      </mxGeometry>
+    </mxCell>
+    <mxCell id="55" style="exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="2" target="44" simNum="1">
+      <mxGeometry relative="1" as="geometry">
+        <Array as="points">
+          <mxPoint x="110" y="280" />
+        </Array>
+      </mxGeometry>
+    </mxCell>
+    <mxCell id="56" style="exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.9;entryDx=0;entryDy=0;" edge="1" parent="1" source="26" target="44" simNum="2">
+      <mxGeometry relative="1" as="geometry">
+        <Array as="points">
+          <mxPoint x="470" y="310" />
+        </Array>
+      </mxGeometry>
+    </mxCell>
+  </root>
+</mxGraphModel>

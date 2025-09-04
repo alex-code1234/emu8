@@ -1,0 +1,2757 @@
+<!-- run from root (ML) folder as localhost:8080/sim/test.html -->
+<!DOCTYPE html>
+<html lang='en'>
+<head>
+    <meta name='viewport' content='initial-scale=1' />
+    <style>
+        body { background-color: black; font-family: arial; color: lightgray; font-size: 14px; margin: 0px; }
+        #log { margin: 0px; }
+        .header { width: 100%; height: 32px; }
+        .content { width: 100%; height: calc(100vh - 182px); overflow: hidden; }
+        .footer { width: 100%; height: 150px; clear: both; overflow: auto; }
+        .header .toolBtn { margin-top: 5px; margin-right: 2px; }
+        .header img.toolBtn { width: 20px; height: 20px; margin-bottom: -5px; }
+        td.mxWindowPane, .label { color: black; }
+        form button, input, select { font-family: inherit; font-size: 100%;
+                width: 130px; padding: 0; margin: 0 0 5px 0; box-sizing: border-box; }
+        form label { display: inline-block; width: 75px; }
+        form input[type=checkbox] { vertical-align: top; }
+        #update { float: right; }
+    </style>
+    <script type='text/javascript'>
+        window.onerror = function(event, source, line, col, error) {
+            const text = `SyntaxError: ${error.message} at ${source}:${line}:${col}`;
+            document.write(`<span style="color: red;">${text}</span><br/>`);
+        };
+    </script>
+    <script src='../lib/nnlib.js'></script>
+    <script type='text/javascript'>
+        const mxBasePath = 'libs';
+    </script>
+    <script src='libs/mxClient.min.js'></script>
+    <script type='text/javascript'>
+        const vis_min = '250px',
+              vis_max = '99vw';
+    </script>
+    <script src='libs/tfjs-vis.min.js'></script>
+</head>
+<body>
+<div class='header' id='tools'></div>
+<div class='content' id='diagram'></div>
+<div class='footer'>
+    <pre id='log'></pre>
+</div>
+<script type='text/javascript'>
+'use strict';
+
+// styles:
+//     type=          - sim shape type (simSignal|simScope|simText|simSum|simText2|simArray|simSat)
+//     subtype=       - actual type for simText or simText2 (simGain|simDudt|sim1s|simTransfer)
+//     flipx=0|1      - reversed x orientation
+//     flipy=0|1      - reversed y orientation for simSum
+//     output=0|1     - outgoing connection enabled
+//     signal=0|1|2   - signal for simSignal type:
+//         0 - step,
+//         1 - ramp,
+//         2 - impulse
+//         3 - constant (initial as value)
+//     tbold=0|1      - bold font for simText|simSum|simText2|simSignal
+//     tsize=11       - font size for simText|simSum|simText2|simSignal
+//     tpad=0         - pad text right with n spaces for simText
+//                      or left if n negative
+//     text=          - text for simText
+//     tdx=0          - text x offset for simText
+//     tdy=0          - text y offset for simText
+//     talign=center  - horizontal text align for simText
+//     tvalign=middle - vertical text align for simText
+//     sopers=pm      - operators for simSum (2 or 3, p for +, m for -, u for *, d for /)
+//     text1          - top text for simText2|simTransfer
+//     text2          - bottom text for simText2|simTransfer
+//     mtd            - integration method name for sim1s|simTransfer
+//     ini            - initial integrator value(s) for sim1s|simTransfer
+//                      or initial value for simSignal (for step|ramp|impulse, value for constant, min for sin|rand)
+//     fin            - final value for simSignal (for step|ramp|impulse, max for sin|rand)
+//     shift          - shift for simSignal
+//     slope          - slope for simSignal (for ramp)
+//     sdt            - dt for simSignal (for impulse)
+//     prd            - period (duration) for simSignal
+//     clrs,wdts,dots - graph parameters for simScope
+//     ymia           - graph Y min max for simScope
+//     inps           - number of inputs for simArray
+//     min,max        - min and max values for simSat (saturation)
+//     a,b,dt,iv      - layer node globals
+// xml node
+//     attributes:
+//         label - string
+//     nested tags (object properties):
+//         constraints - array of fixed points
+//         ui - cell object editors map:
+//             key   - type|subtype,
+//             value - editor (style parameter is cell style key-value map):
+//                 init   - function(style, num_constraints) -> html panel string
+//                          (must have button with id='update'),
+//                 update - function(panel, style, num_constraints) -> [n,offset|null,start]|undefined:
+//                              n - number of constraints to add/remove (if negative);
+//                              offset - from start point (or from last constraint if start is null)
+//                                       to recalculate added;
+//                              start  - start point to recalculate all constraints
+class Diagram {
+    static get Version() {
+        return mxClient.VERSION;
+    }
+    static get BckgImg() {
+        // implicit background image
+        return 'data:image/gif;base64,' +
+                'R0lGODlhCgAKAJEAAAAAAP///8zMzP///yH5BAEAAAMALAAAAAAKAAoAAAIJ1I6py+0Po2wFADs=';
+    }
+    static parseStyle(style) {
+        // parse cell style string->map/map->string
+        return (typeof style === 'string') ?
+                style.split(';').reduce((obj, item) => {
+                    const kv = item.split('=');
+                    if (kv[0])
+                        obj[kv[0]] = kv[1];
+                    return obj;
+                }, {}) :
+                Object.entries(style).reduce((obj, item) => {
+                    return obj + ((item[1] === undefined) ? item[0] + ';' :
+                            (item[1] !== null) ? item[0] + '=' + item[1] + ';' : '');
+                }, '');
+    }
+    static isNode(cell) {
+        return cell.isVertex() && mxUtils.isNode(cell.value);
+    }
+    static getAttr(style, name) {
+        let m;
+        return (style && (m = style.match(new RegExp(`${name}=(.*?)(;|$)`)))) ? m[1] : null;
+    }
+    static getType(cell) {
+        let s, m;
+        return (cell && (s = cell.style) &&
+                ((m = s.match(/subtype=(.*?)(;|$)/)) || (m = s.match(/type=(.*?)(;|$)/)))) ? m[1] : null;
+    }
+    constructor(container, {
+        bckg_color = '#faf9f6',                             // diagram background color
+        bckg_url = mxClient.imageBasePath + '/grid.gif',    // diagram background image
+        btnClass = 'toolBtn',                               // default class for buttons
+        rubber = true,                                      // rubber band
+        handle_size = 7,                                    // resize/move handles size
+        touch_tol = 12,                                     // touch tolerance
+        guide_color = '#ff00ff',                            // drag guides color
+        vertex_rounded = false,                             // vertex rounded edges
+        vertex_shadow = false,                              // vertex shadow
+        vertex_label = 'bottom',                            // vertex label position (align)
+                                                            // (can be middle, left, right, top, bottom)
+        vertex_defaults = (style) => {
+            style[mxConstants.STYLE_STROKEWIDTH] = 1;       // vertex border width
+            style[mxConstants.STYLE_STROKECOLOR] = 'black'; // vertex border color
+            style[mxConstants.STYLE_FILLCOLOR] = 'white';   // vertex background
+            style[mxConstants.STYLE_FONTCOLOR] = 'black';   // vertex text color
+            style[mxConstants.STYLE_FONTSIZE] = '12';       // vertex text size
+        },
+        edge_style = mxConstants.EDGESTYLE_ELBOW,           // edge style
+        edge_rounded = true,                                // edge rounded corners
+        edge_shadow = false,                                // edge shadow
+        edge_defaults = (style) => {
+            style[mxConstants.STYLE_STROKEWIDTH] = 1;       // edge width
+            style[mxConstants.STYLE_STROKECOLOR] = 'black'; // edge color
+            style[mxConstants.STYLE_FONTCOLOR] = 'black';   // edge label text color
+            style[mxConstants.STYLE_FONTSIZE] = '12';       // edge label text size
+        },
+        discon_edges = false,                               // allow dsconnected edges
+        split_edges = true,                                 // allow split existing edges
+        connectable = true,                                 // allow connections
+        conn_url = mxClient.imageBasePath + '/fork.png',    // connect image
+        conn_size = [26,26],                                // connect image size [width,height]
+        conn_offs = [26,0],                                 // connect image offset [x,y]
+        port_url = mxClient.imageBasePath + '/port.png',    // port image
+        port_size = [26,26],                                // port image size [width,height]
+        exit_point = [1,0.5],                               // connect exit point
+        nodes = true,                                       // use xml nodes as values
+        ui = null,                                          // cells html editor data
+        events = null,                                      // function(node, value, isLabel) - listener for nodes
+                                                            // added, removed and labelChanged events;
+                                                            // value is true - node added, otherwise removed;
+                                                            // node is null and value is false - all removed
+        undoable = true,                                    // use undo manager
+        panning = true                                      // allow panning
+    } = {}) {
+        if (typeof container === 'string')
+            container = document.getElementById(container);
+        let page_style = '';
+        if (bckg_color !== null)
+            page_style += `background-color: ${bckg_color} !important;`;
+        if (bckg_url !== null)
+            page_style += `background-image: url("${bckg_url}");`;
+        if (page_style.length > 0)
+            container.style = page_style;
+        this.graph = new mxGraph(container);
+        // start zoom from top left corner
+        this.graph.centerZoom = false;
+        // disable built-in text selection and context menu if not editing text
+        const textEditing = mxUtils.bind(this.graph, function(evt) {
+            return this.isEditing();
+        });
+        container.onselectstart = textEditing;
+        container.onmousedown = textEditing;
+        container.oncontextmenu = textEditing;
+        // pan support
+        if (panning) {
+            this.graph.setPanning(true);
+            mxPanningHandler.prototype.pinchEnabled = false;
+            mxPanningHandler.prototype.useGrid = true;
+            mxPanningHandler.prototype.isPanningTrigger = function(me) {
+                const evt = me.getEvent(),
+                      st = me.getState() ?? null;
+                return (st === null && !mxEvent.isMouseEvent(evt)) ||
+                        (mxEvent.isPopupTrigger(evt) &&
+                                (st === null || mxEvent.isControlDown(evt) || mxEvent.isShiftDown(evt)));
+            };
+            if (rubber)
+                this.graph.addListener(mxEvent.TAP_AND_HOLD, (sender, evt) => {
+                    let me;
+                    if (!mxEvent.isMultiTouchEvent(evt) && (me = evt.getProperty('event')) &&
+                            (evt.getProperty('cell') ?? null) === null) {
+                        const pt = mxUtils.convertPoint(container,
+                                mxEvent.getClientX(me), mxEvent.getClientY(me));
+                        this.rubberBand.start(pt.x, pt.y);
+                        evt.consume();
+                    }
+                });
+        }
+        // rubber band selection
+        if (rubber)
+            this.rubberBand = new mxRubberband(this.graph);
+        // improve touch tolerance
+        mxConstants.HANDLE_SIZE = handle_size;
+        mxConstants.LABEL_HANDLE_SIZE = handle_size;
+        mxShape.prototype.svgStrokeTolerance = touch_tol;
+        mxVertexHandler.prototype.tolerance = touch_tol;
+        mxEdgeHandler.prototype.tolerance = touch_tol;
+        mxGraph.prototype.tolerance = touch_tol;
+        mxConnectionHandler.prototype.ignoreMouseDown = true;
+        // vertex selection and sizing defaults
+        mxVertexHandler.prototype.manageSizers = true;
+        mxVertexHandler.prototype.livePreview = true;
+        // vertex view defaults
+        let style = this.graph.getStylesheet().getDefaultVertexStyle();
+        vertex_defaults(style);
+        style[mxConstants.STYLE_ROUNDED] = vertex_rounded;
+        style[mxConstants.STYLE_SHADOW] = vertex_shadow;
+        switch (vertex_label) {
+            case 'left':
+                style[mxConstants.STYLE_LABEL_POSITION] = mxConstants.ALIGN_LEFT;
+                style[mxConstants.STYLE_ALIGN] = mxConstants.ALIGN_RIGHT;
+                break;
+            case 'right':
+                style[mxConstants.STYLE_LABEL_POSITION] = mxConstants.ALIGN_RIGHT;
+                style[mxConstants.STYLE_ALIGN] = mxConstants.ALIGN_LEFT;
+                break;
+            case 'top':
+                style[mxConstants.STYLE_VERTICAL_LABEL_POSITION] = mxConstants.ALIGN_TOP;
+                style[mxConstants.STYLE_VERTICAL_ALIGN] = mxConstants.ALIGN_BOTTOM;
+                break;
+            case 'bottom':
+                style[mxConstants.STYLE_VERTICAL_LABEL_POSITION] = mxConstants.ALIGN_BOTTOM;
+                style[mxConstants.STYLE_VERTICAL_ALIGN] = mxConstants.ALIGN_TOP;
+                break;
+            default:
+                // middle
+                break;
+        }
+        // edge view defaults
+        style = this.graph.getStylesheet().getDefaultEdgeStyle();
+        edge_defaults(style);
+        style[mxConstants.STYLE_EDGE] = edge_style;
+        style[mxConstants.STYLE_ROUNDED] = edge_rounded;
+        style[mxConstants.STYLE_LABEL_BACKGROUNDCOLOR] = bckg_color;
+        style[mxConstants.STYLE_SHADOW] = edge_shadow;
+        // snap to grid and guides
+        mxGraphHandler.prototype.guidesEnabled = true;
+        mxEdgeHandler.prototype.snapToTerminals = true;
+        mxConstants.GUIDE_COLOR = guide_color;
+        // handle disconnected edges
+        this.graph.setAllowDanglingEdges(discon_edges);
+        this.graph.setDisconnectOnMove(discon_edges);
+        // handle split edges
+        mxGraph.prototype.dropEnabled = split_edges;
+        mxGraph.prototype.splitEnabled = split_edges;
+        // grouping refinements
+        mxEdgeHandler.prototype.parentHighlightEnabled = true;   // highlight parent cell
+        mxVertexHandler.prototype.parentHighlightEnabled = true; // if child cell selected
+        mxGraph.prototype.constrainChildren = false;             // allow container only resizing
+        // connection management
+        if (connectable) {
+            this.graph.setConnectable(true);
+            // set connect image
+            if (conn_url !== null) {
+                mxConnectionHandler.prototype.connectImage = new mxImage(conn_url, ...conn_size);
+                if (conn_offs[0] !== 0 || conn_offs[1] !== 0) {
+                    const getIconPosition = mxConnectionHandler.prototype.getIconPosition;
+                    mxConnectionHandler.prototype.getIconPosition = function(icon, state) {
+                        const point = getIconPosition.apply(this, arguments),
+                              [x_offs, y_offs] = conn_offs;
+                        let offs;
+                        if (x_offs !== 0) {
+                            offs = state.cell.geometry.width / 2 + x_offs;
+                            if (state.style.flipx)
+                                offs = -offs;
+                            point.x += offs;
+                        }
+                        if (y_offs !== 0) {
+                            offs = state.cell.geometry.height / 2 + y_offs;
+                            if (state.style.flipy)
+                                offs = -offs;
+                            point.y += offs;
+                        }
+                        return point;
+                    };
+                }
+            }
+            // set port image
+            if (port_url !== null)
+                mxConstraintHandler.prototype.pointImage = new mxImage(port_url, ...port_size);
+            // force output enabled cell style
+            mxConnectionHandler.prototype.isConnectableCell = function(cell) {
+                return cell && cell.style && cell.style.indexOf('output=1') >= 0;
+            };
+            // force fixed points connection constraints (snap to fixed points)
+            mxConstraintHandler.prototype.intersects = function(icon, point, source, existingEdge) {
+                return (!source || existingEdge) || mxUtils.intersects(icon.bounds, point);
+            };
+            // force fixed points connection constraints (snap to exit point)
+            if (exit_point !== null) {
+                const exit_constraint = new mxConnectionConstraint(new mxPoint(...exit_point), true);
+                const mouseMove = mxConnectionHandler.prototype.mouseMove;
+                mxConnectionHandler.prototype.mouseMove = function(sender, me) {
+                    this.sourceConstraint = null;
+                    mouseMove.apply(this, arguments);
+                };
+                const getSourcePerimeterPoint = mxConnectionHandler.prototype.getSourcePerimeterPoint;
+                mxConnectionHandler.prototype.getSourcePerimeterPoint = function(state, pt, me) {
+                    let result = null;
+                    if (this.previous !== null && pt !== null) {
+                        const point = exit_constraint.point;
+                        [point.x, point.y] = exit_point;
+                        if (state.style.flipx)
+                            point.x = 1 - point.x;
+                        if (state.style.flipy)
+                            point.y = 1 - point.y;
+                        this.sourceConstraint = exit_constraint;
+                        result = this.graph.getConnectionPoint(this.previous, exit_constraint);
+                    }
+                    if (result === null)
+                        result = getSourcePerimeterPoint.apply(this, arguments);
+                    return result;
+                };
+            }
+        }
+        // xml nodes
+        if (nodes) {
+            // node value editing
+            const convertValueToString = this.graph.convertValueToString;
+            this.graph.convertValueToString = function(cell) {
+                if (mxUtils.isNode(cell.value))
+                    return cell.getAttribute('label', '');
+                return convertValueToString.apply(this, arguments);
+            };
+            const valueForCellChanged = this.graph.model.valueForCellChanged;
+            this.graph.model.valueForCellChanged = function(cell, value) {
+                if (mxUtils.isNode(cell.value)) {
+                    const previous = cell.value.getAttribute('label');
+                    cell.value.setAttribute('label', value);
+                    return previous;
+                }
+                return valueForCellChanged.apply(this, arguments);
+            }
+            // node encode/decode user object
+            mxObjectCodec.prototype.exclude = ['inputs', 'outputs'];
+            mxObjectCodec.prototype.afterDecode = function(dec, node, obj) {
+                if (node.nodeName === 'mxCell' && obj.value && obj.value.constructor.name === 'Element')
+                    dec.decode(obj.value, obj.value);
+                return obj;
+            };
+            const cellCodec = mxCodecRegistry.getCodec(mxCell),
+                  afterEncode = cellCodec.afterEncode;
+            cellCodec.afterEncode = function(enc, obj, node) {
+                const ov = obj.value;
+                if (ov && ov.constructor.name === 'Element' && ov.childNodes.length === 0)
+                    ov.append(...enc.encode({...ov}).childNodes);
+                return afterEncode.apply(this, arguments);
+            };
+            // node constraints
+            this.graph.getAllConnectionConstraints = function(terminal) {
+                if (terminal !== null) {
+                    const cell = terminal.cell;
+                    if (cell !== null && this.model.isVertex(cell) && mxUtils.isNode(cell.value))
+                        return cell.value.constraints;
+                }
+                return null;
+            };
+            // node object editing
+            if (ui !== null) {
+                this.ui = ui;
+                this.graph.getSelectionModel().addListener(mxEvent.CHANGE, (sender, evt) => {
+                    // clear current html panel
+                    if (this.ui.panel.childNodes.length > 0)
+                        this.ui.panel.innerHTML = '';
+                    // find last selected vertex ui data
+                    let c, l, s, t, data;
+                    if ((c = evt.getProperty('removed')) && (l = c.length) && (s = c[l - 1]) &&
+                            ((s.isEdge() && (t = 'edge')) || (Diagram.isNode(s) && (t = Diagram.getType(s)))) &&
+                            (data = this.ui.editors[t])) {
+                        // set html panel
+                        const st = Diagram.parseStyle(s.style),
+                              constrcnt = s.value?.constraints?.length ?? 0;
+                        this.ui.panel.innerHTML = data.init(st, constrcnt);
+                        const flipx = st['flipx'] ?? '0',
+                              flipy = st['flipy'] ?? '0';
+                        // set update handler
+                        const upd = document.getElementById('update');
+                        if (upd)
+                            upd.onclick = (e) => {
+                                let reselect = false;
+                                const res = data.update(st, constrcnt, s.id);
+                                // add/remove constraints
+                                if (res && s.value?.constraints) {
+                                    const [num, offs, start] = res;
+                                    if (num < 0)
+                                        // remove constraints
+                                        s.value.constraints.splice(num, Math.abs(num));
+                                    if (offs) {
+                                        if (flipx === '1')
+                                            offs.x = -offs.x;
+                                        if (flipy === '1')
+                                            offs.y = -offs.y;
+                                        let curr;
+                                        if (start) {
+                                            if (flipx === '1')
+                                                start.x = 1 - start.x;
+                                            if (flipy === '1')
+                                                start.y = 1 - start.y;
+                                            curr = start;
+                                            // recalculate constraints
+                                            s.value.constraints.forEach(item => {
+                                                item.point.x = curr.x; item.point.y = curr.y;
+                                                curr.x += offs.x; curr.y += offs.y;
+                                            });
+                                        } else {
+                                            curr = s.value.constraints[constrcnt - 1].point.clone();
+                                            curr.x += offs.x; curr.y += offs.y;
+                                        }
+                                        // add constraints
+                                        for (let i = 0; i < num; i++) {
+                                            s.value.constraints.push(new mxConnectionConstraint(curr.clone(), true));
+                                            curr.x += offs.x; curr.y += offs.y;
+                                        }
+                                    }
+                                    // reset constraints handler
+                                    this.graph.connectionHandler.constraintHandler.reset();
+                                    reselect = true;
+                                }
+                                // process flip change
+                                const new_flipx = st['flipx'] ?? '0',
+                                      new_flipy = st['flipy'] ?? '0';
+                                if (new_flipx !== flipx) {
+                                    if (st['shape'] === 'triangle') {
+                                        st['flipH'] = (new_flipx === '1') ? new_flipx : null;
+                                        if (st['type'] === 'simText')
+                                            st['tpad'] = (new_flipx === '1') ? -4 : 4;
+                                    }
+                                    if (s.value?.constraints)
+                                        s.value.constraints.forEach(item => item.point.x = 1 - item.point.x);
+                                    reselect = true;
+                                }
+                                if (new_flipy !== flipy && s.value?.constraints) {
+                                    s.value.constraints.forEach(item => item.point.y = 1 - item.point.y);
+                                    reselect = true;
+                                }
+                                // update constraints
+                                if (reselect && s.value?.constraints) {
+                                    const value = mxUtils.createXmlDocument().createElement('Object');
+                                    value.setAttribute('label', s.value.getAttribute('label'));
+                                    value.constraints = s.value.constraints;
+                                    s.setValue(value);
+                                }
+                                // update graph
+                                this.graph.model.setStyle(s, Diagram.parseStyle(st));
+                                if (reselect) {
+                                    sender.removeCell(s);
+                                    sender.addCell(s);
+                                }
+                            };
+                    }
+                });
+            }
+            // node events
+            if (events !== null) {
+                this.graph.addListener(mxEvent.CELLS_ADDED, (sender, evt) => {
+                    evt.properties.cells.forEach(cell => Diagram.isNode(cell) ? events(cell, true) : null);
+                });
+                this.graph.addListener(mxEvent.CELLS_REMOVED, (sender, evt) => {
+                    evt.properties.cells.forEach(cell => Diagram.isNode(cell) ? events(cell, false) : null);
+                });
+                this.graph.addListener(mxEvent.LABEL_CHANGED, (sender, evt) => {
+                    let cell;
+                    if ((cell = evt.properties.cell) && Diagram.isNode(cell))
+                        events(cell, evt.properties.value, true);
+                });
+                this.graph.model.addListener(mxEvent.CHANGE, (sender, evt) => {
+                    let changes, root;
+                    if ((changes = evt.getProperty('edit').changes) && (root = changes[0]) &&
+                            root.constructor.name === 'mxRootChange') {
+                        events(null, false);
+                        this.getNodes().forEach(node => events(node, true));
+                    }
+                });
+            }
+            // node copy/paste support
+            const cloneValue = mxCell.prototype.cloneValue;
+            mxCell.prototype.cloneValue = function() {
+                const result = cloneValue.apply(this, arguments);
+                let constrs;
+                if (this.value && (constrs = this.value.constraints))
+                    result.constraints = constrs.map(c => new mxConnectionConstraint(
+                            c.point.clone(), c.perimeter, c.name, c.dx, c.dy));
+                return result;
+            };
+        }
+        // undo manager
+        if (undoable) {
+            this.undoManager = new mxUndoManager();
+            const u_lst = (sender, evt) => this.undoManager.undoableEditHappened(evt.getProperty('edit'));
+            this.graph.getModel().addListener(mxEvent.UNDO, u_lst);
+            this.graph.getView().addListener(mxEvent.UNDO, u_lst);
+        }
+        this.btnClass = btnClass;
+        this.nodes = nodes;
+    }
+    getXML(formatted = false) {
+        const enc = new mxCodec(),
+              doc = enc.encode(this.graph.getModel());
+        return formatted ? mxUtils.getPrettyXml(doc) : mxUtils.getXml(doc);
+    }
+    setXML(xml_str) {
+        const doc = mxUtils.parseXml(xml_str),
+              node = doc.documentElement,
+              enc = new mxCodec(node.ownerDocument),
+              model = this.graph.getModel();
+        const error = node.querySelector('parsererror');
+        if (error)
+            throw new Error(error.querySelector('div').childNodes[0].nodeValue.trim());
+        // sort by node type, connectable and id
+        let tmp;
+        const root = doc.getElementsByTagName('root')[0],
+              gnp = n => (tmp = n.innerHTML.match(/ parent="(.*?)"/)) ? tmp[1] : 0,
+              iscte = n => n.innerHTML.indexOf(';foldable=0;') >= 0,
+              isct = n => n.getAttribute('connectable', '') == 0 || iscte(n);
+        [...root.children].sort((a, b) => (a.id < 2 || b.id < 2) ? 0 :
+                isct(a) ? isct(b) ? (iscte(a) && iscte(b)) ? gnp(a) - gnp(b) : a.id - b.id : -1 : isct(b) ? 1 :
+                (a.nodeName === b.nodeName) ? a.id - b.id : (a.nodeName === 'Object') ? -1 : 1
+        ).forEach(n => root.appendChild(n));
+        // load sorted nodes
+        model.beginUpdate();
+        try {
+            enc.decode(node, model);
+        } catch(e) {
+            console.error(e.message + '\n' + e.stack);
+        } finally {
+            model.endUpdate();
+        }
+    }
+    createButton(parent, caption, func) {
+        let button;
+        if (!caption.match(/.*(\.png|\.gif|\.jpg)$/))
+            button = mxUtils.button(caption, func);
+        else {
+            button = mxUtils.createImage(mxClient.imageBasePath + '/' + caption);
+            mxEvent.addListener(button, 'click', function(evt) {
+                func(evt);
+            });
+        }
+        if (parent !== null) {
+            if (typeof parent === 'string')
+                parent = document.getElementById(parent);
+            parent.appendChild(button);
+        }
+        if (this.btnClass !== null)
+            button.className = this.btnClass;
+        return button;
+    }
+    edit(func) {
+        const graph = this.graph,
+              model = graph.getModel();
+        model.beginUpdate();
+        try {
+            return func(graph, model, graph.getDefaultParent());
+        } finally {
+            model.endUpdate();
+        }
+    }
+    addVertex(label, x, y, width, height, style, constraints = null, rel = false) {
+        return this.edit((graph, model, parent) => {
+            let value = label;
+            if (this.nodes) {
+                const doc = mxUtils.createXmlDocument();
+                value = doc.createElement('Object');
+                value.setAttribute('label', label);
+                if (constraints !== null)
+                    value.constraints = constraints;
+            }
+            return graph.insertVertex(parent, null, value, x, y, width, height, style, rel);
+        });
+    }
+    getNodes() {
+        return this.graph.model.filterDescendants(Diagram.isNode);
+    }
+    findRootNodes(parent = null) {
+        const graph = this.graph;
+        if (parent === null)
+            parent = graph.getDefaultParent();
+        return [
+            ...graph.findTreeRoots(parent).filter(Diagram.isNode),
+            ...graph.model.filterDescendants(cell => cell.isVertex() && cell.getAttribute('connectable', '') == 0)
+                    .reduce((obj, cell) => {
+                obj.push(...graph.findTreeRoots(cell).filter(cell =>
+                        Diagram.isNode(cell) && this.getIncomingEdges(cell) === 0));
+                return obj;
+            }, [])
+        ];
+    }
+    traverse(vertex, directed, func, edge, visited, inverse) {
+        if (func === null || vertex === null)
+            return;
+        directed = directed ?? true;
+        inverse = inverse ?? false;
+        visited = visited ?? new mxDictionary();
+        if (visited.get(vertex))
+            return;
+        visited.put(vertex, true);
+        if (func(vertex, edge) ?? true) {
+            const model = this.graph.getModel(),
+                  edges = [...this.getIncomingEdges(vertex), ...this.getOutgoingEdges(vertex)];
+            for (let i = 0, n = edges.length; i < n; i++) {
+                const e = edges[i],
+                      isSource = model.getTerminal(e, true) === vertex;
+                if (!directed || (!inverse === isSource))
+                    this.traverse(model.getTerminal(e, !isSource), directed, func, e, visited, inverse);
+            }
+        }
+    }
+    traverseNodes(first, func = null, visited = null) {
+        let count = 0;
+        this.traverse(first, true, (cell, edge) => {
+            if (Diagram.isNode(cell)) {
+                count++;
+                if (func !== null && func(cell, edge) === false)
+                    return false;
+                if (visited !== null)
+                    visited.push(cell);
+            }
+        }, null, null, false);
+        return count;
+    }
+    getBlockIntf(group) {
+        // find inputs and output
+        const result = {'inputs': [], 'output': null};
+        group.children.forEach(e => {
+            if (Diagram.isNode(e)) {
+                const type = Diagram.getType(e);
+                if (type === 'simArrV' && this.getIncomingEdges(e).length === 0)
+                    result.inputs.push(e);
+                else if (type === 'simArray' && this.getOutgoingEdges(e).length === 0)
+                    result.output = e;
+            }
+        });
+        return result;
+    }
+    getIncomingEdges(cell) {
+        if (cell.inputs)
+            return cell.inputs;
+        const result = this.graph.getIncomingEdges(cell);
+        let edgs, len;
+        if (result.length === 0 && (edgs = cell.edges) && (len = edgs.length))
+            for (let i = 0; i < len; i++) {
+                const edge = edgs[i];
+                if (edge.target === cell)
+                    result.push(edge);
+            }
+        return result;
+    }
+    getOutgoingEdges(cell) {
+        if (cell.outputs)
+            return cell.outputs;
+        const result = this.graph.getOutgoingEdges(cell);
+        let edgs, len;
+        if (result.length === 0 && (edgs = cell.edges) && (len = edgs.length))
+            for (let i = 0; i < len; i++) {
+                const edge = edgs[i];
+                if (edge.source === cell)
+                    result.push(edge);
+            }
+        return result;
+    }
+}
+
+const ShapeMixin = {
+    paintVertexShape(c, x, y, w, h) {
+        this.superPaintVertexShape(...arguments);
+        const type = this.style ? this.style['type'] : null;
+        if (!type)
+            return;
+        if ((this.style['shape'] ?? '') !== 'triangle')
+            c.translate(x, y);
+        switch (type) {
+            case 'simSignal':
+                const sg = this.style['signal'] ?? 0,
+                      w2 = w / 2;
+                if (sg === 3) {
+                    const cnst = String(this.style['ini'] ?? 0),
+                          cnsz = this.style['tsize'] ?? 11,
+                          cnsd = mxUtils.getSizeForString(cnst, cnsz);
+                    this.plainText(c, x + (w - cnsd.width) / 2, y + (h - cnsd.height) / 2 + 3,
+                            cnsd.width, cnsd.height, cnst, 'left', 'top', this.style['tbold'], cnsz);
+                }
+                c.begin();
+                c.moveTo(10, h - 10);
+                switch (sg) {
+                    case 0: // step
+                        c.lineTo(w2 - 5, h - 10);
+                        this.paintCurve(c, w2 - 5, h - 10, 5, -5);
+                        c.lineTo(w2, 15);
+                        this.paintCurve(c, w2, 15, 5, -5, false);
+                        c.lineTo(w - 10, 10);
+                        break;
+                    case 1: // ramp
+                        c.lineTo(20, h - 10);
+                        c.lineTo(w2, 10);
+                        c.lineTo(w - 20, h - 10);
+                        c.lineTo(w - 10, h - 10);
+                        break;
+                    case 2: // impulse
+                        c.lineTo(w2 - 5, h - 10);
+                        this.paintCurve(c, w2 - 5, h - 10, 3, -3);
+                        c.lineTo(w2, 10);
+                        c.lineTo(w2 + 2, h - 13);
+                        this.paintCurve(c, w2 + 2, h - 13, 3, 3, false);
+                        c.lineTo(w - 10, h - 10);
+                        break;
+                    case 3: // constant
+                        c.moveTo(w - 10, 13);
+                        c.lineTo(w - 15, 13);
+                        c.moveTo(w - 10, 10);
+                        c.lineTo(w - 15, 10);
+                        break;
+                    case 4: // sinus
+                        c.lineTo(10, h - 25);
+                        this.paintCurve(c, 10, h - 25, 10, -15, false);
+                        this.paintCurve(c, 20, h - 40, 10, 15);
+                        this.paintCurve(c, 30, h - 25, 10, 15, false);
+                        this.paintCurve(c, 40, h - 10, 10, -15);
+                        c.lineTo(50, h - 35);
+                        break;
+                    case 5: // random
+                        const w13 = (w2 - 10) / 3,
+                              w23 = w13 * 2;
+                        c.lineTo(10 + w13, 25);
+                        c.lineTo(10 + w23, h - 15);
+                        c.lineTo(w2, 10);
+                        c.lineTo(w2 + w13, h - 25);
+                        c.lineTo(w2 + w23, 27);
+                        c.lineTo(w - 10, h - 10);
+                        break;
+                }
+                if (sg !== 3 && +(this.style['prd'] ?? '0') > 0) {
+                    c.moveTo(w - 10, 15);
+                    c.lineTo(w - 10, 20);
+                    c.lineTo(w - 14, 16);
+                    c.lineTo(w - 14, 21);
+                }
+                c.stroke();
+                break;
+            case 'simScope':
+            case 'simView3D':
+                const h_3 = h / 3;
+                c.begin();
+                c.roundrect(5, 5, w - 10, h - h_3 - 5, 5, 5);
+                const node = c.node;
+                c.stroke();
+                node.setAttribute('fill', '#faf9f6');
+                if (type === 'simView3D') {
+                    const w_2 = w / 2,
+                          h_32 = h - h_3 - 12;
+                    c.begin();
+                    c.moveTo(w_2, 10);
+                    c.lineTo(w_2, h_32);
+                    c.lineTo(w - 10, h_32);
+                    c.moveTo(w_2, h_32);
+                    c.lineTo(10, h_32 + 7);
+                    c.stroke();
+                }
+                break;
+            case 'simText':
+                const dx = this.style['tdx'] ?? 0,
+                      dy = this.style['tdy'] ?? 0,
+                      txt = decodeURIComponent(this.style['text'] ?? '');
+                let padp = this.style['tpad'] ?? 0,
+                    pad = '',
+                    pright = true;
+                if (padp < 0) {
+                    pright = false;
+                    padp = -padp;
+                }
+                for (let i = 0; i < padp; i++)
+                    pad += '&nbsp;';
+                this.text(c, x + dx, dy, w - dx * 2, h - dy * 2, pright ? txt + pad : pad + txt,
+                        this.style['talign'], this.style['tvalign'],
+                        this.style['tbold'], this.style['tsize']);
+                break;
+            case 'simSum':
+                let to;
+                const o = this.style['sopers'] ?? 'pm',
+                      length = o.length,
+                      bold = this.style['tbold'],
+                      size = this.style['tsize'] ?? 11,
+                      d = mxUtils.getSizeForString('x', size),
+                      x02 = x + w / 2 - d.width / 2,
+                      x0 = this.style['flipx'] ? x + w - 5 - d.width : x + 5,
+                      yt = y + 2,
+                      yb = y + h - d.height + 2,
+                      y1 = this.style['flipy'] ? yt : yb,
+                      y2 = this.style['flipy'] ? yb : yt,
+                      co = (i) => (to = o.charAt(i)) && to === 'p' ? '+' : to === 'm' ? '-' : to === 'u' ? 'x' : ':';
+                if (length > 2)
+                    this.plainText(c, x02, y2, d.width, d.height, co(2), 'left', 'top', bold, size);
+                this.plainText(c, x0, y + h / 2 - d.height / 2, d.width, d.height, co(0), 'left', 'top', bold, size);
+                this.plainText(c, x02, y1, d.width, d.height, co(1), 'left', 'top', bold, size);
+                break;
+            case 'simText2':
+                const tbold = this.style['tbold'],
+                      tsize = this.style['tsize'] ?? 11,
+                      txt1 = decodeURIComponent(this.style['text1'] ?? ''),
+                      txt2 = decodeURIComponent(this.style['text2'] ?? ''),
+                      d1 = mxUtils.getSizeForString(txt1, tsize),
+                      d2 = mxUtils.getSizeForString(txt2, tsize),
+                      ww2 = w / 2,
+                      tx = x + ww2,
+                      h2 = h / 2,
+                      ty = y + h2,
+                      dw12 = d1.width / 2,
+                      dw22 = d2.width / 2,
+                      dw = Math.max(dw12, dw22);
+                this.plainText(c, tx - dw12, ty - d1.height, d1.width, d1.height, txt1, 'left', 'top', tbold, tsize);
+                this.plainText(c, tx - dw22, ty + 3, d2.width, d2.height, txt2, 'left', 'top', tbold, tsize);
+                c.begin();
+                c.moveTo(ww2 - dw - 1, h2);
+                c.lineTo(ww2 + dw + 1, h2);
+                c.stroke();
+                break;
+            case 'simSat':
+                const wh = w / 2,
+                      hh = h / 2;
+                c.begin();
+                c.moveTo(10, h - 15);
+                c.lineTo(15, h - 15);
+                c.lineTo(w - 15, 15);
+                c.lineTo(w - 10, 15);
+                c.moveTo(wh, 10);
+                c.lineTo(wh, h - 10);
+                c.moveTo(10, hh);
+                c.lineTo(w - 10, hh);
+                c.stroke();
+                break;
+            case 'simPID':
+            case 'simAPID':
+                const _txt = (type === 'simPID') ? 'PID' : 'aPID',
+                      _d = mxUtils.getSizeForString(_txt, 14),
+                      _x = x + w / 2 - _d.width / 2,
+                      _y = y + h / 2 - _d.height / 2,
+                      _d1 = mxUtils.getSizeForString('plant', 11),
+                      _y1 = y + ((h * 0.8) | 0) - _d1.height / 2,
+                      _x1 = this.style['flipx'] ? x + w - _d1.width - 5 : x + 5;
+                this.plainText(c, _x, _y, _d.width, _d.height, _txt, 'left', 'top', true, 14);
+                this.plainText(c, _x1, _y1, _d1.width, _d1.height, 'plant', 'left', 'top', false, 11);
+                break;
+            case 'simBlk':
+                const tbld = this.style['tbold'] ?? false,
+                      tsze = this.style['tsize'] ?? 11,
+                      flp = this.style['flipx'];
+                let ltxt = decodeURIComponent(this.style['ltxt'] ?? '').split(','),
+                    rtxt = decodeURIComponent(this.style['rtxt'] ?? '').split(',');
+                const dimT = txts => {
+                    const dim = {x: 0, y: 0};
+                    txts.forEach(item => {
+                        const d = mxUtils.getSizeForString(item, tsze);
+                        if (dim.x < d.width) dim.x = d.width;
+                        if (dim.y < d.height) dim.y = d.height;
+                    });
+                    return dim;
+                };
+                const arrY = (txts, dim, _x) => {
+                    const len = txts.length;
+                    let _y, dy;
+                    if (len > 1)
+                        if (len === 2) {
+                            _y = 0.2; dy = 0.6;
+                        } else {
+                            _y = 0.1; dy = 0.8 / (len - 1);
+                        }
+                    else {
+                        _y = 0.5; dy = 0;
+                    }
+                    _y = (y + _y * h - dim.y / 2) | 0; dy *= h | 0;
+                    txts.forEach(item => {
+                        this.plainText(c, _x, _y, dim.x, dim.y, item, 'left', 'top', tbld, tsze);
+                        _y += dy;
+                    });
+                };
+                let ldim = dimT(ltxt),
+                    rdim = dimT(rtxt);
+                if (flp) {
+                    [ltxt, rtxt] = [rtxt, ltxt];
+                    [ldim, rdim] = [rdim, ldim];
+                }
+                arrY(ltxt, ldim, x + 5);
+                arrY(rtxt, rdim, x + w - 5 - rdim.x);
+                break;
+        }
+    },
+    paintCurve(c, x, y, dx, dy, first_x = true) {
+        c.curveTo(x, y, first_x ? x + dx : x, first_x ? y : y + dy, x + dx, y + dy);
+    },
+    text(c, x, y, w, h, str, align = 'center', valign = 'middle', fontBold = false, fontSize = 11) {
+        c.text(x, y, w, h, str, align, valign, true, 'html', 'fill', true, 0, null);
+        // patch implementation
+        function patch(style, base, width, style2) {
+            let m, m2;
+            if ((m = style.match(/margin-left:.*?px/)) !== null &&
+                    (m2 = style.match(/width:(.*?)px/)) !== null)
+                style = style.replace(m[0], `margin-left: ${base + (((width - m2[1]) / 2) | 0)}px`);
+            if ((m = style.match(/height:.*?px/)) !== null &&
+                    (m2 = style2.match(/max-height:(.*?)px/)) !== null)
+                style = style.replace(m[0], `height: ${m2[1]}px`);
+            return style;
+        }
+        c.root.querySelectorAll('foreignObject').forEach(fo => {
+            const div = fo.childNodes[0],
+                  div2 = div.childNodes[0];
+            if (div && div2) {
+                const style = div.getAttribute('style'),
+                      style2 = div2.getAttribute('style');
+                let new_style = patch(style, x, w, style2),
+                    fontDiv, fontStyle;
+                div.setAttribute('style', new_style);
+                if ((fontDiv = div2.childNodes[0]) && (fontStyle = fontDiv.getAttribute('style'))) {
+                    if (fontBold)
+                        fontStyle += ' font-weight: bold;';
+                    fontStyle += ' font-size: ' + fontSize + 'px;';
+                    fontDiv.setAttribute('style', fontStyle);
+                }
+            }
+        });
+    },
+    plainText(c, x, y, w, h, str, align = 'left', valign = 'top', fontBold = false, fontSize = 11) {
+        c.plainText(x, y, w, h, str, align, valign, false, '', false, 0, null);
+        // patch implementation
+        c.root.querySelectorAll('g').forEach(g => {
+            g.setAttribute('font-size', fontSize + 'px');
+            if (fontBold)
+                g.setAttribute('font-weight', 'bold');
+        });
+    }
+};
+
+mxTriangle.prototype.superPaintVertexShape = mxTriangle.prototype.paintVertexShape;
+Object.assign(mxTriangle.prototype, ShapeMixin);
+mxRectangleShape.prototype.superPaintVertexShape = mxRectangleShape.prototype.paintVertexShape;
+Object.assign(mxRectangleShape.prototype, ShapeMixin);
+mxEllipse.prototype.superPaintVertexShape = mxEllipse.prototype.paintVertexShape;
+Object.assign(mxEllipse.prototype, ShapeMixin);
+
+class PID {
+    constructor(dt, kp, ki, kd, min, max, pom, input0, output0) {
+        this.kp = kp;
+        this.ki = ki * dt;
+        this.kd = kd / dt;
+        this.min = min;
+        this.max = max;
+        this.pom = pom;
+        this.lastInput = input0;
+        this.iTerm = output0;
+        if (this.iTerm < this.min)
+            this.iTerm = this.min;
+        else if (this.iTerm > this.max)
+            this.iTerm = this.max;
+    }
+    compute(setpoint, input) {
+        const error = setpoint - input;
+        const dInp = input - this.lastInput;
+        this.lastInput = input;
+        this.iTerm += this.ki * error;
+        if (this.pom)
+            this.iTerm -= this.kp * dInp;
+        if (this.iTerm < this.min)
+            this.iTerm = this.min;
+        else if (this.iTerm > this.max)
+            this.iTerm = this.max;
+        let output = this.pom ? 0.0 : this.kp * error;
+        output += this.iTerm - this.kd * dInp;
+        if (output < this.min)
+            output = this.min;
+        else if (output > this.max)
+            output = this.max;
+        return output;
+    }
+}
+
+class AdaptivePID {
+    static TF(a, dt, mtd, numer, denom, init) {
+        const xs = [], ys = [],
+              fd = ODE.toFD(numer, denom)(new Signal(t => (xs.length > 1) ? NN.interp1(xs, ys, [t])[0] : ys[0]))[0],
+              model = ODE.step_solution(mtd, init, a, dt);
+        return (t, v) => {
+            xs.push(t); ys.push(v);
+            if (xs.length > 2) {
+                xs.shift(); ys.shift();
+            }
+            const res = init[0];
+            init = model(fd);
+            return res;
+        };
+    }
+    constructor(dt, mnumer, mdenom, minit, gamma, mtd = 'DP5', a = 0.0, mit = false, ff = false) {
+        this.dt = dt;
+        this.t = a;
+        this.mod = AdaptivePID.TF(a, dt, mtd, mnumer, mdenom, minit);
+        this.gmm = AdaptivePID.TF(a, dt, mtd, [-gamma], [1, 0], [minit[0]]);
+        if (!ff) {
+            this.gmp = AdaptivePID.TF(a, dt, mtd, [gamma], [1, 0], [minit[0]]);
+            if (mit)
+                this.modp = AdaptivePID.TF(a, dt, mtd, mnumer, mdenom, minit.slice(0));
+        }
+        this.compute = ff ?
+                mit ? this._computeMITFF : this._computeLyapunovFF :
+                mit ? this._computeMIT : this._computeLyapunov;
+    }
+    _computeLyapunov(setpoint, input) {
+        const error = input - this.mod(this.t, setpoint),
+              theta1 = this.gmm(this.t, setpoint * error),
+              theta2 = this.gmp(this.t, input * error);
+        this.t += this.dt;
+        return setpoint * theta1 - input * theta2;
+    }
+    _computeMIT(setpoint, input) {
+        const uc = this.mod(this.t, setpoint),
+              error = input - uc,
+              theta1 = this.gmm(this.t, uc * error),
+              theta2 = this.gmp(this.t, this.modp(this.t, input) * error);
+        this.t += this.dt;
+        return setpoint * theta1 - input * theta2;
+    }
+    _computeLyapunovFF(setpoint, input) {
+        const error = input - this.mod(this.t, setpoint),
+              theta = this.gmm(this.t, setpoint * error);
+        this.t += this.dt;
+        return setpoint * theta;
+    }
+    _computeMITFF(setpoint, input) {
+        const uc = this.mod(this.t, setpoint),
+              error = input - uc,
+              theta = this.gmm(this.t, uc * error);
+        this.t += this.dt;
+        return setpoint * theta;
+    }
+}
+
+// https://wilselby.com/research/arducopter/model-verification/?amp=1
+// + quad scheme
+//                           m4 (CW)
+//                             |
+//                m3 (CCW) --- 0 --- m1 (CCW) ---> X
+//                             |
+//                           m2 (CW)
+//                             |
+//                             v
+//                             Y
+// control:
+// U1 - the resulting thrust of the four rotors
+// U2 - the difference of thrust between the motors on the x axis
+// U3 - the difference of thrust between the motors on the y axis
+// U4 - the difference of torque between the clockwise and counterclockwise rotors
+// disturbance model:
+// x_dis, y_dis, z_dis - positional disturbance relative to inertial frame
+// phi_dis, theta_dis, psi_dis - rotational disturbance relative to inertial frame
+// returns:
+// X, Y, Z         - position relative to inertial frame
+// phi, theta, psi - axis rotation relative to inertial frame
+// p, q, r         - angular rotation rates relative to body frame
+// Xm, Ym, Zm      - GPS and barometer measurements relative to inertial frame
+// Axm, Aym, Azm   - accelerometer measurements relative to body frame
+// Gxm, Gym, Gzm   - gyroscope measurements relative to body frame
+// motors control:
+// O1, 02, O3, O4 - motors speed (rad/sec)
+class QuadDynamics {
+    constructor(dt, model = null, mtd = 'DP5', a = 0.0) {
+        this.dt = dt;
+        this.t = a;
+        this.model = Object.assign({
+            g: 9.81, // gravity (m/s^2)
+            // construction parameters
+            m: 1.4,                             // mass (kg)
+            l: 0.56,                            // distance from center mass to each motor (m)
+            Jp: 0.044,                          // moment of rotor inertia (kg-m^2)
+            KT: 1.3328e-5,                      // thrust force coeffecient (kg-m)
+            Kd: 1.3858e-6,                      // drag torque coeffecient (kg-m^2)
+            max_motor_speed: 925,               // motors upper limit (rad/s)
+            xyz_Kd: [0.16481, 0.31892, 1.1e-6], // translational drag force coeffecients (kg/s)
+            xyz_J: [0.05, 0.05, 0.24],          // moments of inertia (kg-m^2)
+            // sensor parameters
+            GPS_freq: 100,                                       //(1 / dt) / 1 - GPS rate (1/s)
+            XYZ_error: [0.01, 0.01, 0.02],                       // X,Y - GPS error, Z - barometer error (m)
+            xyz_acc_bias: [0.16594, 0.31691, -8.6759],           // accel bias
+            xyz_acc_sd: [0.0093907, 0.011045, 0.016189],         // accel standard deviation
+            xyz_gyro_bias: [0.00053417, -0.0011035, 0.00020838], // gyro bias
+            xyz_gyro_sd: [0.00066675, 0.00053642, 0.0004403]     // gyro standard deviation
+        }, model ?? {});
+        this.randn = NN.randn(0, 1);
+        this.counter = 1;
+        this.X_dot = AdaptivePID.TF(a, dt, mtd, [1], [1, 0], [0]);
+        this.X = AdaptivePID.TF(a, dt, mtd, [1], [1, 0], [0]);
+        this.Y_dot = AdaptivePID.TF(a, dt, mtd, [1], [1, 0], [0]);
+        this.Y = AdaptivePID.TF(a, dt, mtd, [1], [1, 0], [0]);
+        this.Z_dot = AdaptivePID.TF(a, dt, mtd, [1], [1, 0], [0]);
+        this.Z = AdaptivePID.TF(a, dt, mtd, [1], [1, 0], [0]);
+        this.X_ddot = this.Y_ddot = this.Z_ddot = 0;
+        this.phi = AdaptivePID.TF(a, dt, mtd, [1], [1, 0], [0]);
+        this.theta = AdaptivePID.TF(a, dt, mtd, [1], [1, 0], [0]);
+        this.psi = AdaptivePID.TF(a, dt, mtd, [1], [1, 0], [0]);
+        this.phi_dot = this.theta_dot = this.psi_dot = 0;
+        this.p = AdaptivePID.TF(a, dt, mtd, [1], [1, 0], [0]);
+        this.q = AdaptivePID.TF(a, dt, mtd, [1], [1, 0], [0]);
+        this.r = AdaptivePID.TF(a, dt, mtd, [1], [1, 0], [0]);
+        this.p_dot = this.q_dot = this.r_dot = 0;
+    }
+    compute(U1, U2, U3, U4, x_dis = 0, y_dis = 0, z_dis = 0, phi_dis = 0, theta_dis = 0, psi_dis = 0) {
+        // motor speed calculator (quad_motor_speed) (for + quad scheme)
+        const KT = this.model.KT, Kd = this.model.Kd, l = this.model.l, max_motor_speed = this.model.max_motor_speed,
+              KT4 = 4 * KT, Kd4 = 4 * Kd, KT2l = 2 * KT * l, maxms2 = max_motor_speed * max_motor_speed;
+        let w1 = U1 / KT4 + U3 / KT2l + U4 / Kd4,
+            w2 = U1 / KT4 - U2 / KT2l - U4 / Kd4,
+            w3 = U1 / KT4 - U3 / KT2l + U4 / Kd4,
+            w4 = U1 / KT4 + U2 / KT2l - U4 / Kd4;
+        if (w1 > maxms2)
+            w1 = maxms2;
+        else if (w1 < 0)
+            w1 = 0;
+        if (w2 > maxms2)
+            w2 = maxms2;
+        else if (w2 < 0)
+            w2 = 0;
+        if (w3 > maxms2)
+            w3 = maxms2;
+        else if (w3 < 0)
+            w3 = 0;
+        if (w4 > maxms2)
+            w4 = maxms2;
+        else if (w4 < 0)
+            w4 = 0;
+        const O1 = Math.sqrt(w1), // front M
+              O2 = Math.sqrt(w2), // right M
+              O3 = Math.sqrt(w3), // rear M
+              O4 = Math.sqrt(w4); // left M
+        w1 = O1 * O1; w2 = O2 * O2; w3 = O3 * O3; w4 = O4 * O4;
+        U1 = KT * (w1 + w2 + w3 + w4);
+        U2 = KT * l * (w4 - w2);
+        U3 = KT * l * (w1 - w3);
+        U4 = Kd * (w1 + w3 - w2 - w4);
+        const Obar = O1 - O2 + O3 - O4;
+        // angular velocities transformation
+        const J = this.model.xyz_J, Jx = J[0], Jy = J[1], Jz = J[2], Jp = this.model.Jp, t = this.t,
+              p = this.p(t, this.p_dot), q = this.q(t, this.q_dot), r = this.r(t, this.r_dot);
+        this.p_dot = (q * r * (Jy - Jz) - Jp * p * Obar + l * U2) / Jx;
+        this.q_dot = (p * r * (Jz - Jx) + Jp * q * Obar + l * U3) / Jy;
+        this.r_dot = (p * q * (Jx - Jy) + U4) / Jz;
+        // rotational dynamics
+        const phi = this.phi(t, this.phi_dot), theta = this.theta(t, this.theta_dot), psi = this.psi(t, this.psi_dot),
+              cphi = Math.cos(phi), sphi = Math.sin(phi),
+              ctheta = Math.cos(theta), stheta = Math.sin(theta),
+              cpsi = Math.cos(psi), spsi = Math.sin(psi),
+              ttheta = Math.tan(theta);
+        this.phi_dot = p + sphi * ttheta * q + cphi * ttheta * r;
+        this.theta_dot = cphi * q - sphi * r;
+        this.psi_dot = sphi / ctheta * q + cphi / ctheta * r;
+        // translational dynamics
+        const g = this.model.g, m = this.model.m,
+              _Kd = this.model.xyz_Kd, Kdx = _Kd[0], Kdy = _Kd[1], Kdz = _Kd[2],
+              X_dot = this.X_dot(t, this.X_ddot), Y_dot = this.Y_dot(t, this.Y_ddot), Z_dot = this.Z_dot(t, this.Z_ddot);
+        this.X_ddot = (-(cphi * stheta * cpsi + sphi * spsi) * U1 - Kdx * X_dot) / m;
+        this.Y_ddot = (-(cphi * spsi * stheta - cpsi * sphi) * U1 - Kdy * Y_dot) / m;
+        this.Z_ddot = (-(cphi * ctheta) * U1 - Kdz * Z_dot) / m + g;
+        // disturbance model
+        const dt = this.dt;
+        this.X_ddot += x_dis / m;
+        this.Y_ddot += y_dis / m;
+        this.Z_ddot += z_dis / m;
+        this.phi_dot += phi_dis / Jx * dt;
+        this.theta_dot += theta_dis / Jy * dt;
+        this.psi_dot += psi_dis / Jz * dt;
+        // position
+        const X = this.X(t, X_dot), Y = this.Y(t, Y_dot), Z = this.Z(t, Z_dot);
+        // measurements
+        const randn = this.randn,
+              xyz_acc_bias = this.model.xyz_acc_bias, xyz_acc_sd = this.model.xyz_acc_sd,
+              xyz_gyro_bias = this.model.xyz_gyro_bias, xyz_gyro_sd = this.model.xyz_gyro_sd;
+        let Xm = X, Ym = Y, Zm = Z, Axm, Aym, Azm, Gxm, Gym, Gzm;
+        if (this.counter % this.model.GPS_freq === 0) {
+            const XYZ_error = this.model.XYZ_error;
+            // GPS
+            Xm += XYZ_error[0] * randn();
+            Ym += XYZ_error[1] * randn();
+            // barometer
+            Zm += XYZ_error[2] * randn();
+        }
+        // accelerometer
+        Axm = this.X_ddot + xyz_acc_bias[0] + xyz_acc_sd[0] * randn();
+        Aym = this.Y_ddot + xyz_acc_bias[1] + xyz_acc_sd[1] * randn();
+        Azm = this.Z_ddot + xyz_acc_bias[2] + xyz_acc_sd[2] * randn();
+        // gyroscope
+        Gxm = p + xyz_gyro_bias[0] + xyz_gyro_sd[0] * randn();
+        Gym = q + xyz_gyro_bias[1] + xyz_gyro_sd[1] * randn();
+        Gzm = r + xyz_gyro_bias[2] + xyz_gyro_sd[2] * randn();
+        this.t += dt;
+        this.counter++;
+        return [X, Y, Z, phi, theta, psi, p, q, r, Xm, Ym, Zm, Axm, Aym, Azm, Gxm, Gym, Gzm];
+    }
+}
+
+//https://wilselby.com/research/arducopter/simulation-environment/
+class FrameTranslation {
+    constructor(BFtoGF = false) {
+        this.BFtoGF = BFtoGF;
+    }
+    compute(X, Y, Z, phi, theta, psi) {
+        const R_roll = [
+            [1,             0,              0],
+            [0, Math.cos(phi), -Math.sin(phi)],
+            [0, Math.sin(phi),  Math.cos(phi)]
+        ],
+        R_pitch = [
+            [ Math.cos(theta), 0, Math.sin(theta)],
+            [               0, 1,               0],
+            [-Math.sin(theta), 0, Math.cos(theta)]
+        ],
+        R_yaw = [
+            [Math.cos(psi), -Math.sin(psi), 0],
+            [Math.sin(psi),  Math.cos(psi), 0],
+            [            0,              0, 1]
+        ],
+        R = this.BFtoGF ?
+                NN.multiply(NN.transpose(R_roll), NN.multiply(NN.transpose(R_pitch), NN.transpose(R_yaw))) :
+                NN.multiply(R_yaw, NN.multiply(R_pitch, R_roll));
+        return NN.multiply([[X, Y, Z]], R)[0];
+    }
+}
+
+function parseView3DStyle(style) {
+    if (typeof style === 'string')
+        style = Diagram.parseStyle(style);
+    const cfg = {};
+    cfg.z_down = style['zd'] === '1';
+    cfg.toneMapping = style['tm'] === '1';
+    cfg.cam_fov = +style['cfov'];
+    cfg.cam_near = +style['cn'];
+    cfg.cam_far = +style['cf'];
+    cfg.cam_xyz = style['cp'].split(/\s/).map(item => +item);
+    if (cfg.cam_xyz.length !== 3)
+        return [undefined, undefined, undefined, '[cp] - invalid position length'];
+    cfg.orb_minDist = +style['omin'];
+    cfg.orb_maxDist = +style['omax'];
+    cfg.orb_target = style['ot'].split(/\s/).map(item => +item);
+    if (cfg.orb_target.length !== 3)
+        return [undefined, undefined, undefined, '[ot] - invalid target length'];
+    cfg.space_size = +style['ss'];
+    cfg.floor_color = style['fc'].split(/\s/).map(item => +item);
+    if (cfg.floor_color.length < 4)
+        return [undefined, undefined, undefined, '[fc] - pattern must have at least one RGBA'];
+    cfg.wall_color = style['wc'].split(/\s/).map(item => +item);
+    if (cfg.wall_color.length < 4)
+        return [undefined, undefined, undefined, '[wc] - pattern must have at least one RGBA'];
+    cfg.amb_color = parseInt(style['ac'], 16);
+    cfg.amb_intencity = +style['ai'];
+    cfg.dir_color = parseInt(style['dc'], 16);
+    cfg.dir_intencity = +style['di'];
+    const model = style['m'].trim();
+    if (model === '')
+        return [undefined, undefined, undefined, '[m] - invalid model name'];
+    const scale = style['adjs'].split(/\s/).map(item => +item);
+    if (scale.length !== 3)
+        return [undefined, undefined, undefined, '[adjs] - invalid scale length'];
+    const transform = style['adjt'].split(/\s/).map(item => +item);
+    if (transform.length !== 3)
+        return [undefined, undefined, undefined, '[adjt] - invalid transform length'];
+    const rotation = style['adjr'].split(/\s/).map(item => +item);
+    if (rotation.length !== 3)
+        return [undefined, undefined, undefined, '[adjr] - invalid rotation length'];
+    return [cfg, model, [scale, transform, rotation], null];
+}
+
+async function main() {
+    console.info(Diagram.Version);
+    const visor = tfvis.visor();
+    visor.close();
+    const commons = {
+        form: (update, style, constrcnt, fncs, btn = true) => {
+            if (update)
+                return fncs.forEach(fnc => fnc(true, style, constrcnt));
+            const content = fncs.reduce((str, fnc) => str + fnc(false, style, constrcnt), '');
+            const mod = btn ? '<button id="update">Update</button>' : '';
+            return `
+<form>
+${content}</form><br/>
+${mod}      `;
+        },
+        check: (name = 'flipx', text = 'Flip', imm = null) => {
+            return (update, style) => {
+                if (update)
+                    return (imm !== null) ? null : style[name] = document.getElementById(name).checked ? '1' : null;
+                const flag = (imm !== null) ? imm ? ' checked' : '' : (style[name] === '1') ? ' checked' : '';
+                return `    <label for="${name}">${text}</label>
+    <input id="${name}" type="checkbox"${flag}/><br/>
+`;          };
+        },
+        select: (name, text, opts = [], imm = null) => {
+            return (update, style) => {
+                if (update)
+                    return imm ? null : style[name] = document.getElementById(name).value;
+                const options = opts.reduce((str, opt) => {
+                    const value = imm ? imm : style[name];
+                    return str +
+`        <option value="${opt[0]}"${(value === opt[0]) ? ' selected' : ''}>${opt[1]}</option>
+`; },           '');
+                return `    <label for="${name}">${text}</label>
+    <select id="${name}">
+${options}    </select><br/>
+`;          };
+        },
+        text: (name, text, check_fnc = null, imm = null) => {
+            return (update, style) => {
+                if (update) {
+                    const elem = document.getElementById(name),
+                          new_value = elem.value,
+                          valid = check_fnc === null || check_fnc(new_value);
+                    elem.style.backgroundColor = valid ? '' : '#faa0a0';
+                    return imm ? null : valid ? style[name] = new_value : null;
+                }
+                const value = imm ? imm : style[name];
+                return `    <label for="${name}">${text}</label>
+    <input id="${name}" type="text" value="${value}"/><br/>
+`;          };
+        },
+        editor: (fields, upd_fnc = null) => {
+            return {
+                init: function(style, constrcnt) {
+                    return commons.form(false, style, constrcnt, fields);
+                },
+                update: function(style, constrcnt, id) {
+                    commons.form(true, style, constrcnt, fields);
+                    return (upd_fnc !== null) ? upd_fnc(style, constrcnt, id) : undefined;
+                }
+            };
+        }
+    };
+    const scopes = {
+        init: () => {
+            let srf = visor.surface({name: '', tab: 'Graphs', styles: {width: 720, height: 672}}).drawArea;
+            srf.innerHTML = '<div style="position: absolute; width: 720px; height: 650px; overflow: auto;"></div>';
+            scopes.graphs = srf.childNodes[0];
+            scopes.objs = {};
+            srf = visor.surface({name: 'Simulator', tab: 'Opts', styles: ''}).drawArea;
+            srf.innerHTML = commons.form(false, null, null, [
+                commons.text('simA', 'A', null, '0'),
+                commons.text('simB', 'B', null, '14'),
+                commons.text('simdT', 'dT', null, '0.1'),
+                commons.text('simIV', 'Initial value (loops)', null, '0')
+            ], false);
+            srf = visor.surface({name: 'IO', tab: 'Opts', styles: ''}).drawArea;
+            srf.innerHTML = commons.form(false, null, null, [
+                commons.text('simIOl', 'Load File', null, 'model.xml'),
+                commons.text('simIOs', 'Save File', null, 'model.xml')
+            ], false);
+            srf = visor.surface({name: 'Position', tab: 'Node', styles: ''}).drawArea;
+            const pos_method = (dir) => () => {
+                const grp = diagram.graph,
+                      cell = grp.getSelectionCell(),
+                      gs = grp.gridSize;
+                if (cell) {
+                    const dx = (dir === 0) ? -gs : (dir === 3) ? gs : 0,
+                          dy = (dir === 1) ? -gs : (dir === 2) ? gs : 0;
+                    grp.moveCells([cell], dx, dy, false);
+                }
+            };
+            diagram.createButton(srf, 'triangle-left.png', pos_method(0)).style['marginLeft'] = '35px';
+            diagram.createButton(srf, 'triangle-up.png', pos_method(1)).style['marginLeft'] = '20px';
+            diagram.createButton(srf, 'triangle-down.png', pos_method(2)).style['marginLeft'] = '20px';
+            diagram.createButton(srf, 'triangle-right.png', pos_method(3)).style['marginLeft'] = '20px';
+            srf = visor.surface({name: 'Size', tab: 'Node', styles: ''}).drawArea;
+            const sz_method = (dir) => () => {
+                const grp = diagram.graph,
+                      cell = grp.getSelectionCell(),
+                      gs = grp.gridSize;
+                if (cell) {
+                    const geo = cell.geometry,
+                          rect = new mxRectangle(geo.x, geo.y, geo.width, geo.height);
+                    if (dir === 0)
+                        rect.width -= gs;
+                    else if (dir === 3)
+                        rect.width += gs;
+                    else if (dir === 1)
+                        rect.height -= gs;
+                    else
+                        rect.height += gs;
+                    grp.resizeCells([cell], [rect], false);
+                }
+            };
+            diagram.createButton(srf, 'triangle-left.png', sz_method(0)).style['marginLeft'] = '35px';
+            diagram.createButton(srf, 'triangle-up.png', sz_method(1)).style['marginLeft'] = '20px';
+            diagram.createButton(srf, 'triangle-down.png', sz_method(2)).style['marginLeft'] = '20px';
+            diagram.createButton(srf, 'triangle-right.png', sz_method(3)).style['marginLeft'] = '20px';
+        },
+        addGraph: (id, caption, createFn) => {
+            // <div class="label">${caption}</div><canvas id="${id}"></canvas><br/>
+            const elem = document.createElement('div'); elem.innerHTML = caption;
+            scopes.graphs.appendChild(elem).className = 'label';
+            scopes.graphs.appendChild(document.createElement('canvas')).id = String(id);
+            scopes.graphs.appendChild(document.createElement('br'));
+            const graph = createFn();
+            scopes.objs[id] = graph;
+            return graph;
+        },
+        getGraph: (id) => scopes.objs[id],
+        setGraph: (id, obj) => scopes.objs[id] = obj,
+        removeGraph: (id) => {
+            const grp = document.getElementById(id);
+            grp.previousSibling.remove();
+            grp.nextSibling.remove();
+            grp.remove();
+            scopes.objs[id].destroy?.();
+            delete scopes.objs[id];
+        },
+        updateLabel: (id, value) => document.getElementById(id).previousSibling.innerHTML = value,
+        clear: () => {
+            scopes.graphs.innerHTML = '';
+            for (let key in scopes.objs)
+                scopes.objs[key].destroy?.();
+            scopes.objs = {};
+        },
+        reset: () => {
+            for (let key in scopes.objs)
+                scopes.objs[key].clear(true, true);
+        }
+    };
+    const mtdEditor = commons.select('mtd', 'Method', [
+        ['Euler', 'Euler'],
+        ['Midpoint', 'Midpoint'],
+        ['Heun', 'Heun'],
+        ['Ralston', 'Ralston'],
+        ['RK4', 'RK4'],
+        ['RK4_3_8', 'RK4 3/8 rule'],
+        ['RKF4', 'RKF4'],
+        ['RKF5', 'RKF5'],
+        ['BS3', 'BS3'],
+        ['CK4', 'CK4'],
+        ['CK5', 'CK5'],
+        ['DP4', 'DP4'],
+        ['DP5', 'DP5'],
+        ['BackEuler', 'Back Euler']
+    ]);
+    let tmp;
+    const diagram = new Diagram('diagram', {
+        bckg_url: Diagram.BckgImg,
+        ui: {
+            panel: visor.surface({name: 'Styles', tab: 'Node', styles: ''}).drawArea,
+            editors: {
+                edge: commons.editor([commons.select('edgeStyle', 'Edge Style', [
+                    ['elbowEdgeStyle',          'Elbow'],
+                    ['entityRelationEdgeStyle', 'EntityRelation'],
+                    ['loopEdgeStyle',           'Loop'],
+                    ['sideToSideEdgeStyle',     'SideToSide'],
+                    ['topToBottomEdgeStyle',    'TopToBottom'],
+                    ['orthogonalEdgeStyle',     'Orthogonal'],
+                    ['segmentEdgeStyle',        'Segment']
+                ])]),
+                simSignal: commons.editor([commons.check(),
+                    commons.select('signal', 'Signal', [
+                        ['0', 'Step'],
+                        ['1', 'Ramp'],
+                        ['2', 'Impulse'],
+                        ['3', 'Constant'],
+                        ['4', 'Sinus'],
+                        ['5', 'Random']]),
+                    commons.text('ini', 'Initial', v => v.match(/[0-9\.\-]+$/) == v),
+                    commons.text('fin', 'Final', v => v.match(/[0-9\.\-]+$/) == v),
+                    commons.text('shift', 'Shift', v => v.match(/[0-9\.]+$/) == v),
+                    commons.text('prd', 'Period', v => v.match(/[0-9\.]+$/) == v),
+                    commons.text('slope', 'Slope/ramp', v => v.match(/[0-9\.]+$/) == v),
+                    commons.text('sdt', 'dT/impulse', v => v.match(/[0-9\.]+$/) == v)
+                ]),
+                simScope: commons.editor([commons.check(),
+                    commons.text('clrs', 'Colors', v => v.match(/[0-9a-z#]+(?:\s[0-9a-z#]+)*$/) == v),
+                    commons.text('wdts', 'Line Width', v => v.match(/[0-9\.]+(?:\s[0-9\.]+)*$/) == v),
+                    commons.text('dots', 'Dots', v => v.match(/[0-1]+(?:\s[0-1]+)*$/) == v),
+                    commons.text('ymia', 'Y min max', v => v === '' || v.match(/[0-9\.\-]+(?:\s[0-9\.\-]+)*$/) == v),
+                    commons.text('ngxy', 'Grid x y', v => v === '' || v.match(/[0-9]+(?:\s[0-9]+)*$/) == v)
+                ]),
+                simGain: commons.editor([commons.check(),
+                    commons.text('text', 'Value', v => v.match(/[0-9\.\-]+$/) == v)
+                ]),
+                simSum: commons.editor([commons.check(),
+                    commons.check('flipy', 'Flip Vertical'),
+                    commons.text('sopers', 'Operators', v => v.length >= 2 && v.length <= 3 &&
+                            (v.match(/^[mp]+$/) == v || v.match(/^[du]+$/) == v))
+                ], (style, constrcnt) => {
+                    // check constraints count
+                    const new_count = style['sopers'].length;
+                    if (new_count < constrcnt)
+                        return [-1, null, null];
+                    if (new_count > constrcnt)
+                        return [1, new mxPoint(0, -1), null];
+                }),
+                simDudt: commons.editor([commons.check()]),
+                sim1s: commons.editor([commons.check(),
+                    mtdEditor,
+                    commons.text('ini', 'Initial Value', v => v.match(/[0-9\.\-]+$/) == v)
+                ]),
+                simTransfer: commons.editor([commons.check(),
+                    commons.text('text1', 'Numerator', v => v.match(/[0-9\.\-]+(?:\s[0-9\.\-]+)*$/) == v),
+                    commons.text('text2', 'Denominat.', v => v.match(/[0-9\.\-]+(?:\s[0-9\.\-]+)*$/) == v),
+                    mtdEditor,
+                    commons.text('ini', 'Init.Value(s)', v => v.match(/[0-9\.\-]+(?:\s[0-9\.\-]+)*$/) == v)
+                ]),
+                simArray: commons.editor([commons.check(),
+                    commons.text('inps', 'Inputs', v => v >= 1 && v <= 24)
+                ], (style, constrcnt) => {
+                    const cnt = style['inps'] | 0;
+                    if (cnt !== constrcnt) return [
+                        cnt - constrcnt,
+                        new mxPoint(0, (cnt < 3) ? 0.6 : 0.8 / (cnt - 1)),
+                        new mxPoint(0, (cnt === 1) ? 0.5 : (cnt > 2) ? 0.1 : 0.2)
+                    ];
+                }),
+                simSat: commons.editor([commons.check(),
+                    commons.text('min', 'Min Value', v => v === '' || v.match(/[0-9\.\-]+$/) == v),
+                    commons.text('max', 'Max Value', v => v === '' || v.match(/[0-9\.\-]+$/) == v)
+                ], (style) => {
+                    if (style['min'].trim() === '' && style['max'].trim() === '')
+                        document.getElementById('min').style.backgroundColor = '#faa0a0';
+                }),
+                simPID: commons.editor([commons.check(),
+                    commons.text('kp', 'Kp', v => v.match(/[0-9\.\-]+$/) == v),
+                    commons.text('ki', 'Ki', v => v.match(/[0-9\.\-]+$/) == v),
+                    commons.text('kd', 'Kd', v => v.match(/[0-9\.\-]+$/) == v),
+                    commons.text('min', 'Min out', v => v.match(/[0-9\.\-]+$/) == v),
+                    commons.text('max', 'Max out', v => v.match(/[0-9\.\-]+$/) == v),
+                    commons.check('pom', 'POM'),
+                    commons.text('inp0', 'Init in', v => v.match(/[0-9\.\-]+$/) == v),
+                    commons.text('out0', 'Init out', v => v.match(/[0-9\.\-]+$/) == v)
+                ]),
+                simAPID: commons.editor([commons.check(),
+                    commons.text('num', 'Numerator', v => v.match(/[0-9\.\-]+(?:\s[0-9\.\-]+)*$/) == v),
+                    commons.text('denom', 'Denominat.', v => v.match(/[0-9\.\-]+(?:\s[0-9\.\-]+)*$/) == v),
+                    mtdEditor,
+                    commons.text('ini', 'Init.Value(s)', v => v.match(/[0-9\.\-]+(?:\s[0-9\.\-]+)*$/) == v),
+                    commons.text('gamma', 'Gamma', v => v.match(/[0-9\.]+$/) == v),
+                    commons.check('mit', 'MIT Rule'),
+                    commons.check('ff', 'Feed Fwd')
+                ]),
+                simView3D: commons.editor([commons.check(),
+                    commons.check('zd', 'Z Down'),
+                    commons.check('tm', 'Tone Map.'),
+                    commons.text('cfov', 'Cam. FOV', v => v.match(/[0-9]+$/) == v),
+                    commons.text('cn', 'Cam. Near', v => v.match(/[0-9\.]+$/) == v),
+                    commons.text('cf', 'Cam. Far', v => v.match(/[0-9\.]+$/) == v),
+                    commons.text('cp', 'Cam. XYZ', v => v.match(/[0-9\.\-]+(?:\s[0-9\.\-]+)*$/) == v),
+                    commons.text('omin', 'Orbit Min', v => v.match(/[0-9\.]+$/) == v),
+                    commons.text('omax', 'Orbit Max', v => v.match(/[0-9\.]+$/) == v),
+                    commons.text('ot', 'Orbit Target', v => v.match(/[0-9\.\-]+(?:\s[0-9\.\-]+)*$/) == v),
+                    commons.text('ss', 'Space Size', v => v.match(/[0-9]+$/) == v),
+                    commons.text('fc', 'Floor Color', v => v.match(/[0-9]+(?:\s[0-9]+)*$/) == v),
+                    commons.text('wc', 'Walls Color', v => v.match(/[0-9]+(?:\s[0-9]+)*$/) == v),
+                    commons.text('ac', 'Amb. Color', v => v.match(/[0-9a-f]+$/) == v),
+                    commons.text('ai', 'Amb. Inten.', v => v.match(/[0-9\.]+$/) == v),
+                    commons.text('dc', 'Dir. Color', v => v.match(/[0-9a-f]+$/) == v),
+                    commons.text('di', 'Dir. Inten.', v => v.match(/[0-9\.]+$/) == v),
+                    commons.text('m', 'Model', v => v.trim().length > 0),
+                    commons.text('adjs', 'Scale XYZ', v => v.match(/[0-9\.\-]+(?:\s[0-9\.\-]+)*$/) == v),
+                    commons.text('adjt', 'Pos. XYZ', v => v.match(/[0-9\.\-]+(?:\s[0-9\.\-]+)*$/) == v),
+                    commons.text('adjr', 'Rot. XYZ', v => v.match(/[0-9\.\-]+(?:\s[0-9\.\-]+)*$/) == v)
+                ], (style, constrcnt, id) => {
+                    const [cfg, model, adj, error] = parseView3DStyle(style);
+                    if (error === null) {
+                        // re-create View3D
+                        scopes.getGraph(id).destroy();
+                        const viewer = new View3D(document.getElementById(id), 720, 600, [0.0,0.0,0.0,1.0], cfg);
+                        viewer.setModel(model, adj);
+                        scopes.setGraph(id, viewer);
+                    }
+                    else if (tmp = error.match(/^\[(.*?)\]/))
+                        document.getElementById(tmp[1]).style.backgroundColor = '#faa0a0';
+                    else
+                        console.error(error);
+                }),
+                simArrV: commons.editor([commons.check(),
+                    commons.text('text', 'Index', v => v.match(/[0-9]+$/) == v)
+                ]),
+                simQuad: commons.editor([commons.check(),
+                    commons.text('m', 'mass', v => v.match(/[0-9e\.\-]+$/) == v),
+                    commons.text('l', 'motor offs.', v => v.match(/[0-9e\.\-]+$/) == v),
+                    commons.text('Jp', 'rot. inertia', v => v.match(/[0-9e\.\-]+$/) == v),
+                    commons.text('KT', 'thrust force', v => v.match(/[0-9e\.\-]+$/) == v),
+                    commons.text('Kd', 'drag torque', v => v.match(/[0-9e\.\-]+$/) == v),
+                    commons.text('max_motor_speed', 'm. speed', v => v.match(/[0-9]+$/) == v),
+                    commons.text('xyz_Kd', 'xyz drag', v => v.match(/[0-9e\.\-]+(?:\s[0-9e\.\-]+)*$/) == v),
+                    commons.text('xyz_J', 'xyz inertia', v => v.match(/[0-9e\.\-]+(?:\s[0-9e\.\-]+)*$/) == v),
+                    commons.text('GPS_freq', 'GPS freq', v => v.match(/[0-9]+$/) == v),
+                    commons.text('XYZ_error', 'XYZ error', v => v.match(/[0-9e\.\-]+(?:\s[0-9e\.\-]+)*$/) == v),
+                    commons.text('xyz_acc_bias', 'Accel bias', v => v.match(/[0-9e\.\-]+(?:\s[0-9e\.\-]+)*$/) == v),
+                    commons.text('xyz_acc_sd', 'Accel SD', v => v.match(/[0-9e\.\-]+(?:\s[0-9e\.\-]+)*$/) == v),
+                    commons.text('xyz_gyro_bias', 'Gyro bias', v => v.match(/[0-9e\.\-]+(?:\s[0-9e\.\-]+)*$/) == v),
+                    commons.text('xyz_gyro_sd', 'Gyro SD', v => v.match(/[0-9e\.\-]+(?:\s[0-9e\.\-]+)*$/) == v),
+                    mtdEditor
+                ]),
+                simFTr: commons.editor([commons.check(),
+                    commons.check('btg', 'Body to Global')
+                ]),
+                sumBlk: commons.editor([commons.check(),
+                    commons.text('sopers', 'Operators', v => v.length >= 2 && v.length <= 6 &&
+                            (v.match(/^[mp]+$/) == v || v.match(/^[du]+$/) == v))
+                ], (style, constrcnt) => {
+                    const ops = style['sopers'], cnt = ops.length;
+                    // set text
+                    let s = '';
+                    for (let i = 0; i < cnt; i++) {
+                        if (s.length > 0) s +=',';
+                        const c = ops.charAt(i);
+                        s += c === 'p' ? '+' : c === 'm' ? '-' : c === 'u' ? 'x' : ':';
+                    }
+                    style['ltxt'] = s;
+                    // adjust constraints
+                    if (cnt !== constrcnt) return [
+                        cnt - constrcnt,
+                        new mxPoint(0, (cnt < 3) ? 0.6 : 0.8 / (cnt - 1)),
+                        new mxPoint(0, (cnt > 2) ? 0.1 : 0.2)
+                    ];
+                }),
+                simBlk: commons.editor([commons.check()]),
+                simFunc: commons.editor([commons.check(),
+                    commons.text('text', 'Function', v => Math[v] && Math[v].length === 1)
+                ])
+            }
+        },
+        events: (node, value, isLabel) => {
+            const type = Diagram.getType(node);
+            if (isLabel) {
+                // label changed
+                if (type === 'simScope' || type === 'simView3D')
+                    scopes.updateLabel(node.id, value);
+            } else if (value) {
+                // node added
+                if (type === 'simScope')
+                    scopes.addGraph(node.id, node.getAttribute('label'), () => {
+                        const graph = new Graph(document.getElementById(node.id), {
+                            width: 720,
+                            height: 600,
+                            background: 'black',
+                            x_text: true,
+                            x_text_fnc: (x) => x.toFixed(3),
+                            y_text: true,
+                            y_text_fnc: (y) => y.toFixed(3),
+                            ng_x: 7,
+                            ng_y: 5,
+                            text_pad: 38
+                        });
+                        graph.createPlots([{color: 'grey'}, {color: 'cyan'}, {color: 'green'}, {color: 'red'}]);
+                        return graph;
+                    });
+                else if (type === 'simView3D')
+                    scopes.addGraph(node.id, node.getAttribute('label'), () => {
+                        const [cfg, model, adj] = parseView3DStyle(node.style),
+                              viewer = new View3D(document.getElementById(node.id), 720, 600, [0.0,0.0,0.0,1.0], cfg);
+                        viewer.setModel(model, adj);
+                        return viewer;
+                    });
+                // fix constraints
+                const constrs = node.value.constraints,
+                      style = node.style;
+                if (constrs) {
+                    let len, diff;
+                    // add/remove constraints if necessary
+                    if (type === 'simSum' && (len = Diagram.getAttr(style, 'sopers').length) &&
+                            (diff = len - constrs.length))
+                        if (diff < 0)
+                            node.value.constraints.splice(-1, 1);
+                        else
+                            constrs.push(new mxConnectionConstraint(new mxPoint(0.5, 0), true));
+                    else if (((type === 'simArray' && (len = Diagram.getAttr(style, 'inps') | 0)) ||
+                              (type === 'sumBlk' && (len = Diagram.getAttr(style, 'sopers').length))) &&
+                            (diff = len - constrs.length))
+                        if (diff < 0)
+                            node.value.constraints.splice(diff, Math.abs(diff));
+                        else {
+                            const start = new mxPoint(0, (len === 1) ? 0.5 : (len > 2) ? 0.1 : 0.2),
+                                  offs = new mxPoint(0, (len < 3) ? 0.6 : 0.8 / (len - 1));
+                            constrs.forEach(item => {
+                                item.point.x = start.x;
+                                item.point.y = start.y;
+                                start.x += offs.x; start.y += offs.y;
+                            });
+                            for (let i = 0; i < diff; i++) {
+                                constrs.push(new mxConnectionConstraint(start.clone(), true));
+                                start.x += offs.x; start.y += offs.y;
+                            }
+                        }
+                    // apply flipx, flipy flags
+                    len = constrs.length;
+                    if (Diagram.getAttr(style, 'flipx') === '1') {
+                        // check if already flipped
+                        let flipped = false;
+                        for (let i = 0; i < len; i++)
+                            if (constrs[i].point.x === 1) {
+                                flipped = true;
+                                break;
+                            }
+                        if (!flipped)
+                            constrs.forEach(item => item.point.x = 1 - item.point.x);
+                    }
+                    if (Diagram.getAttr(style, 'flipy') === '1') {
+                        // check if already flipped
+                        let flipped = false;
+                        if (type === 'simSum' && len > 2)
+                            len--; // check first 2 constraints only
+                        for (let i = 0; i < len; i++)
+                            if (constrs[i].point.y === 0) {
+                                flipped = true;
+                                break;
+                            }
+                        if (!flipped)
+                            constrs.forEach(item => item.point.y = 1 - item.point.y);
+                    }
+                }
+            } else {
+                // node removed
+                if (node === null)
+                    // model reloaded
+                    return scopes.clear();
+                if (type === 'simScope' || type === 'simView3D')
+                    scopes.removeGraph(node.id);
+            }
+        }
+    });
+    diagram.createButton('tools', 'properties.gif', () => {
+        visor.toggle();
+    });
+    diagram.createButton('tools', 'preview.gif', () => {
+        mxUtils.popup(diagram.getXML(true), true);
+    }).style['marginLeft'] = '10px';
+    diagram.createButton('tools', 'refresh.png', () => {
+        diagram.graph.refresh();
+    });
+    diagram.createButton('tools', 'flash.png', async () => {
+        await execute(diagram, scopes);
+    }).style['marginLeft'] = '10px';
+    diagram.createButton('tools', 'view_1_132.png', () => {
+        diagram.graph.zoomActual();
+    }).style['marginLeft'] = '10px';
+    diagram.createButton('tools', 'zoom_in.png', () => {
+        diagram.graph.zoomIn();
+    });
+    diagram.createButton('tools', 'zoom_out.png', () => {
+        diagram.graph.zoomOut();
+    });
+    diagram.createButton('tools', 'undo.png', () => {
+        if (diagram.undoManager)
+            diagram.undoManager.undo();
+    });
+    diagram.createButton('tools', 'redo.png', () => {
+        if (diagram.undoManager)
+            diagram.undoManager.redo();
+    });
+    diagram.createButton('tools', 'delete2.png', () => {
+        diagram.graph.removeCells();
+    }).style['marginLeft'] = '10px';
+    diagram.createButton('tools', 'group.gif', () => {
+        const graph = diagram.graph;
+        graph.setSelectionCell(graph.groupCells(null, graph.gridSize * 2));
+    });
+    diagram.createButton('tools', 'ungroup.gif', () => {
+        const graph = diagram.graph;
+        graph.setSelectionCells(graph.ungroupCells());
+    });
+    diagram.createButton('tools', 'copy.png', () => {
+        mxClipboard.copy(diagram.graph);
+    }).style['marginLeft'] = '10px';
+    diagram.createButton('tools', 'paste.png', () => {
+        mxClipboard.paste(diagram.graph);
+    });
+    const blocks_txt = await (await fetch('blocks.dat', {cache: 'no-store'})).text();
+    let block_opts = '';
+    if (blocks_txt.indexOf('404 Not Found') < 0)
+        blocks_txt.split('\n').forEach(s => {
+            if ((s = s.trim()).length > 0) {
+                const [txt, val] = s.split(':');
+                if (val)
+                    block_opts += `<option value="${val.trim()}">${txt.trim()}</option>`;
+            }
+        });
+    const select = document.createElement('select');
+    select.style['marginLeft'] = '10px';
+    document.getElementById('tools').appendChild(select);
+    select.innerHTML =
+            '<option value="Sgn">Signal</option>' +
+            '<option value="Scp">Scope</option>' +
+            '<option value="Gn">Gain</option>' +
+            '<option value="Sum">Arithmetic</option>' +
+            '<option value="u/t">Differential</option>' +
+            '<option value="1/s">Integral</option>' +
+            '<option value="TF">Transfer</option>' +
+            '<option value="Arr">Array</option>' +
+            '<option value="Sat">Saturation</option>' +
+            '<option value="PID">PID</option>' +
+            '<option value="aPID">Adaptive PID</option>' +
+            '<option value="V3D">View3D</option>' +
+            '<option value="Arv">Array value</option>' +
+            '<option value="QDn">Quadrotor</option>' +
+            '<option value="FTr">Frame translate</option>' +
+            '<option value="SumBlk">Arithmetic block</option>' +
+            '<option value="Func">Function</option>' + block_opts;
+    diagram.createButton('tools', 'Add', async () => {
+        switch (select.value) {
+            case 'Sgn':
+                diagram.addVertex('Step', 50, 50, 60, 60,
+    'shape=rectangle;type=simSignal;signal=0;ini=0;fin=1;shift=0;prd=0;slope=1;sdt=0.1;tbold=1;tsize=14;output=1;');
+                break;
+            case 'Scp':
+                diagram.addVertex('Scope', 50, 50, 60, 60,
+    'shape=rectangle;type=simScope;clrs=grey cyan green red;wdts=1 1 1 1;dots=0 0 0 0;ymia=;ngxy=;', [
+                    new mxConnectionConstraint(new mxPoint(0, 0.5), true)
+                ]);
+                break;
+            case 'Gn':
+                diagram.addVertex('Gain', 50, 50, 40, 40,
+    'shape=triangle;type=simText;subtype=simGain;tbold=1;tsize=14;tpad=4;text=1;output=1;', [
+                    new mxConnectionConstraint(new mxPoint(0, 0.5), true)
+                ]);
+                break;
+            case 'Sum':
+                diagram.addVertex('Sum', 50, 50, 40, 40,
+    'shape=ellipse;type=simSum;tbold=1;tsize=14;sopers=pm;output=1;', [
+                    new mxConnectionConstraint(new mxPoint(0, 0.5), true),
+                    new mxConnectionConstraint(new mxPoint(0.5, 1), true)
+                ]);
+                break;
+            case 'u/t':
+                diagram.addVertex('', 50, 50, 40, 40,
+    'shape=rectangle;type=simText2;subtype=simDudt;tbold=1;tsize=12;text1=du;text2=dt;output=1;', [
+                    new mxConnectionConstraint(new mxPoint(0, 0.5), true)
+                ]);
+                break;
+            case '1/s':
+                diagram.addVertex('', 50, 50, 40, 40,
+    'shape=rectangle;type=simText2;subtype=sim1s;tbold=1;tsize=12;text1=1;text2=s;mtd=DP5;ini=0;output=1;', [
+                    new mxConnectionConstraint(new mxPoint(0, 0.5), true)
+                ]);
+                break;
+            case 'TF':
+                diagram.addVertex('Plant', 50, 50, 60, 60,
+    'shape=rectangle;type=simText2;subtype=simTransfer;tbold=1;tsize=14;text1=;text2=;mtd=DP5;ini=;output=1;', [
+                    new mxConnectionConstraint(new mxPoint(0, 0.5), true)
+                ]);
+                break;
+            case 'Arr':
+                diagram.addVertex('', 50, 50, 10, 70,
+    'shape=rectangle;type=simArray;inps=2;output=1;', [
+                    new mxConnectionConstraint(new mxPoint(0, 0.2), true),
+                    new mxConnectionConstraint(new mxPoint(0, 0.8), true)
+                ]);
+                break;
+            case 'Sat':
+                diagram.addVertex('', 50, 50, 40, 40,
+    'shape=rectangle;type=simSat;min=-2;max=2;output=1;', [
+                    new mxConnectionConstraint(new mxPoint(0, 0.5), true)
+                ]);
+                break;
+            case 'PID':
+                diagram.addVertex('', 50, 50, 60, 60,
+    'shape=rectangle;type=simPID;kp=1.0;ki=0.0;kd=0.0;min=-50.0;max=50.0;pom=0;inp0=0.0;out0=0.0;output=1;', [
+                    new mxConnectionConstraint(new mxPoint(0, 0.2), true),
+                    new mxConnectionConstraint(new mxPoint(0, 0.8), true)
+                ]);
+                break;
+            case 'aPID':
+                diagram.addVertex('', 50, 50, 60, 60,
+    'shape=rectangle;type=simAPID;num=;denom=;ini=;mtd=DP5;gamma=1.0;mit=0;ff=0;output=1;', [
+                    new mxConnectionConstraint(new mxPoint(0, 0.2), true),
+                    new mxConnectionConstraint(new mxPoint(0, 0.8), true)
+                ]);
+                break;
+            case 'V3D':
+                diagram.addVertex('View3D', 50, 50, 60, 60,
+    'shape=rectangle;type=simView3D;zd=1;tm=0;cfov=45;cn=0.1;cf=100;cp=20 10 20;omin=1;omax=5;ot=0 1 0;ss=4;' +
+    'fc=255 255 255 255 128 128 128 255 128 128 128 255 255 255 255 255;' +
+    'wc=255 255 255 255 200 200 200 255 200 200 200 255 255 255 255 255;' +
+    'ac=ffffff;ai=1;dc=ffffff;di=1;adjs=0.1 0.1 0.1;adjt=0 0 -0.234;adjr=0 0 -0.8;' +
+    'm=./libs/three/models/drone.obj', [
+                    new mxConnectionConstraint(new mxPoint(0, 0.5), true)
+                ]);
+                break;
+            case 'Arv':
+                diagram.addVertex('', 50, 50, 40, 40,
+    'shape=rectangle;type=simText;subtype=simArrV;tbold=1;tsize=14;text=0;output=1;', [
+                    new mxConnectionConstraint(new mxPoint(0, 0.5), true)
+                ]);
+                break;
+            case 'QDn':
+                diagram.addVertex('Quadrotor', 50, 50, 120, 300,
+    'shape=rectangle;type=simBlk;subtype=simQuad;ltxt=U1,U2,U3,U4,x_dis,y_dis,z_dis,phi_dis,theta_dis,psi_dis;' +
+    'rtxt=0__X,1__Y,2__Z,3__phi,4__theta,5__psi,6__p,7__q,8__r,9__Xm,10_Ym,11_Zm,12_Axm,13_Aym,14_Azm,15_Gxm,' +
+    '16_Gym,17_Gzm;m=1.4;l=0.56;Jp=0.044;KT=1.3328e-5;Kd=1.3858e-6;max_motor_speed=925;xyz_Kd=0.16481 0.31892 1.1e-6;' +
+    'xyz_J=0.05 0.05 0.24;GPS_freq=100;XYZ_error=0.01 0.01 0.02;xyz_acc_bias=0.16594 0.31691 -8.6759;' +
+    'xyz_acc_sd=0.0093907 0.011045 0.016189;xyz_gyro_bias=0.00053417 -0.0011035 0.00020838;' +
+    'xyz_gyro_sd=0.00066675 0.00053642 0.0004403;mtd=DP5;output=1;', [
+                    new mxConnectionConstraint(new mxPoint(0, 0.100), true),
+                    new mxConnectionConstraint(new mxPoint(0, 0.189), true),
+                    new mxConnectionConstraint(new mxPoint(0, 0.278), true),
+                    new mxConnectionConstraint(new mxPoint(0, 0.367), true),
+                    new mxConnectionConstraint(new mxPoint(0, 0.456), true),
+                    new mxConnectionConstraint(new mxPoint(0, 0.545), true),
+                    new mxConnectionConstraint(new mxPoint(0, 0.634), true),
+                    new mxConnectionConstraint(new mxPoint(0, 0.723), true),
+                    new mxConnectionConstraint(new mxPoint(0, 0.812), true),
+                    new mxConnectionConstraint(new mxPoint(0, 0.901), true)
+                ]);
+                break;
+            case 'FTr':
+                diagram.addVertex('Frame', 50, 50, 80, 170,
+    'shape=rectangle;type=simBlk;subtype=simFTr;ltxt=X,Y,Z,phi,theta,psi;rtxt=0_X,1_Y,2_Z;btg=0;output=1;', [
+    	            new mxConnectionConstraint(new mxPoint(0, 0.10), true),
+    	            new mxConnectionConstraint(new mxPoint(0, 0.26), true),
+    	            new mxConnectionConstraint(new mxPoint(0, 0.42), true),
+    	            new mxConnectionConstraint(new mxPoint(0, 0.58), true),
+    	            new mxConnectionConstraint(new mxPoint(0, 0.74), true),
+    	            new mxConnectionConstraint(new mxPoint(0, 0.90), true)
+                ]);
+                break;
+            case 'SumBlk':
+                diagram.addVertex('Sum', 50, 50, 30, 40,
+    'shape=rectangle;type=simBlk;subtype=sumBlk;ltxt=+,-;rtxt=;tbold=1;tsize=12;sopers=pm;output=1;', [
+                    new mxConnectionConstraint(new mxPoint(0, 0.2), true),
+                    new mxConnectionConstraint(new mxPoint(0, 0.8), true)
+                ]);
+                break;
+            case 'Func':
+                diagram.addVertex('', 50, 50, 40, 40,
+    'shape=rectangle;type=simText;subtype=simFunc;tbold=1;tsize=14;text=;output=1;', [
+                    new mxConnectionConstraint(new mxPoint(0, 0.5), true)
+                ]);
+                break;
+            default:
+                const graph = diagram.graph,
+                      model = graph.getModel();
+                let xml = await (await fetch(select.value, {cache: 'no-store'})).text(),
+                    nextid = 0, trvcs;
+                // find existing max ID
+                (trvcs = cell => {
+                    if (cell.id > nextid) nextid = +cell.id + 1;
+                    if (cell.children) cell.children.forEach(trvcs);
+                })(model.root);
+                [...xml.matchAll(/ id="(.*?)"/g)].forEach(m => {
+                    if (m[1] > nextid) nextid = +m[1] + 1;
+                });
+                // resolve duplicate IDs
+                let repeat = true, idx = 0;
+                while (repeat) {
+                    idx = xml.indexOf(' id="', idx);
+                    repeat = idx >= 0;
+                    if (repeat) {
+                        idx += 5;
+                        const id = xml.substr(idx, xml.indexOf('"', idx) - idx);
+                        if (model.getCell(id) !== null) {
+                            const newid = nextid++;
+                            xml = xml.replace(` id="${id}"`, ` id="${newid}"`)
+                                    .replaceAll(` parent="${id}"`, ` parent="${newid}"`)
+                                    .replaceAll(` source="${id}"`, ` source="${newid}"`)
+                                    .replaceAll(` target="${id}"`, ` target="${newid}"`);
+                        }
+                    }
+                }
+                // load block
+                const doc = mxUtils.parseXml(xml).documentElement,
+                      dec = new mxCodec(doc.ownerDocument);
+                dec.lookup = id => model.getCell(id);
+                let elem = doc.firstChild;
+                while (elem !== null) {
+                    if (!elem.nodeName.startsWith('#')) try {
+                        dec.decodeCell(elem, true);
+                    } catch(e) {
+                        console.log(e.message + '\n' + e.stack);
+                    }
+                    elem = elem.nextSibling;
+                }
+                graph.refresh();
+                break;
+        }
+    });
+    diagram.createButton('tools', 'open.gif', async () => {
+        const xml = await (await fetch(document.getElementById('simIOl').value, {cache: 'no-store'})).text();
+        diagram.setXML(xml);
+        // load globals
+        const style = diagram.graph.getDefaultParent().style;
+        if (style) {
+            const globals = Diagram.parseStyle(style);
+            document.getElementById('simA').value = globals['a'];
+            document.getElementById('simB').value = globals['b'];
+            document.getElementById('simdT').value = globals['dt'];
+            document.getElementById('simIV').value = globals['iv'];
+        }
+    }).style['marginLeft'] = '10px';
+    diagram.createButton('tools', 'save.gif', () => {
+        const name = document.getElementById('simIOs').value;
+        if (name.indexOf('/') >= 0) {
+            console.error('invalid save file name');
+            return;
+        }
+        // save globals
+        const style = diagram.graph.getDefaultParent().style,
+              globals = Diagram.parseStyle(style ?? '');
+        globals['a'] = document.getElementById('simA').value;
+        globals['b'] = document.getElementById('simB').value;
+        globals['dt'] = document.getElementById('simdT').value;
+        globals['iv'] = document.getElementById('simIV').value;
+        diagram.graph.getDefaultParent().style = Diagram.parseStyle(globals);
+        const xml = diagram.getXML(true),
+              blob = new Blob([xml], {type: 'text/xml'}),
+              a = document.createElement('a');
+        a.download = name;
+        a.href = URL.createObjectURL(blob);
+        a.click();
+        a.remove();
+    });
+    diagram.createButton('tools', 'diagram.gif', () => {
+        const graph = diagram.graph,
+              sels = graph.getSelectionCells(),
+              refresh = sels.length === 1 && Diagram.getType(sels[0]) === 'simBlk',
+              group = refresh ? sels[0] : graph.groupCells(null, graph.gridSize * 2);
+        if (group.children === null || group.children === undefined)
+            return;
+        if (!refresh) {
+            group.setCollapsed(true); group.setConnectable(true);
+        }
+        const value = mxUtils.createXmlDocument().createElement('Object');
+        value.constraints = [];
+        let ltxt = '', rtxt = '', out = '';
+        // find inputs and output
+        const {inputs, output} = diagram.getBlockIntf(group);
+        // generate inputs and constraints
+        const len = inputs.length,
+              start = new mxPoint(0, (len === 1) ? 0.5 : (len > 2) ? 0.1 : 0.2),
+              offs = new mxPoint(0, (len < 3) ? 0.6 : 0.8 / (len - 1));
+        inputs.sort((a, b) => +Diagram.getAttr(a.style, 'text') - +Diagram.getAttr(b.style, 'text')).forEach(n => {
+            if (ltxt.length > 0) ltxt += ',';
+            const edges = diagram.getOutgoingEdges(n);
+            ltxt += (edges.length > 0) ? edges[0].getValue() : ' ';
+            value.constraints.push(new mxConnectionConstraint(start.clone(), true));
+            start.x += offs.x; start.y += offs.y;
+        });
+        // generate outputs
+        if (output !== null) {
+            out = 'output=1;';
+            const es = diagram.getIncomingEdges(output);
+            let idx = 0;
+            es.sort((a, b) => +Diagram.getAttr(a.style, 'exitY') - +Diagram.getAttr(b.style, 'exitY')).forEach(n => {
+                if (rtxt.length > 0) rtxt += ',';
+                rtxt += `${idx++}_${n.getValue()}`;
+            });
+        }
+        group.setValue(value);
+        group.setStyle(`shape=rectangle;type=simBlk;foldable=0;ltxt=${ltxt};rtxt=${rtxt};${out}`);
+        if (refresh)
+            group.getGeometry().height = 20 * len + 10;
+        else
+            group.setGeometry(new mxGeometry(50, 50, 70, 20 * len + 10));
+        graph.refresh();
+        graph.setSelectionCell(group);
+    }).style['marginLeft'] = '10px';
+    diagram.createButton('tools', 'down.gif', () => {
+        diagram.graph.enterGroup();
+    });
+    diagram.createButton('tools', 'up.gif', () => {
+        diagram.graph.exitGroup();
+    });
+    scopes.init();
+    visor.setActiveTab('Node');
+}
+
+async function execute(diagram, scopes) {
+    // clear state
+    console.clear();
+    scopes.reset();
+    // process diagram
+    let error = null;
+    const report = (n, e) => {
+              error = `${Diagram.getType(n)} (${n.value.getAttribute('label')}): ${e}`;
+              diagram.graph.setSelectionCell(n);
+              return false;
+          },
+          edgeNum = (e, cnstrs) => {
+              const ex = Diagram.getAttr(e.style, 'entryX'),
+                    ey = Diagram.getAttr(e.style, 'entryY');
+              for (let i = 0, n = cnstrs.length; i < n; i++) {
+                  const point = cnstrs[i].point;
+                  if (point.x == ex && point.y == ey)
+                      return i;
+              }
+              return null;
+          },
+          terminals = [],
+          a = +document.getElementById('simA').value,
+          b = +document.getElementById('simB').value,
+          dt = +document.getElementById('simdT').value,
+          result = +document.getElementById('simIV').value,
+          blocks = [];
+    // validate globals
+    if ((error = isNaN(a) ? 'invalid start T' : null) || (error = isNaN(b) ? 'invalid end T' : null) ||
+            (error = isNaN(dt) ? 'invalid delta T' : null) ||
+            (error = isNaN(result) ? 'invalid initial value for loops' : null)) {
+        console.error(error);
+        return;
+    }
+    const roots = diagram.findRootNodes(),
+          blockkeys = new Set();
+    // validate connections
+    for (const root of roots) {
+        diagram.traverseNodes(root, (n, e) => {
+            if (blockkeys.has(n))
+                return; // expanded block, no processing
+            const constrs = n.value.constraints ?? null,
+                  inputs = diagram.getIncomingEdges(n),
+                  outputs = diagram.getOutgoingEdges(n);
+            // check outputs
+            if (outputs.length > 0) {
+                if (Diagram.getAttr(n.style, 'output') !== '1')
+                    return report(n, 'output not allowed');
+                let ox = 1,
+                    oy = 0.5;
+                if (Diagram.getAttr(n.style, 'flipx') === '1')
+                    ox = 1 - ox;
+                for (const e of outputs)
+                    if (Diagram.getAttr(e.style, 'exitX') != ox || Diagram.getAttr(e.style, 'exitY') != oy)
+                        return report(n, 'invalid output position');
+            }
+            else
+                // remember terminal node (no output)
+                terminals.push(n);
+            // check inputs
+            if (inputs.length > 0) {
+                if (constrs === null || constrs.length === 0)
+                    return report(n, 'input not allowed');
+                if (constrs.length !== inputs.length)
+                    return report(n, 'invalid inputs');
+                for (const inp of inputs) {
+                    const num = edgeNum(inp, constrs);
+                    if (num === null)
+                        return report(n, 'invalid input position');
+                    // remember target port number for edge
+                    inp.simNum = num;
+                }
+            }
+            // setup execution data
+            let err, len;
+            try {
+                err = setExecData(diagram, scopes, a, dt, result, n);
+            } catch(e) {
+                err = e.message;
+            }
+            if (err) return report(n, err);
+            // expand blocks
+            if (Diagram.getType(n) === 'simBlk') {
+                blockkeys.add(n);
+                const intf = diagram.getBlockIntf(n),
+                      outs = [];
+                // redirect input to block content
+                for (let i = 0, m = intf.inputs.length; i < m; i++) {
+                    const inp = intf.inputs[i],
+                          edge = new mxCell('', new mxGeometry(), 'entryX=0;entryY=0.5;exitX=1;exitY=0.5;');
+                    edge.setEdge(true); edge.geometry.relative = true;
+                    edge.source = n; edge.target = inp;
+                    inp.inputs = [edge];
+                    blocks.push(inp);
+                    outs.push(edge);
+                }
+                // set block output
+                if (outs.length > 0) {
+                    n.outputs = outs;
+                    blocks.push(n);
+                }
+                // redirect output to block content
+                if ((len = outputs.length) > 0) {
+                    intf.output.outputs = [];
+                    for (let i = 0; i < len; i++) {
+                        const otp = outputs[i],
+                              edge = otp.clone(),
+                              trg = otp.target;
+                        edge.source = intf.output; edge.target = trg;
+                        edge.style = edge.style.replace('exitX=0;', 'exitX=1;'); // block interface not flipped
+                        intf.output.outputs.push(edge);
+                        // redirect targets input(s)
+                        if (!trg.inputs) {
+                            trg.inputs = diagram.getIncomingEdges(trg).filter(e => e.source !== n);
+                            blocks.push(trg);
+                        }
+                        trg.inputs.push(edge);
+                    }
+                    blocks.push(intf.output);
+                }
+            }
+        });
+        if (error !== null)
+            break;
+    }
+    if (error !== null)
+        console.error(error);
+    else {
+        // start simulation process
+        await simulateProcess(diagram, scopes, a, b, dt, terminals);
+        console.info('simulation finished');
+    }
+    // clear blocks
+    for (let i = 0, m = blocks.length; i < m; i++) {
+        const block = blocks[i];
+        if (block.inputs)
+            block.inputs = undefined;
+        if (block.outputs)
+            block.outputs = undefined;
+    }
+}
+
+function setExecData(diagram, scopes, a, dt, result, node) {
+    // set execution support for node
+    const type = Diagram.getType(node),
+          style = node.style;
+    let func;
+    switch (type) {
+        case 'simSignal':
+            const sig = Diagram.getAttr(style, 'signal') | 0,
+                  ini = +Diagram.getAttr(style, 'ini'),
+                  fin = +Diagram.getAttr(style, 'fin'),
+                  shift = +Diagram.getAttr(style, 'shift'),
+                  prd = +Diagram.getAttr(style, 'prd'),
+                  rnd = (sig === 5) ? NN.randf(ini, fin) : null,
+                  fin2 = (fin - ini) / 2,
+                  lvl = fin2 + ini;
+            let sfrm = (sig === 0) ? Signal.Step(shift, ini, fin) :
+                    (sig === 1) ? Signal.Ramp(shift, ini, fin, +Diagram.getAttr(style, 'slope')) :
+                    (sig === 2) ? Signal.Impulse(shift, ini, fin, +Diagram.getAttr(style, 'sdt')) :
+                    (sig === 3) ? () => ini :
+                    (sig === 4) ? (t) => (t < shift) ? lvl : Math.sin(t) * fin2 + lvl :
+                    (t) => (t < shift) ? ini : rnd();
+            if (prd > 0 && sig !== 3)
+                sfrm = Signal.Combine([[prd, sfrm]]);
+            const signal = new Signal(sfrm, dt);
+            func = (t) => signal.y(t);
+            break;
+        case 'simScope':
+            const grp = scopes.getGraph(node.id),
+                  clrs = Diagram.getAttr(style, 'clrs').split(/\s/),
+                  wdts = Diagram.getAttr(style, 'wdts').split(/\s/).map(item => +item),
+                  dots = Diagram.getAttr(style, 'dots').split(/\s/).map(item => +item),
+                  grs = grp.graphs,
+                  glen = grs.length;
+            if (clrs.length !== glen || wdts.length !== glen || dots.length !== glen)
+                return '[clrs,wdts,dots] - invalid length';
+            for (let i = 0; i < glen; i++) {
+                const gr = grs[i];
+                gr.color = clrs[i];
+                gr.width = wdts[i];
+                gr.dots = dots[i] === 1;
+            }
+            let ymia = Diagram.getAttr(style, 'ymia');
+            if (ymia !== '') {
+                ymia = ymia.split(/\s/).map(item => +item);
+                if (ymia.length !== 2)
+                    return '[ymia] - invalid length';
+                grp.py.min = ymia[0];
+                grp.py.max = ymia[1];
+            }
+            let ngxy = Diagram.getAttr(style, 'ngxy');
+            if (ngxy !== '') {
+                ngxy = ngxy.split(/\s/).map(item => +item);
+                if (ngxy.length !== 2)
+                    return '[ngxy] - invalid length';
+                grp.ng_x = ngxy[0];
+                grp.ng_y = ngxy[1];
+            }
+            func = (t, pts) => {
+                const arr = Array.isArray(pts);
+                grp.plotPoints(arr ? pts : [pts], undefined, arr ? pts.map(_ => t) : [t]);
+            };
+            break;
+        case 'simGain':
+            const gn = +Diagram.getAttr(style, 'text');
+            if (isNaN(gn))
+                return '[text] - invalid multiplier';
+            func = (t, value) => value * gn;
+            break;
+        case 'simSum':
+        case 'sumBlk':
+            const sop = Diagram.getAttr(style, 'sopers'),
+                  to = sop.charAt(0);
+            func = (to === 'p' || to === 'm') ? (t, ...v) => {
+                let sum = 0.0;
+                for (let i = 0, n = sop.length; i < n; i++)
+                    sum += (sop.charAt(i) === 'p') ? v[i] : -v[i];
+                return sum;
+            } : (t, ...v) => {
+                let mul = 1.0;
+                for (let i = 0, n = sop.length; i < n; i++)
+                    mul *= (sop.charAt(i) === 'u') ? v[i] : 1.0 / v[i];
+                return mul;
+            };
+            break;
+        case 'simDudt':
+            let prevV = null;
+            func = (t, v) => {
+                const res = (prevV === null) ? 0.0 : (v - prevV) / dt;
+                prevV = v;
+                return res;
+            };
+            break;
+        case 'simArray':
+        case 'simBlk':
+            func = (t, ...args) => args;
+            break;
+        case 'sim1s':
+        case 'simTransfer':
+            let nom, denom, init;
+            if (type === 'sim1s') {
+                nom = [1]; denom = [1, 0];
+                init = [+Diagram.getAttr(style, 'ini')];
+            } else {
+                nom = Diagram.getAttr(style, 'text1').split(/\s/).map(item => +item);
+                if (nom.length === 0 || nom.length > 3)
+                    return '[text1] - invalid numerator length';
+                denom = Diagram.getAttr(style, 'text2').split(/\s/).map(item => +item);
+                if (denom.length === 0 || denom.length > 4)
+                    return '[text2] - invalid denominator length';
+                init = Diagram.getAttr(style, 'ini').split(/\s/).map(item => +item);
+                if ((denom.length === 1 && init.length !== 1) ||
+                        (denom.length > 1 && init.length !== denom.length - 1))
+                    return '[ini] - invalid initial values count';
+            }
+            result = init[0];
+            try {
+                func = AdaptivePID.TF(a, dt, Diagram.getAttr(style, 'mtd'), nom, denom, init);
+            } catch(e) {
+                return `ODE - ${e.message}`;
+            }
+            break;
+        case 'simSat':
+            let min = Diagram.getAttr(style, 'min').trim(),
+                max = Diagram.getAttr(style, 'max').trim();
+            if (min === '' && max === '')
+                return '[min,max] - at least one must be set';
+            min = (min === '') ? -Infinity : +min;
+            max = (max === '') ? Infinity : +max;
+            if (min > max)
+                return '[min,max] - invalid ratio';
+            func = (t, v) => (v < min) ? min : (v > max) ? max : v;
+            break;
+        case 'simPID':
+            const pid = new PID(dt, +Diagram.getAttr(style, 'kp'), +Diagram.getAttr(style, 'ki'),
+                    +Diagram.getAttr(style, 'kd'), +Diagram.getAttr(style, 'min'), +Diagram.getAttr(style, 'max'),
+                    +Diagram.getAttr(style, 'pom') === 1, +Diagram.getAttr(style, 'inp0'),
+                    +Diagram.getAttr(style, 'out0'));
+            func = (t, sp, inp) => pid.compute(sp, inp);
+            break;
+        case 'simAPID':
+            const num = Diagram.getAttr(style, 'num').split(/\s/).map(item => +item);
+            if (num.length === 0 || num.length > 3)
+                return '[num] - invalid numerator length';
+            const _denom = Diagram.getAttr(style, 'denom').split(/\s/).map(item => +item);
+            if (_denom.length === 0 || _denom.length > 4)
+                return '[denom] - invalid denominator length';
+            const _init = Diagram.getAttr(style, 'ini').split(/\s/).map(item => +item);
+            if ((_denom.length === 1 && _init.length !== 1) ||
+                    (_denom.length > 1 && _init.length !== _denom.length - 1))
+                return '[ini] - invalid initial values count';
+            result = _init[0];
+            let apid;
+            try {
+                apid = new AdaptivePID(dt, num, _denom, _init, +Diagram.getAttr(style, 'gamma'),
+                        Diagram.getAttr(style, 'mtd'), a,
+                        +Diagram.getAttr(style, 'mit') === 1, +Diagram.getAttr(style, 'ff') === 1);
+            } catch(e) {
+                return `ODE - ${e.message}`;
+            }
+            func = (t, sp, inp) => apid.compute(sp, inp);
+            break;
+        case 'simView3D':
+            const v3 = scopes.getGraph(node.id),
+                  [, , , error] = parseView3DStyle(node.style);
+            if (error)
+                return error;
+            let reported = false;
+            func = (t, pts) => {
+                if (pts.length !== 6) {
+                    if (!reported) {
+                        console.error('View3D: invalid input');
+                        reported = true;
+                    }
+                    return;
+                }
+                v3.render(...pts);
+            };
+            break;
+        case 'simArrV':
+            const idx = +Diagram.getAttr(style, 'text');
+            if (isNaN(idx))
+                return '[text] - invalid index';
+            func = (t, arr) => arr[idx];
+            break;
+        case 'simQuad':
+            const m = +Diagram.getAttr(style, 'm'),
+                  l = +Diagram.getAttr(style, 'l'),
+                  Jp = +Diagram.getAttr(style, 'Jp'),
+                  KT = +Diagram.getAttr(style, 'KT'),
+                  Kd = +Diagram.getAttr(style, 'Kd'),
+                  max_motor_speed = +Diagram.getAttr(style, 'max_motor_speed'),
+                  xyz_Kd = Diagram.getAttr(style, 'xyz_Kd').split(/\s/).map(item => +item),
+                  xyz_J = Diagram.getAttr(style, 'xyz_J').split(/\s/).map(item => +item),
+                  GPS_freq = +Diagram.getAttr(style, 'GPS_freq'),
+                  XYZ_error = Diagram.getAttr(style, 'XYZ_error').split(/\s/).map(item => +item),
+                  xyz_acc_bias = Diagram.getAttr(style, 'xyz_acc_bias').split(/\s/).map(item => +item),
+                  xyz_acc_sd = Diagram.getAttr(style, 'xyz_acc_sd').split(/\s/).map(item => +item),
+                  xyz_gyro_bias = Diagram.getAttr(style, 'xyz_gyro_bias').split(/\s/).map(item => +item),
+                  xyz_gyro_sd = Diagram.getAttr(style, 'xyz_gyro_sd').split(/\s/).map(item => +item);
+            if (xyz_Kd.length !== 3)
+                return '[xyz_Kd] - invalid length';
+            if (xyz_J.length !== 3)
+                return '[xyz_J] - invalid length';
+            if (XYZ_error.length !== 3)
+                return '[XYZ_error] - invalid length';
+            if (xyz_acc_bias.length !== 3)
+                return '[xyz_acc_bias] - invalid length';
+            if (xyz_acc_sd.length !== 3)
+                return '[xyz_acc_sd] - invalid length';
+            if (xyz_gyro_bias.length !== 3)
+                return '[xyz_gyro_bias] - invalid length';
+            if (xyz_gyro_sd.length !== 3)
+                return '[xyz_gyro_sd] - invalid length';
+            const quad = new QuadDynamics(dt, {
+                m, l, Jp, KT, Kd, max_motor_speed, xyz_Kd, xyz_J,
+                GPS_freq, XYZ_error, xyz_acc_bias, xyz_acc_sd, xyz_gyro_bias, xyz_gyro_sd
+            }, Diagram.getAttr(style, 'mtd'), a);
+            result = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+            func = (t, U1, U2, U3, U4, x_dis, y_dis, z_dis, phi_dis, theta_dis, psi_dis) =>
+                    quad.compute(U1, U2, U3, U4, x_dis, y_dis, z_dis, phi_dis, theta_dis, psi_dis);
+            break;
+        case 'simFTr':
+            const frtrs = new FrameTranslation(+Diagram.getAttr(style, 'btg') === 1);
+            result = [0, 0, 0];
+            func = (t, X, Y, Z, phi, theta, psi) => frtrs.compute(X, Y, Z, phi, theta, psi);
+            break;
+        case 'simFunc':
+            let fnc = Diagram.getAttr(style, 'text');
+            if (fnc.length === 0)
+                return 'Func: expected function name';
+            fnc = Math[fnc];
+            func = (t, v) => fnc(v);
+            break;
+        default:
+            return 'invalid node type';
+    }
+    const graph = diagram.graph;
+    let inputs = null, current_t = null, calling = false;
+    node.simFunc = (t) => {
+        if (!calling && t !== current_t) {
+            if (inputs === null)
+                inputs = diagram.getIncomingEdges(node).sort((a, b) => a.simNum - b.simNum)
+                        .map(e => graph.model.getTerminal(e, true).simFunc);
+            calling = true;
+            try {
+                result = func(t, ...inputs.map(simFunc => simFunc(t)));
+            } finally {
+                calling = false;
+            }
+            current_t = t;
+        }
+        return result;
+    };
+}
+
+async function simulateProcess(diagram, scopes, a, b, dt, terminals) {
+    // actual process execution
+    let t = a, end = b + dt / 2;
+    while (t <= end) {
+        for (const node of terminals) {
+            node.simFunc(t);
+            await NN.animationFrame();
+        }
+        t += dt;
+    }
+}
+</script>
+<script type='importmap'>
+{"imports": {
+    "three": "./libs/three/three.module.min.js",
+    "three/addons/": "./libs/three/modules/"
+}}
+</script>
+<script type='module'>
+import * as THREE from 'three';
+import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
+import {OBJLoader} from 'three/addons/loaders/OBJLoader.js';
+import {MTLLoader} from 'three/addons/loaders/MTLLoader.js';
+
+class View3D {
+    static version = THREE.REVISION;
+    // progress function receives one ProgressEvent argument
+    // fields: lengthComputable, total, loaded
+    static async loadObj(name, progress) {
+        return new Promise((resolve, reject) => {
+            const loader = new OBJLoader();
+            new MTLLoader().load(name.replace('.obj', '.mtl'), mtl => {
+                mtl.preload();
+                loader.setMaterials(mtl);
+                loader.load(name, resolve, progress, reject);
+            }, progress, reject);
+        });
+    }
+    constructor(canvas, width, height, bckg_rgbaf, {
+        z_down = true,
+        toneMapping = false,
+        cam_fov = 45,
+        cam_near = 0.1,
+        cam_far = 100,
+        cam_xyz = [20, 10, 20],
+        orb_minDist = 1,
+        orb_maxDist = 5,
+        orb_target = [0, 1, 0],
+        space_size = 4,
+        floor_color = [255, 255, 255, 255, 128, 128, 128, 255, 128, 128, 128, 255, 255, 255, 255, 255],
+        wall_color = [255, 255, 255, 255, 200, 200, 200, 255, 200, 200, 200, 255, 255, 255, 255, 255],
+        amb_color = 0xffffff,
+        amb_intencity = 1,
+        dir_color = 0xffffff,
+        dir_intencity = 1
+    } = {}) {
+        const alphaValue = bckg_rgbaf[3],
+              alpha = alphaValue < 1.0;
+        const renderer = new THREE.WebGLRenderer({'antialias': true, canvas, alpha});
+        renderer.setPixelRatio(devicePixelRatio);
+        renderer.setSize(width, height);
+        if (alpha)
+            renderer.setClearAlpha(alphaValue);
+        if (toneMapping) {
+            renderer.toneMapping = THREE.ACESFilmicToneMapping;
+            renderer.toneMappingExposure = 1;
+        }
+        renderer.shadowMap.enabled = true;
+        this.renderer = renderer;
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(...bckg_rgbaf);
+        this.scene = scene;
+        this._createLights(space_size, amb_color, amb_intencity, dir_color, dir_intencity);
+        this._createSpace(space_size, floor_color, wall_color);
+        const camera = new THREE.PerspectiveCamera(cam_fov, width / height, cam_near, cam_far);
+        camera.position.set(...cam_xyz);
+        this.camera = camera;
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.minDistance = orb_minDist;
+        controls.maxDistance = orb_maxDist;
+        controls.target.set(...orb_target);
+        controls.addEventListener('change', () => renderer.render(scene, camera));
+        controls.update();
+        this.controls = controls;
+        this.z_down = z_down;
+    }
+    _createTexture(data, repeat) {
+        const size = data.length / 8 | 0,
+              texture = new THREE.DataTexture(new Uint8Array(data), size, size);
+        texture.wrapS = THREE.RepeatWrapping;
+        texture.wrapT = THREE.RepeatWrapping;
+        texture.magFilter = THREE.NearestFilter;
+        texture.colorSpace = THREE.SRGBColorSpace;
+        texture.repeat.set(repeat, repeat);
+        texture.needsUpdate = true;
+        return texture;
+    }
+    _createPlane(size, color) {
+        const opts = (color.length < 16) ?
+                {'color': new THREE.Color(...color)} :
+                {'map': this._createTexture(color, size / 2 | 0)};
+        const mesh = new THREE.Mesh(
+            new THREE.PlaneGeometry(size, size),
+            new THREE.MeshPhongMaterial(opts)
+        );
+        mesh.dispose = function() {
+            this.geometry.dispose();
+            this.material.map?.dispose();
+            this.material.dispose();
+        };
+        return mesh;
+    }
+    _createSpace(size, floor_c, wall_c) {
+        const a90 = Math.PI * 0.5,
+              s2 = size / 2 | 0;
+        const floor = this._createPlane(size, floor_c);
+        floor.rotateX(-a90);
+        floor.receiveShadow = true;
+        this.scene.add(floor);
+        this._floor = floor;
+        const left_wall = this._createPlane(size, wall_c);
+        left_wall.rotateY(a90);
+        left_wall.translateZ(-s2);
+        left_wall.translateY(s2);
+        left_wall.receiveShadow = true;
+        this.scene.add(left_wall);
+        this._left_wall = left_wall;
+        const front_wall = this._createPlane(size, wall_c);
+        front_wall.translateZ(-s2);
+        front_wall.translateY(s2);
+        this.scene.add(front_wall);
+        this._front_wall = front_wall;
+    }
+    _createLight(color, intencity, position, target) {
+        const light = new THREE.DirectionalLight(color, intencity);
+        light.position.set(...position);
+        light.target.position.set(...target);
+        return light;
+    }
+    _createLights(size, a_color, a_intencity, color, intencity) {
+        this._amb_light = new THREE.AmbientLight(a_color, a_intencity);
+        this.scene.add(this._amb_light);
+        const top_light = this._createLight(color, intencity, [0, size, 0], [0, -size, 0]);
+        top_light.castShadow = true;
+        this.scene.add(top_light);
+        this._top_light = top_light;
+        const right_light = this._createLight(color, intencity, [size, 0, 0], [-size, 0, 0]);
+        right_light.castShadow = true;
+        this.scene.add(right_light);
+        this._right_light = right_light;
+    }
+    // adjust - model agjustments [scale, translate, rotate]:
+    // scale     - [x, y, z],
+    // translate - [x, y, z],
+    // rotate    - [x, y, z]
+    async setModel(name, adjust = null, progress = null) {
+        if (this.model) {
+            this.scene.remove(this.model);
+            this.model.dispose();
+            this.model = null;
+        }
+        this.prevZ = 0; this.prevY = 0; this.prevX = 0;
+        try {
+            const root = await View3D.loadObj(name, progress);
+            if (adjust) {
+                this.adjust = [adjust[0].slice(), adjust[1].slice(), adjust[2].slice()];
+                if (this.z_down) {
+                    this.adjust[1][1] = -this.adjust[1][1]; // y dir reverse
+                    this.adjust[1][2] = -this.adjust[1][2]; // z dir reverse
+                    this.adjust[2][1] = -this.adjust[2][1]; // pitch reverse
+                    this.adjust[2][2] = -this.adjust[2][2]; // yaw reverse
+                }
+                root.scale.x = this.adjust[0][1]; // y
+                root.scale.y = this.adjust[0][2]; // z
+                root.scale.z = this.adjust[0][0]; // x
+                root.translateX(this.adjust[1][1]);
+                root.translateY(this.adjust[1][2]);
+                root.translateZ(this.adjust[1][0]);
+                root.rotateY(this.adjust[2][2]);
+                root.rotateX(this.adjust[2][1]);
+                root.rotateZ(this.adjust[2][0]);
+            }
+            else
+                this.adjust = null;
+            root.traverse(obj => {
+                if (obj.isMesh) {
+                    obj.castShadow = true;
+                    obj.receiveShadow = true;
+                    obj.dispose = function() {
+                        this.geometry.dispose();
+                        if (Array.isArray(this.material))
+                            this.material.forEach(m => {
+                                m.map?.dispose();
+                                m.dispose();
+                            });
+                        else {
+                            this.material.map?.dispose();
+                            this.material.dispose();
+                        }
+                    };
+                }
+            });
+            root.dispose = function() {
+                this.traverse(o => { if (o.isMesh) o.dispose(); });
+            };
+            this.scene.add(root);
+            this.model = root;
+            this.renderer.render(this.scene, this.camera);
+        } catch(e) {
+            console.error(e.message + '\n', e.stack);
+        }
+    }
+    render(z_rad, y_rad, x_rad, x_offs, y_offs, z_offs) {
+        if (this.z_down) {
+            y_offs = -y_offs; // y dir reverse
+            z_offs = -z_offs; // z dir reverse
+            y_rad = -y_rad;   // pitch reverse
+            z_rad = -z_rad;   // yaw reverse
+        }
+        if (x_offs) this.model.position.z = x_offs + this.adjust[1][0];
+        if (y_offs) this.model.position.x = y_offs + this.adjust[1][1];
+        if (z_offs) this.model.position.y = z_offs + this.adjust[1][2];
+        if (z_rad) { // yaw
+            this.model.rotateY(z_rad - this.prevZ);
+            this.prevZ = z_rad;
+        }
+        if (y_rad) { // pitch
+            this.model.rotateY(-this.adjust[2][2]); // cancel yaw adjustment
+            this.model.rotateX(y_rad - this.prevY);
+            this.model.rotateY(this.adjust[2][2]);  // re-apply yaw adjustment
+            this.prevY = y_rad;
+        }
+        if (x_rad) { // roll
+            this.model.rotateY(-this.adjust[2][2]); // cancel yaw adjustment
+            this.model.rotateZ(x_rad - this.prevX);
+            this.model.rotateY(this.adjust[2][2]);  // re-apply yaw adjustment
+            this.prevX = x_rad;
+        }
+        this.renderer.render(this.scene, this.camera);
+    }
+    clear() {
+        this.renderer.clear();
+    }
+    destroy() {
+        this.model?.dispose();
+        this._floor.dispose();
+        this._left_wall.dispose();
+        this._front_wall.dispose();
+        this._amb_light.dispose();
+        this._top_light.dispose();
+        this._right_light.dispose();
+        this.controls.dispose();
+        this.renderer.dispose();
+    }
+}
+
+window['View3D'] = View3D;
+
+(async () => {
+    try {
+        await main();
+    } catch(e) {
+        console.error(e.message + '\n' + e.stack);
+    }
+})();
+</script>
+</body>
+</html>

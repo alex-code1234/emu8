@@ -1,0 +1,1 @@
+JKFlipFlop:inputs=J,^,K;outputs=Q,/Q;logic=group;xml=jktrigger.xml
