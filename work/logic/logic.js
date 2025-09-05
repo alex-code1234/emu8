@@ -12,7 +12,7 @@ async function main() {
         if (txt.indexOf('404 Not Found') >= 0) return null;
         const result = [];
         txt.split('\n').forEach(s => {
-            if (s.trim().length > 0) result.push(s.split(':'));
+            s = s.trim(); if (s.length > 0) result.push(s.split(':'));
         });
         return result;
     },
