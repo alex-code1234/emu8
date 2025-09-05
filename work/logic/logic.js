@@ -83,10 +83,12 @@ async function main() {
                 const ga = getStrAttr(style, 'gate');
                 if (ga === '1') style = style.replace('gate=1', 'gate=one');
             }
-            const update = style.indexOf('inputs') >= 0 || style.indexOf('outputs') >= 0;
-            if (update) cell.geometry.height = getAdjHeight(style);      // grid alignment
+            if (style.indexOf('inputs') >= 0 || style.indexOf('outputs') >= 0) {
+                const geom = cell.geometry.clone(); geom.height = getAdjHeight(style);
+                graph.getModel().setGeometry(cell, geom);                // grid alignment
+                graph.getView().getState(cell).style['points'] = null;   // update constraints
+            }
             graph.getModel().setStyle(cell, style);
-            if (update) graph.getView().getState(cell).style['points'] = null; // update constraints
             if (cell.value === '=') updateOsc(cell);
         };
     },
@@ -811,19 +813,22 @@ async function main() {
         if (data === null) return null;
         const res = [], vals = data.split(','),
               deltaH = (h - (ftop + fbot)) / vals.length,
-              fontD = mxUtils.getSizeForString('W', fsize);
-        let hhh = (deltaH - fontD.height) / 2 + ftop; if (hhh < ftop) hhh = ftop;
+              fontD = mxUtils.getSizeForString('W', fsize),
+        setMode = () => {                        // parse control character
+            if (txt.charAt(0) === '/') { txt = txt.substring(1).trim(); mod |= 1; }
+            else if (txt.charAt(0) === '^') { txt = txt.substring(1).trim(); mod |= 2; }
+            else if (txt.charAt(0) === 'v') { txt = txt.substring(1).trim(); mod |= 4; }
+        };
+        let txt, mod, hhh = (deltaH - fontD.height) / 2 + ftop; if (hhh < ftop) hhh = ftop;
         for (let i = 0, n = vals.length; i < n; i++) {
-            let mod = 0, txt = vals[i].trim(), txtd;
+            mod = 0; txt = vals[i].trim();
+            let txtd;
             if (txt.length === 0) txtd = fontD;
             else {
-                if (txt.charAt(0) === '/') { txt = txt.substring(1).trim(); mod |= 1; } // first spec char
-                else if (txt.charAt(0) === '^') { txt = txt.substring(1).trim(); mod |= 2; }
-                if (txt.charAt(0) === '/') { txt = txt.substring(1).trim(); mod |= 1; } // second spec char
-                else if (txt.charAt(0) === '^') { txt = txt.substring(1).trim(); mod |= 2; }
+                setMode(); setMode();            // up to 2 control chars
                 txtd = mxUtils.getSizeForString(txt, fsize);
             }
-            const adj = Math.round(hhh * graph.gridSize) / graph.gridSize;              // snap to grid
+            const adj = Math.round(hhh * graph.gridSize) / graph.gridSize; // snap to grid
             res.push([input ? 5 : w - txtd.width - 5, adj, txtd.width, txt, mod]);
             hhh += deltaH;
         }
@@ -868,15 +873,22 @@ async function main() {
                         c.ellipse((i === 0) ? x - 5 : x + w, y + dy + 2, 5, 5);
                         c.stroke();
                     }
-                    if (mod & 2) {     // clock contact
+                    if (mod & 2) {     // falling edge clock contact
                         c.begin();
                         if (i === 0) {
-                            c.moveTo(x, y + dy);
-                            c.lineTo(x + 5, y + dy + 5);
-                            c.lineTo(x, y + dy + 10);
+                            c.moveTo(x, y + dy); c.lineTo(x + 5, y + dy + 5); c.lineTo(x, y + dy + 10);
                         } else {
-                            c.moveTo(x + w, y + dy);
-                            c.lineTo(x + w - 5, y + dy + 5);
+                            c.moveTo(x + w, y + dy); c.lineTo(x + w + 5, y + dy + 5);
+                            c.lineTo(x + w, y + dy + 10);
+                        }
+                        c.stroke();
+                    }
+                    if (mod & 4) {     // rising edge clock contact
+                        c.begin();
+                        if (i === 0) {
+                            c.moveTo(x, y + dy); c.lineTo(x - 5, y + dy + 5); c.lineTo(x, y + dy + 10);
+                        } else {
+                            c.moveTo(x + w, y + dy); c.lineTo(x + w - 5, y + dy + 5);
                             c.lineTo(x + w, y + dy + 10);
                         }
                         c.stroke();
@@ -919,7 +931,9 @@ async function main() {
             const data = points[i];
             for (let j = 0, m = data.length; j < m; j++) {
                 const [, dy, , , mod] = data[j],
-                      offs = (mod & 1) ? i ? 5.0 : -5.0 : undefined,
+                      offs = (mod & 1) ? i ? 5.0 : -5.0 :
+                              (mod & 2) ? i ? 5.0 : undefined :
+                              (mod & 4) ? i ? undefined : -5.0 : undefined,
                       pct = (dy + 5.0) / geom.height;
                 res.push(new mxConnectionConstraint(new mxPoint(i, pct), false, undefined, offs));
             }
