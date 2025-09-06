@@ -556,16 +556,18 @@ async function main() {
         parent = graph.getDefaultParent(),       // first child of the root (layer 0)
         oscStep = 8, oscStart = 0;               // shared data for oscillographs
     logicFncs.set('&', cell => {                 // NAND gate
-        const result = [0];
+        const result = [0],
+              negate = getStrAttr(cell.style, 'outputs').startsWith('/');
         return (t, inputs) => {
-            if (inputs) result[0] = inputs.includes(0) ? 1 : 0;
+            if (inputs) result[0] = inputs.includes(0) ? negate ? 1 : 0 : negate ? 0 : 1;
             return result;
         };
     });
     logicFncs.set('one', cell => {               // NOR gate
-        const result = [0];
+        const result = [0],
+              negate = getStrAttr(cell.style, 'outputs').startsWith('/');
         return (t, inputs) => {
-            if (inputs) result[0] = inputs.includes(1) ? 0 : 1;
+            if (inputs) result[0] = inputs.includes(1) ? negate ? 0 : 1 : negate ? 1 : 0;
             return result;
         };
     });
