@@ -137,8 +137,7 @@ async function main() {
         const vcell = view.cell,
               geom = vcell.geometry.clone(),
               points = geom.points, len = points.length;
-        if (len < 2 || (len % 2) !== 0) { console.warn('No bends'); return; }
-        if ((len % 2) !== 0) { console.warn('Offsets not supported'); return; }
+        if (len < 2) { console.warn('No bends'); return; }
         let jpoint, point, vert;
         if (vcell.source.edge) {
             jpoint = geom.sourcePoint; point = points[0];
