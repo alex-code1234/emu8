@@ -598,7 +598,7 @@ async function main() {
         };
     });
     logicFncs.set('inp', cell => {               // input terminal
-        const index = cell.geometry.y,           // for sorting
+        const index = getStrAttr(cell.style, 'ord') ?? cell.geometry.y,  // for sorting
               result = [0];
         return (t, input) => {
             if (t === true) return index;               // sorting call
@@ -607,7 +607,7 @@ async function main() {
         }
     });
     logicFncs.set('out', cell => {               // output terminal
-        const index = cell.geometry.y;           // for sorting
+        const index = getStrAttr(cell.style, 'ord') ?? cell.geometry.y;  // for sorting
         let result = 0;
         return (t, inputs) => {
             if (t === true) return index;               // sorting call
