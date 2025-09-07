@@ -700,6 +700,7 @@ async function main() {
         if (osc.instance === undefined) menu.addItem('View oscillograph', null, () =>
                 openWnd(osc, 'Oscillograph', 50, 210, 700, 282), sysmenu);
         else menu.addItem('Clear oscillograph', null, () => {
+            oscStart = 0;                                                // reset start
             for (const [id, fnc] of oscillators)
                 if (!graph.model.getCell(id)) removeOsc({id});           // cell removed
                 else fnc.clear();
