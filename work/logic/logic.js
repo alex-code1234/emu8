@@ -583,10 +583,21 @@ async function main() {
             console.warn(`Frequency set to minimum (2) at id: ${cell.id}`);
             freq = 2;
         }
+        let ticks = getStrAttr(cell.style, 'ticks');                              // impulse(s) descr
+        if (ticks !== null) {
+            if (ticks[0] === '+') { result[0] = 1; ticks = ticks.substring(1); }  // start H
+            freq = ticks[0] | 0; ticks = ticks.substring(1);                      // stay ticks
+        }
         return t => {
             if (t !== prevT) {
                 prevT = t; counter++;
-                if (counter >= freq) { counter = 0; result[0] = result[0] ? 0 : 1; }
+                if (counter >= freq) {
+                    counter = 0; result[0] = result[0] ? 0 : 1;
+                    if (ticks !== null) {
+                        if (ticks.length === 0) freq = Infinity;                  // stay on last level
+                        else { freq = ticks[0] | 0; ticks = ticks.substring(1); } // next
+                    }
+                }
             }
             return result;
         };
