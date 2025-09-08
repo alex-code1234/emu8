@@ -698,7 +698,7 @@ async function main() {
         menu.addItem('Cancel zoom', null, () => graph.zoomActual(), sysmenu);
         menu.addItem('Cancel pan', null, () => graph.getView().setTranslate(0, 0), sysmenu);
         if (osc.instance === undefined) menu.addItem('View oscillograph', null, () =>
-                openWnd(osc, 'Oscillograph', 50, 210, 700, 282), sysmenu);
+                openWnd(osc, 'Oscillograph', 50, 210, 700, 315), sysmenu);
         else menu.addItem('Clear oscillograph', null, () => {
             oscStart = 0;                                                // reset start
             for (const [id, fnc] of oscillators)
