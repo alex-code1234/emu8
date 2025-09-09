@@ -10,26 +10,95 @@ async function main() {
     const loadExt = async (name, result, fnc) => {
         const txt = await (await fetch(name, {cache: 'no-store'})).text();
         if (txt.indexOf('404 Not Found') >= 0) return null;
-        txt.split('\n').forEach(s => fnc(s, result));
+        txt.split('\n').forEach(s => fnc(s.trim(), result));
         return result;
     },
     procCompFrag = (s, result) => {              // load component or fragment
-        s = s.trim(); if (s.length > 0) result.push(s.split(':'));
+        if (s.length > 0) result.push(s.split(':'));
     },
     procTable = (s, result) => {                 // load truth table
-// [00,11,01,10,10,01,11,[-00,01,-10,10,-01,01,-11,tt]],[0,1],2,5
-//        table = new Map([
-//            ['00', [1, 1]],
-//            ['01', [1, 0]],
-//            ['10', [0, 1]],
-//            ['11', new Map([
-//                ['-00', [0, 1]],
-//                ['-10', [1, 0]],
-//                ['-01', [0, 1]],
-//                ['-11', ['t', 't']]
-//            ])]
-//        ]),
-//        defs = [0, 1], clock = 2, idxs = [2, 3, 4], initRes = [1, 0];
+        const arrB = str => str.split('').map(e => (e === 't') ? e : e | 0),
+              arrI = str => str.split(',').map(e => e | 0),
+        next = s => {                            // no spaces allowed
+            if (s.length === 0) return [null, null];
+            let idx, result;
+            if (s.charAt(0) === '[') {
+                let level = 0; idx = -1;
+                for (let i = 1, n = s.length; i < n; i++) {
+                    const chr = s.charAt(i);
+                    if (chr === '[') level++;
+                    else if (chr === ']') {
+                        level--;
+                        if (level < 0) { idx = i; break; }
+                    }
+                }
+                if (idx < 0) { s = ''; return [null, null]; }
+                idx++;
+                result = s.substring(0, idx);
+                if (result.length < 3) result = null;
+            } else {
+                idx = s.indexOf(','); if (idx < 0) idx = s.length;
+                result = s.substring(0, idx);
+                if (result.length === 0) result = null;
+            }
+            return [result, idx + 1];
+        },
+        procMap = (s, map, id) => {
+            while (s.length > 0) {
+                let [item, idx] = next(s);
+                if (item === null) { console.error(`Expected inputs for ${id}`); return null; }
+                const key = item;
+                s = s.substring(idx); [item, idx] = next(s);
+                if (item === null) { console.error(`Expected outputs for ${id}`); return null; }
+                if (item.charAt(0) === '[') {
+                    item = procMap(item.substring(1, item.length - 1), new Map(), id + ` : ${key}`);
+                    if (item === null) return null;
+                }
+                else item = arrB(item);
+                s = s.substring(idx);
+                map.set(key, item);
+            }
+            return map;
+        };
+        let item, idx;
+        [item, idx] = next(s);
+        if (item === null) return;
+        const key = item;
+        s = s.substring(idx); [item, idx] = next(s);
+        if (item === null || item.charAt(0) !== '[') {
+            console.error(`Error reading data for ${key}: expected map`); return;
+        }
+        const table = procMap(item.substring(1, item.length - 1), new Map(), key);
+        if (table === null) return;
+        s = s.substring(idx); [item, idx] = next(s);
+        if (item !== null) {
+            if (item.charAt(0) !== '[') {
+                console.error(`Error reading data for ${key}: expected async idx array`); return;
+            }
+            item = arrI(item.substring(1, item.length - 1));
+        }
+        const defs = item;
+        s = s.substring(idx); [item, idx] = next(s);
+        if (item !== null) {
+            if (item.charAt(0) === '[') {
+                console.error(`Error reading data for ${key}: expected clock idx`); return;
+            }
+            item = item | 0;
+        }
+        const clock = item;
+        s = s.substring(idx); [item, idx] = next(s);
+        if (item === null || item.charAt(0) === '[') {
+            console.error(`Error reading data for ${key}: expected inputs length`); return;
+        }
+        const len = item | 0, idxs = [];
+        for (let i = 0; i < len; i++)
+            if (defs === null || !defs.includes(i)) idxs.push(i);
+        s = s.substring(idx); [item, idx] = next(s);
+        if (item === null || item.charAt(0) !== '[') {
+            console.error(`Error reading data for ${key}: expected initial values`); return;
+        }
+        const initRes = arrI(item.substring(1, item.length - 1));
+        result.set(key, [table, defs, clock, idxs, initRes]);
     },
     fragments = await loadExt('fragments.dat', [], procCompFrag),
     components = await loadExt('components.dat', [], procCompFrag),
