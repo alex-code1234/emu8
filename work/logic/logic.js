@@ -641,13 +641,17 @@ async function main() {
                 inps.push(fnc);                  // find all inputs
         }));
         inps.sort((a, b) => a(true) - b(true));  // sort by vertical placement
+        let prevT = null;
         return (t, inputs) => {
             if (t === undefined) return result;  // loopback, return current value
-            for (let i = 0, n = inputs.length; i < n; i++)
-                inps[i](t, inputs[i]);           // map inputs
-            runScheme(scheme, cache, t);         // execute one step
-            for (let i = 0, n = outs.length; i < n; i++)
-                result[i] = outs[i]();           // merge outputs
+            if (prevT !== t) {                   // calculate for this t
+                prevT = t;                       // cache calculated result
+                for (let i = 0, n = inputs.length; i < n; i++)
+                    inps[i](t, inputs[i]);       // map inputs
+                runScheme(scheme, cache, t);     // execute one step
+                for (let i = 0, n = outs.length; i < n; i++)
+                    result[i] = outs[i]();       // merge outputs
+            }
             return result;
         };
     });
