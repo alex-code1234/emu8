@@ -7,17 +7,33 @@ async function main() {
     console.warn = console._logwrapper('var(--warning)');
     console.info = console._logwrapper('var(--secondary)');
 
-    const loadExt = async name => {              // load extension
+    const loadExt = async (name, result, fnc) => {
         const txt = await (await fetch(name, {cache: 'no-store'})).text();
         if (txt.indexOf('404 Not Found') >= 0) return null;
-        const result = [];
-        txt.split('\n').forEach(s => {
-            s = s.trim(); if (s.length > 0) result.push(s.split(':'));
-        });
+        txt.split('\n').forEach(s => fnc(s, result));
         return result;
     },
-    fragments = await loadExt('fragments.dat'),
-    components = await loadExt('components.dat');
+    procCompFrag = (s, result) => {              // load component or fragment
+        s = s.trim(); if (s.length > 0) result.push(s.split(':'));
+    },
+    procTable = (s, result) => {                 // load truth table
+// [00,11,01,10,10,01,11,[-00,01,-10,10,-01,01,-11,tt]],[0,1],2,5
+//        table = new Map([
+//            ['00', [1, 1]],
+//            ['01', [1, 0]],
+//            ['10', [0, 1]],
+//            ['11', new Map([
+//                ['-00', [0, 1]],
+//                ['-10', [1, 0]],
+//                ['-01', [0, 1]],
+//                ['-11', ['t', 't']]
+//            ])]
+//        ]),
+//        defs = [0, 1], clock = 2, idxs = [2, 3, 4], initRes = [1, 0];
+    },
+    fragments = await loadExt('fragments.dat', [], procCompFrag),
+    components = await loadExt('components.dat', [], procCompFrag),
+    tables = await loadExt('tables.dat', new Map(), procTable);
 
     window.onbeforeunload = e => {               // prevent right mouse click exit
         e.returnValue = true; e.preventDefault();
@@ -242,7 +258,11 @@ async function main() {
             if (!atr) return edgeError([cell], 'Logic processor not set');
             const fnc = logicFncs.get(atr);                              // get processor
             if (!fnc) return edgeError([cell], `Logic processor not found: ${atr}`);
-            result = await fnc(cell);                                    // initialize processor
+            try {
+                result = await fnc(cell);                                // initialize processor
+            } catch(e) {
+                return edgeError([cell], e.stack);
+            }
             funcs.set(cell.id, result);
         }
         return result;
@@ -651,6 +671,40 @@ async function main() {
                 runScheme(scheme, cache, t);     // execute one step
                 for (let i = 0, n = outs.length; i < n; i++)
                     result[i] = outs[i]();       // merge outputs
+            }
+            return result;
+        };
+    });
+    logicFncs.set('table', async cell => {       // truth table node
+        const [table, defs, clock, idxs, initRes] = tables.get(getStrAttr(cell.style, 'table'));
+        let result = initRes, prevT = null, prevC = 0;
+        return (t, inputs) => {
+            if (t === undefined || prevT === t) return result; // loopback or already calculated
+            prevT = t;                                         // cache calculated result
+            let map, key;
+            if (defs === null) map = table;
+            else {                                             // async bits
+                key = '';
+                for (let i = 0, n = defs.length; i < n; i++) key += inputs[defs[i]];
+                map = table.get(key);
+                if (Array.isArray(map)) { result = map.slice(0); return result; }
+            }
+            key = '';                                          // remaining bits
+            for (let i = 0, n = idxs.length; i < n; i++) {
+                const idx = idxs[i];
+                let bit = inputs[idx];
+                if (idx === clock) {                           // raising or falling edge
+                    const change = (bit === prevC) ? '0' : (bit === 0) ? '-' : '+';
+                    prevC = bit; bit = change;
+                }
+                key += bit;
+            }
+            map = map.get(key);
+            if (Array.isArray(map)) {
+                map = map.slice(0);
+                for (let i = 0, n = result.length; i < n; i++) // toggle bit
+                    if (map[i] === 't') map[i] = result[i] ? 0 : 1;
+                result = map;
             }
             return result;
         };
