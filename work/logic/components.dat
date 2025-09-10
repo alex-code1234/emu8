@@ -1,1 +1,9 @@
-JKFlipFlop:inputs=J,^,K;outputs=Q,/Q;logic=group;xml=jktrigger.xml
+K155IE5:inputs=/C1,/C2,&,R;outputs=1,2,4,8;logic=group;scm=comps/k155ie5.scm
+K155IE7:inputs=0,1,2,3,/PE,R,^U,^D;outputs=1,2,4,8,/PU,/PD;logic=group;scm=comps/74ls193.scm
+K155ID4:inputs=/C1,D1,A1,A0,/D2,/C2;outputs=/0,/1,/2,/3,/4,/5,/6,/7;logic=group;scm=comps/74ls155.scm
+JCK trigger:inputs=J,^,K;outputs=Q,/Q;logic=group;scm=comps/jck.scm
+JC_K trigger:inputs=J,v,K;outputs=Q,/Q;logic=group;scm=comps/jc_k.scm
+S_JC_KR_ trigger:inputs=/S,J,v,K,/R;outputs=Q,/Q;logic=group;scm=comps/s_jc_kr_.scm
+S_DCR_ trigger:inputs=/S,D,^,/R;outputs=Q,/Q;logic=group;scm=comps/s_dcr_.scm
+S_C_R_ trigger:inputs=/S,v,/R;outputs=Q,/Q;logic=group;scm=comps/s_c_r_.scm
+C_R_ trigger:inputs=v,/R;outputs=Q,/Q;logic=group;scm=comps/c_r_.scm
