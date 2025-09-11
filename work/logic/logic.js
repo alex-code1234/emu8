@@ -219,8 +219,9 @@ async function main() {
         graph.getModel().setGeometry(vcell, geom);
     },
     alignJoin = view => {                        // remove vertical bend at edges join
-        const vcell = view.cell,
-              geom = vcell.geometry.clone(),
+        const vcell = view.cell;
+        if (!vcell.source || !vcell.target) { console.warn('Not connected'); return; }
+        const geom = vcell.geometry.clone(),
               points = geom.points, len = points.length;
         if (len < 2) { console.warn('No bends'); return; }
         let jpoint, point, vert;
@@ -237,8 +238,9 @@ async function main() {
         graph.getModel().setGeometry(vcell, geom);
     },
     moveJoin = (view, left)  => {                // move edges join to x coordinate of vertical line
-        const vcell = view.cell,
-              geom = vcell.geometry.clone(),
+        const vcell = view.cell;
+        if (!vcell.source || !vcell.target) { console.warn('Not connected'); return; }
+        const geom = vcell.geometry.clone(),
               points = geom.points, len = points?.length;
         if (len !== 2 || points[0].x !== points[1].x) { console.warn('No vertical line'); return; }
         let jpoint, point, edge;
@@ -609,6 +611,14 @@ async function main() {
             elem.style.display = 'none';
         };
         return result;
+    },
+    createEdge = (style, x1, y1, x2, y2, event = true) => {
+        let elm = new mxCell('', new mxGeometry(0, 0, 0, 0), style);
+        elm.geometry.setTerminalPoint(new mxPoint(x1, y1), true);
+        elm.geometry.setTerminalPoint(new mxPoint(x2, y2), false);
+        elm.geometry.relative = true; elm.edge = true;
+        elm = graph.addCell(elm);
+        if (event) graph.fireEvent(new mxEventObject('cellsInserted', 'cells', [elm]));
     };
     let lastId, encoder;                         // scheme serialization
     mxObjectCodec.prototype.beforeEncode = function(sender, obj, node) {
@@ -786,6 +796,10 @@ async function main() {
             setProps(view);
     });
     graph.popupMenuHandler.factoryMethod = (menu, cell, evt) => {
+        if (graph.getSelectionCount() === 2) {   // setup auto connection menu
+menu.addItem('Test', null, () => true);
+            return;
+        }
         const view = graph.view.getState(cell, false);
         if (view) {                              // setup selected cell menu
             if (view.style?.['points'] || view.style?.['resizable'] === 0) { // setup selected logic menu
@@ -804,15 +818,10 @@ async function main() {
             menu.addSeparator();
         }
         const addmenu = menu.addItem('Add', null, null);
-        menu.addItem('Wire', null, () => {
-            let elm = new mxCell('', new mxGeometry(0, 0, 0, 0),
-                    'endArrow=none;edgeStyle=orthogonalEdgeStyle');
-            elm.geometry.setTerminalPoint(new mxPoint(20, 20), true);
-            elm.geometry.setTerminalPoint(new mxPoint(60, 20), false);
-            elm.geometry.relative = true; elm.edge = true;
-            elm = graph.addCell(elm);
-            graph.fireEvent(new mxEventObject('cellsInserted', 'cells', [elm]));
-        }, addmenu);
+        menu.addItem('Wire', null, () => createEdge(
+            'endArrow=none;edgeStyle=orthogonalEdgeStyle', 20, 20, 60, 20), addmenu);
+        menu.addItem('Bus', null, () => createEdge(
+            'endArrow=none;edgeStyle=orthogonalEdgeStyle;strokeWidth=4', 20, 20, 60, 20), addmenu);
         menu.addItem('Source', null, () =>
             graph.insertVertex(parent, null, '~', 20, 20, 32, 32, 'shape=ellipse;resizable=0'),
             addmenu);
@@ -835,6 +844,8 @@ async function main() {
         menu.addItem('ZoomOut', null, () => graph.zoomOut(), sysmenu);
         menu.addItem('Cancel zoom', null, () => graph.zoomActual(), sysmenu);
         menu.addItem('Cancel pan', null, () => graph.getView().setTranslate(0, 0), sysmenu);
+        menu.addItem(`${multiselection ? 'Single' : 'Multi'} selection`, null, () =>
+            multiselection = !multiselection, sysmenu);
         if (osc.instance === undefined) menu.addItem('View oscillograph', null, () =>
                 openWnd(osc, 'Oscillograph', 50, 210, 700, 315), sysmenu);
         else menu.addItem('Clear oscillograph', null, () => {
@@ -885,7 +896,8 @@ async function main() {
     };
     let cellSelected = false,
         selectionEmpty = false,
-        menuShowing = false;
+        menuShowing = false,
+        multiselection = false;                  // is multiple cells selection
     graph.fireMouseEvent = function(evtName, me, sender) {
         if (evtName == mxEvent.MOUSE_DOWN) {     // for hit detection on edges
             me = this.updateMouseEvent(me);
@@ -895,13 +907,17 @@ async function main() {
         }
         mxGraph.prototype.fireMouseEvent.apply(this, arguments);
     };
+    graph.isToggleEvent = function(me) {
+        return mxGraph.prototype.isToggleEvent.apply(this, arguments) || multiselection;
+    };
     // show popup menu if cell was selected or selection was empty and background was clicked
     graph.popupMenuHandler.mouseUp = function(sender, me) {
         this.popupTrigger = !graph.isEditing() && (
             this.popupTrigger || (
                 !menuShowing && !graph.isEditing() && (
                     (selectionEmpty && me.getCell() == null && graph.isSelectionEmpty()) ||
-                    (cellSelected && graph.isCellSelected(me.getCell()))
+                    (cellSelected && graph.isCellSelected(me.getCell())) ||
+                    (multiselection && me.getCell() && graph.getSelectionCount() === 2)
                 )
             )
         );
@@ -934,6 +950,7 @@ async function main() {
     mxConstants.EDGE_SELECTION_STROKEWIDTH = 1.5;
     mxEdgeHandler.prototype.snapToTerminals = true;
 
+    const EDGE_STROKEWIDTH = 1;                  // default edge stroke width (different for bus)
     ((style) => {                                // default vertex style
         style[mxConstants.STYLE_STROKEWIDTH] = 1;
         style[mxConstants.STYLE_STROKECOLOR] = 'var(--dbgborder)';
@@ -942,7 +959,7 @@ async function main() {
         style[mxConstants.STYLE_FONTSIZE] = '14';
     })(graph.getStylesheet().getDefaultVertexStyle());
     ((style) => {                                // default edge style
-        style[mxConstants.STYLE_STROKEWIDTH] = 1;
+        style[mxConstants.STYLE_STROKEWIDTH] = EDGE_STROKEWIDTH;
         style[mxConstants.STYLE_STROKECOLOR] = 'var(--dbgborder)';
         style[mxConstants.STYLE_FONTCOLOR] = 'var(--dbgcolor)';
         style[mxConstants.STYLE_FONTSIZE] = '14';
@@ -1143,7 +1160,8 @@ async function main() {
             pt.x = Math.min(pt.x, Math.max(p0.x, pe.x));
             pt.x = Math.max(pt.x, Math.min(p0.x, pe.x));
         }
-        edge.style[source ? 'startArrow' : 'endArrow'] = 'oval';
+        if (terminal.style['strokeWidth'] === EDGE_STROKEWIDTH)
+            edge.style[source ? 'startArrow' : 'endArrow'] = 'oval';
         return pt;
     };
 
