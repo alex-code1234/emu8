@@ -612,13 +612,50 @@ async function main() {
         };
         return result;
     },
-    createEdge = (style, x1, y1, x2, y2, event = true) => {
-        let elm = new mxCell('', new mxGeometry(0, 0, 0, 0), style);
+    createEdge = (style, x1, y1, x2, y2, value = '', event = true) => {
+        let elm = new mxCell(value, new mxGeometry(0, 0, 0, 0), style);
         elm.geometry.setTerminalPoint(new mxPoint(x1, y1), true);
         elm.geometry.setTerminalPoint(new mxPoint(x2, y2), false);
         elm.geometry.relative = true; elm.edge = true;
         elm = graph.addCell(elm);
         if (event) graph.fireEvent(new mxEventObject('cellsInserted', 'cells', [elm]));
+        return elm;
+    },
+    connectToBus = (bus, elem, inputs) => {
+        const model = graph.getModel(),
+              view = graph.getView();
+        try {
+            const style = 'endArrow=none;edgeStyle=orthogonalEdgeStyle',
+                  eg = elem.geometry,
+                  vbus = view.getState(bus),
+                  seg = mxUtils.findNearestSegment(vbus, inputs ? eg.x : eg.x + eg.width, eg.y),
+                  x = vbus.absolutePoints[seg].x,                        // source/target point
+                  fdim = mxUtils.getSizeForString('W', vbus.style[mxConstants.STYLE_FONTSIZE]),
+                  offy = fdim.height / 2 | 0,                            // label y offset
+                  offx = (fdim.width / 2 | 0) + 2,                       // label x offset
+                  cnstrs = graph.getAllConnectionConstraints(view.getState(elem));
+            model.beginUpdate();
+            try {
+                cnstrs.forEach(cnstr => {
+                    if ((inputs && cnstr.point.x === 0) || (!inputs && cnstr.point.x === 1)) {
+                        const y = (eg.y + eg.height * cnstr.point.y) | 0, // source/target point
+                              g = inputs ? [x, y, 0, 0] : [0, 0, x, y],
+                              edge = createEdge(style, ...g, 'X', false);
+                        graph.connectCell(edge, bus, inputs, null);
+                        graph.connectCell(edge, elem, !inputs, cnstr);
+                        const geom = edge.geometry.clone();
+                        geom.points = [new mxPoint(x, y)];               // remove bends
+                        geom.x = inputs ? -1 : 1; geom.y = offy;         // label position/offset
+                        geom.offset = new mxPoint(inputs ? offx : -offx, 0); // label offset
+                        model.setGeometry(edge, geom);
+                    }
+                });
+            } finally {
+                model.endUpdate();
+            }
+        } catch(e) {
+            console.error(e.stack);
+        }
     };
     let lastId, encoder;                         // scheme serialization
     mxObjectCodec.prototype.beforeEncode = function(sender, obj, node) {
@@ -797,7 +834,15 @@ async function main() {
     });
     graph.popupMenuHandler.factoryMethod = (menu, cell, evt) => {
         if (graph.getSelectionCount() === 2) {   // setup auto connection menu
-menu.addItem('Test', null, () => true);
+            const [cell1, cell2] = graph.getSelectionCells(),
+                  edge = cell1.edge ? cell1 : cell2.edge ? cell2 : null,
+                  vert = cell1.vertex ? cell1 : cell2.vertex ? cell2 : null;
+            if (vert !== null && edge !== null &&
+                    (getStrAttr(edge.style, 'strokeWidth') ?? 0 | 0) > EDGE_STROKEWIDTH &&
+                    (getStrAttr(vert.style, 'inputs') || getStrAttr(vert.style, 'outputs'))) {
+                menu.addItem('Connect inputs', null, () => connectToBus(edge, vert, true));
+                menu.addItem('Connect outputs', null, () => connectToBus(edge, vert, false));
+            }
             return;
         }
         const view = graph.view.getState(cell, false);
@@ -956,13 +1001,13 @@ menu.addItem('Test', null, () => true);
         style[mxConstants.STYLE_STROKECOLOR] = 'var(--dbgborder)';
         style[mxConstants.STYLE_FILLCOLOR] = 'var(--dbgbckgrnd)';
         style[mxConstants.STYLE_FONTCOLOR] = 'var(--dbgcolor)';
-        style[mxConstants.STYLE_FONTSIZE] = '14';
+        style[mxConstants.STYLE_FONTSIZE] = 14;
     })(graph.getStylesheet().getDefaultVertexStyle());
     ((style) => {                                // default edge style
         style[mxConstants.STYLE_STROKEWIDTH] = EDGE_STROKEWIDTH;
         style[mxConstants.STYLE_STROKECOLOR] = 'var(--dbgborder)';
         style[mxConstants.STYLE_FONTCOLOR] = 'var(--dbgcolor)';
-        style[mxConstants.STYLE_FONTSIZE] = '14';
+        style[mxConstants.STYLE_FONTSIZE] = 14;
     })(graph.getStylesheet().getDefaultEdgeStyle());
 
     const defFntTop = 5, defFntBot = 5, defFntSiz = 10, defFntClr = 'var(--dbgborder)',
