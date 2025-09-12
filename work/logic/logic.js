@@ -257,10 +257,53 @@ async function main() {
     },
     isGenCell = cell => ['H', 'L', '~'].includes(cell.value), // check for generator cell
     isOscCell = cell => cell.value === '=',                   // check for oscillograph cell
+    isBus = cell => cell.edge && (getStrAttr(cell.style, 'strokeWidth') ?? 0 | 0) > EDGE_STROKEWIDTH,
+    processResult = result => {
+        if (result.length > 1) {                                         // remove duplicates
+            const uniq = new Set();                                      // (because of join wires)
+            let i = 0;
+            while (i < result.length) {
+                const obj = result[i][1];
+                if (uniq.has(obj)) result.splice(i, 1);
+                else { uniq.add(obj); i++; }
+            }
+        }
+        if (result.length > 1) {
+            for (let i = 0, n = result.length; i < n; i++) result[i] = result[i][1];
+            return edgeError(result, 'More than 1 output');              // report all outputs
+        }
+        return (result.length === 0) ? null : result[0];
+    },
+    getBusOutput = (bus, edge) => {
+        const result = [];
+        if (bus.source) {
+            if (!isBus(bus.source)) return edgeError([bus.source], 'Invalid bus connection');
+            const tmp = getBusOutput(bus.source, edge);
+            if (tmp === true) return true;
+            if (tmp !== null) result.push(tmp);
+        }
+        if (bus.target) {
+            if (!isBus(bus.target)) return edgeError([bus.target], 'Invalid bus connection');
+            const tmp = getBusOutput(bus.target, edge);
+            if (tmp === true) return true;
+            if (tmp !== null) result.push(tmp);
+        }
+        const id = edge.value;
+        if (!id) return edgeError([edge], 'Missing label');
+        if (bus.edges.some(e => {
+            if (e !== edge && e.value === id) {
+                const tmp = getOutput(e, (e.source === bus) ? e.target : e.source);
+                if (tmp === true) return true;
+                if (tmp !== null) result.push(tmp);
+            }
+        })) return true;
+        return processResult(result);
+    },
     getOutput = (edge, term) => {                // find output for opposite terminal
         if (!term) return edgeError([edge], 'Disconnected wire');
         const result = [];
         if (term.edge) {                                                 // joined wire
+            if (isBus(term)) return getBusOutput(term, edge);            // process bus
             let tmp = getOutput(term, term.source);                      // output for source
             if (tmp === true) return true;                               // propagate error
             if (tmp !== null) result.push(tmp);
@@ -283,20 +326,7 @@ async function main() {
             if (tmp === true) return true;                               // propagate error
             if (tmp !== null) result.push(tmp);
         })) return true;
-        if (result.length > 1) {                                         // remove duplicates
-            const uniq = new Set();                                      // (because of join wires)
-            let i = 0;
-            while (i < result.length) {
-                const obj = result[i][1];
-                if (uniq.has(obj)) result.splice(i, 1);
-                else { uniq.add(obj); i++; }
-            }
-        }
-        if (result.length > 1) {
-            for (let i = 0, n = result.length; i < n; i++) result[i] = result[i][1];
-            return edgeError(result, 'More than 1 output');              // report all outputs
-        }
-        return (result.length === 0) ? null : result[0];
+        return processResult(result);
     },
     getInputs = cell => {                        // find inputs for logic cell
         if (isGenCell(cell)) return null;                                // no inputs for generator cell
@@ -837,8 +867,7 @@ async function main() {
             const [cell1, cell2] = graph.getSelectionCells(),
                   edge = cell1.edge ? cell1 : cell2.edge ? cell2 : null,
                   vert = cell1.vertex ? cell1 : cell2.vertex ? cell2 : null;
-            if (vert !== null && edge !== null &&
-                    (getStrAttr(edge.style, 'strokeWidth') ?? 0 | 0) > EDGE_STROKEWIDTH &&
+            if (vert !== null && edge !== null && isBus(edge) &&
                     (getStrAttr(vert.style, 'inputs') || getStrAttr(vert.style, 'outputs'))) {
                 menu.addItem('Connect inputs', null, () => connectToBus(edge, vert, true));
                 menu.addItem('Connect outputs', null, () => connectToBus(edge, vert, false));
