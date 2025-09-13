@@ -744,7 +744,7 @@ async function main() {
     });
     logicFncs.set('~', cell => {                 // generator
         const result = [0];
-        let freq = (getStrAttr(cell.style, 'freq') ?? '8') | 0, prevT = 0, counter = 0;
+        let freq = (getStrAttr(cell.style, 'freq') ?? '8') | 0, prevT = null, counter = 0;
         if (freq < 2) {
             console.warn(`Frequency set to minimum (2) at id: ${cell.id}`);
             freq = 2;
@@ -808,26 +808,21 @@ async function main() {
                 inps.push(fnc);                  // find all inputs
         }));
         inps.sort((a, b) => a(true) - b(true));  // sort by vertical placement
-        let prevT = null;
         return (t, inputs) => {
             if (t === undefined) return result;  // loopback, return current value
-            if (prevT !== t) {                   // calculate for this t
-                prevT = t;                       // cache calculated result
-                for (let i = 0, n = inputs.length; i < n; i++)
-                    inps[i](t, inputs[i]);       // map inputs
-                runScheme(scheme, cache, t);     // execute one step
-                for (let i = 0, n = outs.length; i < n; i++)
-                    result[i] = outs[i]();       // merge outputs
-            }
+            for (let i = 0, n = inputs.length; i < n; i++)
+                inps[i](t, inputs[i]);           // map inputs
+            runScheme(scheme, cache, t);         // execute one step
+            for (let i = 0, n = outs.length; i < n; i++)
+                result[i] = outs[i]();           // merge outputs
             return result;
         };
     });
     logicFncs.set('table', async cell => {       // truth table node
         const [table, defs, clock, idxs, initRes] = tables.get(getStrAttr(cell.style, 'table'));
-        let result = initRes, prevT = null, prevC = 0;
+        let result = initRes, prevC = 0;
         return (t, inputs) => {
-            if (t === undefined || prevT === t) return result; // loopback or already calculated
-            prevT = t;                                         // cache calculated result
+            if (t === undefined) return result;                // loopback
             let map, key;
             if (defs === null) map = table;
             else {                                             // async bits
