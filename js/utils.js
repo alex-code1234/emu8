@@ -114,7 +114,7 @@ console.open = function(x, y, w, h, fg = null, bckg = null) {
     ];
 };
 console.close = function(wnd) {
-    document.body.removeChild(Array.isArray(wnd) ? wnd[0] : wnd);
+    console._wndparent.removeChild(Array.isArray(wnd) ? wnd[0] : wnd);
 };
 console.hide = function(wnd) {
     (Array.isArray(wnd) ? wnd[0] : wnd).style.display = 'none';
