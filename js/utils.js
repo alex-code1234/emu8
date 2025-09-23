@@ -2,7 +2,7 @@
 
 const console = {
     _log: null,
-    _wndparent: document.body,
+    _wndparent: null,
     _strarr: (arr) => {
         let res = '[';
         for (let i = 0; i < arr.length; i++) {
@@ -99,6 +99,7 @@ console.open = function(x, y, w, h, fg = null, bckg = null) {
     wnd.setAttribute('style',
             `margin:0px;position:absolute;left:${x};top:${y};width:${w};height:${h};overflow:auto;`);
     wnd.className = 'log_wnd';
+    if (console._wndparent === null) console._wndparent = document.body;
     return [
         console._wndparent.appendChild(wnd),
         (function() {
