@@ -2,6 +2,7 @@
 
 const console = {
     _log: null,
+    _wndparent: document.body,
     _strarr: (arr) => {
         let res = '[';
         for (let i = 0; i < arr.length; i++) {
@@ -99,7 +100,7 @@ console.open = function(x, y, w, h, fg = null, bckg = null) {
             `margin:0px;position:absolute;left:${x};top:${y};width:${w};height:${h};overflow:auto;`);
     wnd.className = 'log_wnd';
     return [
-        document.body.appendChild(wnd),
+        console._wndparent.appendChild(wnd),
         (function() {
             const log = (fg === null) ? console.log : console._logwrapper(fg, bckg);
             return function(...args) {
