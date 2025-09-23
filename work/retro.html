@@ -1,0 +1,692 @@
+<!DOCTYPE html>
+<html lang='en'>
+<head>
+    <meta name='viewport' content='width=device-width, initial-scale=1.0'/>
+    <meta charset='utf-8'/>
+    <style type='text/css'>
+:root {
+    --onbackground: #ffffff;
+    --keypressed: #bb86fc;
+    --key_size: 36px;
+    --scrbackground: #343434;
+    --mnubackground: #343434;
+    --dbgbckgrnd: #343434;
+    --dbgcolor: #9594a3;
+    --dbghilight: #575757;
+    --dbgborder: #707070;
+}
+@font-face { font-family: 'CP437'; src: url('../emu/github/emu8/cp437.ttf'); }
+@font-face { font-family: 'VT220'; src: url('../emu/github/emu8/Glass_TTY_VT220.ttf'); }
+.keyboard {
+    background-color: #00000000; color: var(--onbackground);
+    width: calc(36 * var(--key_size) / 2 + 34 * var(--key_size) / 10 + var(--key_size) / 2);
+    margin-left: auto; margin-right: auto; padding: 5px; font-family: sans-serif;
+    display: grid; grid-template-columns: auto auto; grid-gap: calc(var(--key_size) / 2);
+}
+.section {
+    display: grid; grid-template-rows: repeat(6, calc(var(--key_size) / 1.36));
+    grid-gap: calc(var(--key_size) / 10);
+}
+.section.left {
+    grid-template-columns: repeat(30, calc(var(--key_size) / 2));
+}
+.section.right {
+    grid-template-columns: repeat(6, calc(var(--key_size) / 2));
+}
+.section.vert {
+    grid-template-columns: repeat(2, calc(var(--key_size) / 2));
+}
+.key {
+    border: calc(var(--key_size) / 30) solid var(--onbackground);
+    border-radius: calc(var(--key_size) / 10); grid-column: span 2;
+    font-size: calc(var(--key_size) / 3.5); text-align: center; cursor: pointer;
+    display: flex; flex-direction: column; align-items: center; justify-content: space-around;
+    user-select: none;
+}
+.key:active {
+    border-color: var(--keypressed);
+}
+.key.i {
+    font-size: 14px; font-weight: 600;
+}
+.sp20 { grid-column: span 20; }
+.sp5 { grid-column: span 5; }
+.sp4 { grid-column: span 4; }
+.sp3 { grid-column: span 3; }
+.sp2 { grid-column: span 2; }
+.log_wnd {
+    border: 1px solid var(--dbgborder); padding: 8px; opacity: 1.0;
+    background-color: var(--dbgbckgrnd); color: var(--dbgcolor);
+}
+#scr { background: var(--scrbackground); width: 100%; height: 100%; } /* 1024 x 768 */
+#con { position: absolute; left: 10px; top: 10px; opacity: 0.12; z-index: 100; }
+#kbd { position: absolute; left: 10px; top: 10px; opacity: 0.25; z-index: 50; display: none; }
+#log {
+    position: absolute; left: 0px; top: 0px; color: #898989; opacity: 0.75; display: block;
+    margin: 0px; width: 100%; height: 100%; overflow: auto;
+}
+    </style>
+    <script type='text/javascript'>
+window.onerror = function(event, source, line, col, error) {
+    const text = `Error: ${error.message} at ${source}:${line}:${col}`;
+    document.write(`<span style="color: red;">${text}</span><br/>`);
+};
+    </script>
+    <script src='../emu/github/emu8/js/utils.js'></script>
+    <script src='../emu/github/emu8/js/monitor.js'></script>
+    <script src='../emu/github/emu8/js/emul.js'></script>
+</head>
+<body>
+    <div id='box'>
+        <canvas id='scr'></canvas>
+        <div class='keyboard' id='con'>
+            <div class='section vert'>
+                <div class='key i'>&#x2588</div>
+                <div class='key i'>&#x25a6</div>
+                <div class='key i'>&#x2261</div>
+                <div class='key i'>&#x21b9</div>
+                <div class='key i'>&#x25d0</div>
+                <div class='key i'>&#x226b</div>
+            </div>
+        </div>
+        <div class='keyboard' id='kbd'>
+            <div class='section left'>
+                <div class='key'>Esc</div><div class='key'>F1</div><div class='key'>F2</div>
+                <div class='key'>F3</div><div class='key'>F4</div><div class='key'>F5</div>
+                <div class='key'>F6</div><div class='key'>F7</div><div class='key'>F8</div>
+                <div class='key'>F9</div><div class='key'>F10</div><div class='key'>F11</div>
+                <div class='key'>F12</div><div class='sp2'></div><div class='sp2'></div>
+                <div class='key'><span>~</span><span>`</span></div>
+                <div class='key'><span>!</span><span>1</span></div>
+                <div class='key'><span>@</span><span>2</span></div>
+                <div class='key'><span>#</span><span>3</span></div>
+                <div class='key'><span>$</span><span>4</span></div>
+                <div class='key'><span>%</span><span>5</span></div>
+                <div class='key'><span>^</span><span>6</span></div>
+                <div class='key'><span>&</span><span>7</span></div>
+                <div class='key'><span>*</span><span>8</span></div>
+                <div class='key'><span>(</span><span>9</span></div>
+                <div class='key'><span>)</span><span>0</span></div>
+                <div class='key'><span>_</span><span>-</span></div>
+                <div class='key'><span>+</span><span>=</span></div><div class='key sp4'>Backspace</div>
+                <div class='key sp3'>Tab</div><div class='key'>Q</div><div class='key'>W</div>
+                <div class='key'>E</div><div class='key'>R</div><div class='key'>T</div>
+                <div class='key'>Y</div><div class='key'>U</div><div class='key'>I</div>
+                <div class='key'>O</div><div class='key'>P</div>
+                <div class='key'><span>{</span><span>[</span></div>
+                <div class='key'><span>}</span><span>]</span></div>
+                <div class='key sp3'><span>|</span><span>\</span></div>
+                <div class='key sp4'>CapsLock</div><div class='key'>A</div><div class='key'>S</div>
+                <div class='key'>D</div><div class='key'>F</div><div class='key'>G</div>
+                <div class='key'>H</div><div class='key'>J</div><div class='key'>K</div>
+                <div class='key'>L</div><div class='key'><span>:</span><span>;</span></div>
+                <div class='key'><span>"</span><span>'</span></div><div class='key sp4'>Enter</div>
+                <div class='key sp5 kshft'>Shift</div><div class='key'>Z</div><div class='key'>X</div>
+                <div class='key'>C</div><div class='key'>V</div><div class='key'>B</div>
+                <div class='key'>N</div><div class='key'>M</div>
+                <div class='key'><span><</span><span>,</span></div>
+                <div class='key'><span>></span><span>.</span></div>
+                <div class='key'><span>?</span><span>/</span></div><div class='key sp5 kshft'>Shift</div>
+                <div class='key sp3 kctrl'>Ctrl</div><div class='key kalt'>Alt</div>
+                <div class='key sp20'>Space</div>
+                <div class='key kalt'>Alt</div><div class='key sp3 kctrl'>Ctrl</div>
+            </div>
+            <div class='section right'>
+                <div class='sp2'></div><div class='sp2'></div><div class='sp2'></div>
+                <div class='key'>Insert</div><div class='key'>Home</div><div class='key'>PgUp</div>
+                <div class='key'>Del</div><div class='key'>End</div><div class='key'>PgDn</div>
+                <div class='sp2'></div><div class='sp2'></div><div class='sp2'></div>
+                <div class='sp2'></div><div class='key i'>&#8593;</div><div class='sp2'></div>
+                <div class='key i'>&#8592;</div><div class='key i'>&#8595;</div>
+                <div class='key i'>&#8594;</div>
+            </div>
+        </div>
+        <pre id='log'></pre>
+    </div>
+    <script type='text/javascript'>
+'use strict';
+
+// Intel 8255 PPI
+// onread(num)     - read port num; returns port value
+// onwrite(num)    - write port num
+// onwritebit(bit) - write bit of C port
+function Intel8255(onread = null, onwrite = null, onwritebit = null, readCW = 0x00) {
+    const ports = new Uint8Array([0, 0, 0, 0x9b]),
+    doread = (num, mask = null) => {
+        const val = onread ? onread(num) : ports[num];
+        return mask ? val & mask : val;
+    },
+    dowrite = (num, val, half = 0) => {
+        if (half === 0) ports[num] = val; else
+        if (half === 1) ports[num] = (ports[num] & 0xf0) | (val & 0x0f); else
+        ports[num] = (ports[num] & 0x0f) | (val & 0xf0);
+        if (onwrite) onwrite(num);
+    },
+    read = num => {
+        switch (num) {
+            case 0: return ((ports[3] & 0xf0) === 0x90) ? doread(num) : 0x00;
+            case 1: return ((ports[3] & 0x86) === 0x82) ? doread(num) : 0x00;
+            case 2:
+                const cw = ports[3];
+                if ((cw & 0xed) === 0x89) return doread(num);
+                if ((cw & 0xe8) === 0x88) return doread(num, 0xf0);
+                if ((cw & 0x85) === 0x81) return doread(num, 0x0f);
+                return 0x00;
+            case 3: return isNaN(readCW) ? ports[3] : readCW;
+        }
+    },
+    write = (num, val) => {
+        switch (num) {
+            case 0: if ((ports[3] & 0xf0) === 0x80) dowrite(num, val); break;
+            case 1: if ((ports[3] & 0x86) === 0x80) dowrite(num, val); break;
+            case 2:
+                const cw = ports[3];
+                if ((cw & 0xed) === 0x80) dowrite(num, val); else
+                if ((cw & 0xe8) === 0x80) dowrite(num, val, 2); else
+                if ((cw & 0x85) === 0x80) dowrite(num, val, 1);
+                break;
+            case 3:
+                if (val & 0x80) {
+                    ports[3] = val;
+                    write(0, 0x00); write(1, 0x00); write(2, 0x00);
+                } else {
+                    const bitnum = (val & 0x0e) >>> 1, cw = ports[3];
+                    if ((cw & 0xed) === 0x80 || ((cw & 0xe8) === 0x80 && bitnum > 3) ||
+                            ((cw & 0x85) === 0x80 && bitnum < 4)) {
+                        const bit = val & 0x01;
+                        if (bit) ports[2] |= 0x01 << bitnum;
+                        else ports[2] &= ~(0x01 << bitnum);
+                        if (onwritebit) onwritebit(bitnum, bit);
+                    }
+                }
+                break;
+        }
+    };
+    return {read, write, ports};
+}
+
+// Intel 8253 PIT
+// onout(num) - output num activated
+function Intel8253(onout = null, readCW = 0x00) {
+    function Counter(idx) {
+        let latch = null, armed = false, activate = false, reads = 0, mode = 0, format = 0, tmp;
+        const values = new Uint16Array(2),
+        setup = val => {
+            tmp = (val & 0x30) >>> 4;
+            if (tmp === 0) latch = values[1];
+            else {
+                latch = null; armed = false; activate = false; reads = 0;
+                mode = (val & 0x0e) >>> 1;
+                format = tmp;
+            }
+        },
+        read = () => {
+            if (latch !== null) { tmp = latch; latch = null; return tmp; }
+            switch (format) {
+                case 1: return values[1] & 0xff;
+                case 2: return values[1] >>> 8 & 0xff;
+                case 3:
+                    tmp = reads ? values[1] >>> 8 & 0xff : values[1] & 0xff;
+                    reads++; if (reads > 1) reads = 0;
+                    return tmp;
+            }
+        },
+        write = val => {
+            switch (format) {
+                case 1: values[0] = (values[0] & 0xff00) | (val & 0xff); break;
+                case 2: values[0] = (values[0] & 0x00ff) | (val & 0xff) << 8; break;
+                case 3:
+                    if (reads) values[0] = (values[0] & 0x00ff) | (val & 0xff) << 8;
+                    else values[0] = (values[0] & 0xff00) | (val & 0xff);
+                    reads++; if (reads > 1) reads = 0;
+                    break;
+            }
+            if (format < 3 || reads === 0) {
+                switch (mode) {
+                    case 1: case 5: return;                                 // not supported
+                    case 2: case 6: values[0]--; break;
+                    case 3: case 7: values[0] = (values[0] / 2) | 0; break;
+                }
+                latch = null; armed = true; activate = true; values[1] = values[0];
+            }
+        },
+        tick = () => {
+            if (!armed || --values[1] !== 0) return;
+            if (onout && activate) onout(idx);
+            switch (mode) {
+                case 0: activate = false; break;
+                case 2: case 3: case 6: case 7: values[1] = values[0]; break;
+                case 4: armed = false; break;
+            }
+        },
+        state = () => { return {mode, format, values}; };
+        return {setup, read, write, tick, state};
+    }
+    const counters = [Counter(0), Counter(1), Counter(2)],
+    read = num => {
+        if (num === 3) return readCW;
+        return counters[num].read();
+    },
+    write = (num, val) => {
+        if (num === 3) counters[(val & 0xc0) >>> 6].setup(val);
+        else counters[num].write(val);
+    };
+    return {read, write, counters};
+}
+
+// Touch screen keyboard
+// layout         - layout descriptor:
+//     sec\n
+//     row\n
+//     ...
+//     sec\n
+//     row\n
+//     ...
+//     sec - section descriptor (max 2, first is left side, second is right side)
+//     row - row descriptor (max 6):
+//         key key key ...
+//     key - key descriptor (max 30 for left side, 6 for right side):
+//         [ [ ]spc[,lbl][ ] ] (no spaces, enclosed in [] if icon)
+//     spc - 1,2,3,4,5 or 20 key span
+//     lbl - key face, can be lbl1..lbl2
+// kbd(txt, down) - keyboard handler; txt - key text, down - key down (true) / key up (false)
+function SoftKeyboard(layout, kbd, kbdElem = document.getElementsByClassName('keyboard')[1]) {
+    let tmp, s = '', i = 0;
+    const data = layout.split('\n'), n = data.length,
+    key = val => {
+        let icon = false;
+        if (val.charAt(0) === '[' && val.charAt(val.length - 1) === ']') {
+            icon = true; val = val.substring(1, val.length - 1);
+        }
+        const prms = val.split(',');
+        let m = prms.length;
+        if (m === 3 && prms[1].length === 0) {
+            prms[2] = ',' + prms[2]; prms.splice(1, 1); m--;                // special case <,,>
+        }
+        if (m < 1 || m > 2) throw new Error(`invalid key: ${val} at: ${i - 1}`);
+        tmp = prms[0].trim() | 0;
+        if (isNaN(tmp)) throw new Error(`expected span number in: ${val} at ${i - 1}`);
+        if ([1, 2, 3, 4, 5, 20].indexOf(tmp) < 0)
+            throw new Error(`invalid span value in: ${val} at ${i - 1}`);
+        if (m === 1)
+            if (tmp === 1) throw new Error(`invalid span value for empty key at: ${i - 1}`);
+            else s += `<div class='sp${tmp}'></div>`;
+        else {
+            const lbls = prms[1].split('..');
+            if (lbls.length === 2 && lbls[0].length === 0 & lbls[1].charAt(0) === '.') {
+                lbls[0] = '.'; lbls[1] = lbls[1].substring(1);              // special case <...>
+            }
+            if (lbls.length > 2) throw new Error(`invalid label in ${val} at ${i - 1}`);
+            s += `<div class='key${(tmp > 1) ? ' sp' + tmp : ''}${icon ? ' i' : ''}'>`;
+            if (lbls.length === 1) s += lbls[0];
+            else s += `<span>${lbls[0]}</span><span>${lbls[1]}</span>`;
+            s += '</div>';
+        }
+    },
+    row = () => {
+        if (i >= n) return;
+        const rowdata = data[i++].match(/\S+/g) ?? [];
+        for (let j = 0, m = rowdata.length; j < m; j++) key(rowdata[j]);
+    },
+    section = left => {
+        if (i >= n) return;
+        if (data[i] !== 'sec') throw new Error(`missing section at: ${i}`);
+        i++;
+        s += `<div class='section ${left ? 'left' : 'right'}'>`;
+        for (let j = 0; j < 6; j++) row();
+        s += '</div>';
+    },
+    generate = () => {
+        section(true);
+        section(false);
+    },
+    handler = (e, down) => {
+        const elem = (e.target.tagName.toUpperCase() === 'SPAN') ? e.target.parentNode : e.target;
+        elem.style.borderColor = down ? 'var(--keypressed)' : 'var(--onbackground)';
+        kbd(elem.innerText.replace('\n', ''), down);
+        return false;
+    };
+    kbdElem.ontouchstart = e => handler(e, true);
+    kbdElem.ontouchend = e => handler(e, false);
+    generate();
+    kbdElem.innerHTML = s;
+}
+
+// Floppy disk controller
+function WD1793(Heads = 2, SecPerTrack = 5, SecSize = 1024) {
+    let Drive = 0, Side = 0, LastS = 0, IRQ = 0, Wait = 0, Cmd = 0xd0, DPtr = 0, DLength = 0;
+    const R = new Uint8Array([0x00, 0x00, 0x00, 0x00, 0x04 | 0x08]), // S_RESET | S_HALT
+          Disk = [null, null], Track = [0, 0],
+    read = num => {
+        switch (num) {
+            case 0: // WD1793_STATUS
+                let res = R[0];
+                if (Disk[Drive] === null) res |= 0x80;
+                if (Cmd < 0x80 || Cmd == 0xd0)
+                    R[0] = (R[0] ^ 0x02) & (0x02 | 0x01 | 0x80 | 0x40 | 0x04); else
+                    R[0] &= 0x01 | 0x80 | 0x40 | 0x02;
+                if ((R[0] & 0x01) && IRQ === 0x80) R[0] &= ~0x01;    // delay: reset busy bit if completed
+                return res;
+            case 1: // WD1793_TRACK
+            case 2: // WD1793_SECTOR
+                return R[num];
+            case 3: // WD1793_DATA
+                if (DLength) {
+                    R[3] = Disk[Drive][DPtr++];
+                    if (--DLength) {
+                        Wait = 255;
+                        if (!(DLength & (SecSize - 1))) ++R[2];
+                    } else {
+                        R[0] &= ~0x02;                               // delay: busy bit
+                        IRQ = 0x80;
+                    }
+                }
+                else if ((Cmd & 0xf0) === 0xc0) {
+                    switch (DPtr) {
+                        case 0: R[3] = Track[Drive]; Wait = 255; break;
+                        case 1: R[3] = Side; Wait = 255; break;
+                        case 2: R[3] = R[2] ? R[2] : 1; Wait = 255; break;
+                        case 3:
+                            switch (SecSize) {
+                                case 128: R[3] = 0; break;
+                                case 256: R[3] = 1; break;
+                                case 512: R[3] = 2; break;
+                                default: R[3] = 3; break;
+                            }
+                            Wait = 255; break;
+                        case 4: R[3] = 0x00; Wait = 255; break;
+                        case 5:
+                            R[3] = 0x00;
+                            R[0] &= ~0x02;                           // delay: busy bit
+                            IRQ = 0x80;
+                            break;
+                    }
+                    DPtr++;
+                }
+                return R[3];
+            case 4: // WD1793_READY
+                if (Wait && !--Wait) {
+                    DLength = 0;
+                    R[0] = (R[0] & ~(0x02 | 0x01)) | 0x04;
+                    IRQ = 0x80;
+                }
+                return IRQ;
+            default:
+                console.warn(`FDC: unknown port - ${num}`);
+                return 0xff;
+        }
+    },
+    write = (num, val) => {
+        switch (num) {
+            case 0: // WD1793_COMMAND
+                IRQ = 0;
+                if ((val & 0xf0) === 0xd0) {
+                    DLength = 0;
+                    Cmd = 0xd0;
+                    if (R[0] & 0x01) R[0] &= ~0x01; else
+                                     R[0] = (Track[Drive] ? 0 : 0x04) | 0x02;
+                    if (val & 0x08) IRQ = 0x80;
+                    break;
+                }
+                if (R[0] & 0x01) break;
+                R[0] = 0x00;
+                Cmd = val;
+                switch (val & 0xf0) {
+                    case 0x00: // RESTORE (seek track 0)
+                        Track[Drive] = 0;
+                        R[0] = 0x02 | 0x04 | ((val & 0x08) ? 0x20 : 0) | 0x01; // delay: busy bit
+                        R[1] = 0;
+                        IRQ = 0x80;
+                        break;
+                    case 0x10: // SEEK
+                        DLength = 0;
+                        Track[Drive] = R[3];
+                        R[0] = 0x02 | (Track[Drive] ? 0 : 0x04) |              // delay: busy bit
+                                ((val & 0x08) ? 0x20 : 0) | 0x01;
+                        R[1] = Track[Drive];
+                        IRQ = 0x80;
+                        break;
+                    case 0x20: // STEP
+                    case 0x30: // STEP-AND-UPDATE
+                    case 0x40: // STEP-IN
+                    case 0x50: // STEP-IN-AND-UPDATE
+                    case 0x60: // STEP-OUT
+                    case 0x70: // STEP-OUT-AND-UPDATE
+                        if (val & 0x40) LastS = val & 0x20; else val = (val & ~0x20) | LastS;
+                        if (val & 0x20) { if (Track[Drive]) --Track[Drive]; } else ++Track[Drive];
+                        if (val & 0x10) R[1] = Track[Drive];
+                        R[0] = 0x02 | (Track[Drive] ? 0 : 0x04) | 0x01;        // delay: busy bit
+                        IRQ = 0x80;
+                        break;
+                    case 0x80:
+                    case 0x90: // READ-SECTORS
+                    case 0xa0:
+                    case 0xb0: // WRITE-SECTORS
+                        R[0] &= ~0x04;                                         // reset tr0 bit
+                        const sec = R[2] ? R[2] - 1 : 0;
+                        DPtr = (Track[Drive] * SecPerTrack * Heads + SecPerTrack * Side + sec) * SecSize;
+                        if (Disk[Drive] === null || DPtr + SecSize > Disk[Drive].length) {
+                            R[0] = (R[0] & ~0x18) | 0x10 | 0x01;               // delay: busy bit
+                            if (Disk[Drive] === null) R[0] |= 0x80;
+                            IRQ = 0x80;
+                        } else {
+                            DLength = SecSize * ((val & 0x10) ? SecPerTrack - sec : 1);
+                            R[0] |= 0x01 | 0x02;
+                            IRQ = 0x40;
+                            Wait = 255;
+                        }
+                        break;
+                    case 0xc0: // READ-ADDRESS
+                        R[0] &= ~0x04;                                         // reset tr0 bit
+                        DPtr = 0; DLength = 0;
+                        R[0] |= 0x01 | 0x02;
+                        IRQ = 0x40;
+                        Wait = 255;
+                        break;
+                    case 0xe0: // READ-TRACK
+                        break;
+                    case 0xf0: // WRITE-TRACK (format)
+                        R[0] &= ~0x04;                                         // reset tr0 bit
+                        DPtr = Track[Drive] * SecPerTrack * Heads * SecSize;
+                        if (Disk[Drive] === null ||
+                                DPtr + SecSize * SecPerTrack * Heads > Disk[Drive].length) {
+                            R[0] = (R[0] & ~0x18) | 0x10 | 0x01;               // delay: busy bi
+                            if (Disk[Drive] === null) R[0] |= 0x80;
+                            IRQ = 0x80;
+                        } else {
+                            R[0] |= 0x01 | 0x02;
+                            IRQ = 0x80;
+                            Disk[Drive].fill(0xe5, DPtr, DPtr + SecSize * SecPerTrack * Heads);
+                        }
+                        break;
+                }
+                break;
+            case 1: // WD1793_TRACK
+            case 2: // WD1793_SECTOR
+                if (!(R[0] & 0x01)) R[num] = val;
+                break;
+            case 3: // WD1793_DATA
+                if (DLength) {
+                    Disk[Drive][DPtr++] = val;
+                    if (--DLength) {
+                        Wait = 255;
+                        if (!(DLength & (SecSize - 1))) ++R[2];
+                    } else {
+                        R[0] &= ~0x02;                                         // delay: busy bit
+                        IRQ = 0x80;
+                    }
+                }
+                R[3] = val;
+                break;
+            case 4: // WD1793_SYSTEM
+                if ((R[4] ^ val) & val & 0x04) {                     // S_RESET
+                    R[0] = 0x00; R[1] = 0x00; R[2] = 0x00; R[3] = 0x00;
+                    LastS = 0; IRQ = 0; Wait = 0; Cmd = 0xd0; DPtr = 0; DLength = 0;
+                }
+                if (val & 0x02)                                      // S_DRIVE
+                    Drive = (val & 0x01) ? 1 : 0;
+                if (Heads > 1 && (val & 0x10))                       // S_SIDE
+                    Side = (val & 0x01) ? 1 : 0;
+                R[4] = val;
+                break;
+            default:
+                console.warn(`FDC: unknown port - ${num}, value - ${fmt(val, 2)}`);
+                break;
+        }
+    },
+    state = () => { return {Drive, Side, LastS, IRQ, Wait, Cmd, DPtr, DLength, R, Track}; };
+    return {read, write, Disk, state};
+}
+
+class Kbd extends Keyboard {
+    constructor(kbrd, con, monitor) {
+        super(kbrd);
+        this.con = con;
+        this.monitor = monitor;
+        this.cmd = '';
+    }
+    kbdHandler(txt, soft) {
+        if (soft) {
+            const val = super.kbdHandler(txt, soft);
+            if (val !== null)
+                if (this.monitor.emu.CPU.RUN) this.processKey(val);
+                else this.processDbgKey(val);
+        }
+    }
+    processKey(val) {
+        this.con.kbd.push(val);
+    }
+    processDbgKey(val) {             // redirect debug input to monitor
+        val &= 0xff; this.con.display(val);
+        if (val === 13) {
+            this.con.display(10);
+            const command = this.cmd;
+            this.cmd = '';
+            this.monitor.exec(command);
+        }
+        else this.cmd += String.fromCharCode(val);
+    }
+}
+
+const URL_OPTS = new URLSearchParams(location.search),
+      amber = '#b38000', // amber monitor
+      green = '#36bf00', // green monitor
+      blue = '#a5a4b3',  // blue (white) monitor
+gSVar = str => {
+    if (str.startsWith('var(')) {
+        const p = getComputedStyle(document.body).getPropertyValue(str.substring(4, str.length - 1));
+        if (p) str = p.trim();
+    }
+    return str;
+},
+createCon = async (canvas, bckgr, color, font = 'CP437', width = 80, height = 24) => {
+    let settings = {COLORS: [
+        gSVar(bckgr), '#0000aa', '#00aa00', '#00aaaa', '#aa0000', '#aa00aa', '#aa5500', gSVar(color),
+        '#555555', '#5555ff', '#55ff55', '#55ffff', '#ff5555', '#ff55ff', '#ffff55', '#ffffff'
+    ]};
+    if (font === 'VT220') settings = {...settings, FONT_WIDTH: 10, FONT_HEIGHT: 20, FONT_G0: 'VT220'};
+    settings = {...settings, SCR_WIDTH: width, SCR_HEIGHT: height};
+    return await VT_100(canvas, settings);
+},
+screenLogger = con => (...args) => { // redirect debug output to monitor
+    for (let i = 0, n = args.length; i < n; i++) {
+        const str = args[i].toString();
+        for (let j = 0, m = str.length; j < m; j++) con.display(str.charCodeAt(j) & 0xff);
+        if (i < n - 1) con.display(32); // space
+    }
+    con.display(13); con.display(10);   // CRLF
+};
+
+async function main() {
+    let con_pos = 1, kbd_pos = 2;
+    const box = document.getElementById('box'),
+          scr = document.getElementById('scr'),
+          con = document.getElementById('con'),
+          kbd = document.getElementById('kbd'),
+          log = document.getElementById('log'),
+          scr_style = getComputedStyle(scr),
+          con_style = getComputedStyle(con),
+          kbd_style = getComputedStyle(kbd),
+          log_style = getComputedStyle(log),
+    setPos = (pos, control) => {
+        let rstyle, style, w, h;
+        if (control) {
+            rstyle = con_style; style = con.style;
+            if (document.fullscreenElement) { w = 49; h = 186; }
+            else { w = 33; h = 170; } // height +30 per button
+        } else {
+            rstyle = kbd_style; style = kbd.style;
+            if (document.fullscreenElement) { w = 800; h = 188; }
+            else { w = 784; h = 172; }
+        }
+        switch (pos) {
+            case 0: style.left = '10px'; style.top = '10px'; break;
+            case 1: style.left = `${parseInt(scr_style.width) - w - 10}px`; style.top = '10px'; break;
+            case 2:
+                style.left = `${parseInt(scr_style.width) - w - 10}px`;
+                style.top = `${parseInt(scr_style.height) - h - 10}px`;
+                break;
+            case 3: style.left = '10px'; style.top = `${parseInt(scr_style.height) - h - 10}px`; break;
+        }
+    },
+    updatePos = () => {
+        setPos(con_pos, true); setPos(kbd_pos, false);
+    };
+    con.onclick = async e => {
+        let elem = e.target;
+        if (elem.tagName === 'SPAN') elem = elem.parentNode;
+        const txt = elem.innerText.replace('\n', '');
+        switch (txt) {
+            case '\u2588':
+                if (document.fullscreenElement) await document.exitFullscreen();
+                else await box.requestFullscreen();
+                setPos(con_pos, true); setPos(kbd_pos, false);
+                break;
+            case '\u25a6': kbd.style.display = (kbd_style.display === 'none') ? 'grid' : 'none'; break;
+            case '\u2261': log.style.display = (log_style.display === 'none') ? 'block' : 'none'; break;
+            case '\u21b9':
+                if (kbd_style.display === 'none') {
+                    con_pos++; if (con_pos > 3) con_pos = 0; setPos(con_pos, true);
+                } else {
+                    kbd_pos++; if (kbd_pos > 3) kbd_pos = 0; setPos(kbd_pos, false);
+                }
+                break;
+            case '\u25d0':
+                let rstyle, style;
+                if (log_style.display !== 'none') { rstyle = log_style; style = log.style; }
+                else if (kbd_style.display !== 'none') { rstyle = kbd_style; style = kbd.style; }
+                else { rstyle = con_style; style = con.style; }
+                switch (rstyle.opacity) {
+                    case '0.12': style.opacity = '0.25'; break;
+                    case '0.25': style.opacity = '0.5'; break;
+                    case '0.5': style.opacity = '0.75'; break;
+                    case '0.75': style.opacity = '0.85'; break;
+                    case '0.85':
+                        if (rstyle === con_style) style.opacity = '0.12';
+                        else { style.opacity = '1'; style.backgroundColor = 'var(--mnubackground)'; }
+                        break;
+                    case '1': style.opacity = '0.12'; style.backgroundColor = ''; break;
+                }
+                break;
+            case '\u226b':
+                try { await init(); } catch(error) { console.error(error.stack); }
+                break;
+        }
+    };
+    screen.orientation.onchange = e => { setTimeout(updatePos, 100); };
+    console._wndparent = box; // allow debug window in full screen mode
+    updatePos();
+    if (await init(scr, kbd)) log.style.display = 'none';
+}
+
+(async () => {
+    try {
+        await loadScript(URL_OPTS.get('js') ?? 'emulator.js');
+        await main();
+    } catch(e) {
+        console.error(e.stack);
+    }
+})();
+    </script>
+</body>
+</html>
