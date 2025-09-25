@@ -5,11 +5,12 @@
     <meta charset='utf-8'/>
     <style type='text/css'>
 :root {
+    --background: #121212;
     --onbackground: #ffffff;
     --keypressed: #bb86fc;
     --key_size: 36px;
-    --scrbackground: #343434;
-    --mnubackground: #343434;
+    --scrbackground: #28282b;
+    --mnubackground: #303030;
     --dbgbckgrnd: #343434;
     --dbgcolor: #9594a3;
     --dbghilight: #575757;
@@ -17,6 +18,11 @@
 }
 @font-face { font-family: 'CP437'; src: url('../emu/github/emu8/cp437.ttf'); }
 @font-face { font-family: 'VT220'; src: url('../emu/github/emu8/Glass_TTY_VT220.ttf'); }
+body {
+    font-family: Ubuntu Mono, Monaco, Courier, monospace;
+    font-size: 14px;
+    background-color: var(--background); color: var(--onbackground);
+}
 .keyboard {
     background-color: #00000000; color: var(--onbackground);
     width: calc(36 * var(--key_size) / 2 + 34 * var(--key_size) / 10 + var(--key_size) / 2);
@@ -62,8 +68,12 @@
 #con { position: absolute; left: 10px; top: 10px; opacity: 0.12; z-index: 100; }
 #kbd { position: absolute; left: 10px; top: 10px; opacity: 0.25; z-index: 50; display: none; }
 #log {
-    position: absolute; left: 0px; top: 0px; color: #898989; opacity: 0.75; display: block;
+    position: absolute; left: 0px; top: 0px; color: #91909f; opacity: 0.75; display: block;
     margin: 0px; width: 100%; height: 100%; overflow: auto;
+}
+.cursor {
+    background-color: var(--onbackground); border-right-color: var(--onbackground);
+    color: var(--onbackground);
 }
     </style>
     <script type='text/javascript'>
@@ -141,7 +151,7 @@ window.onerror = function(event, source, line, col, error) {
                 <div class='key i'>&#8594;</div>
             </div>
         </div>
-        <pre id='log'></pre>
+        <div id='log'></div>
     </div>
     <script type='text/javascript'>
 'use strict';
@@ -556,19 +566,93 @@ class Kbd extends Keyboard {
     processKey(val) {
         this.con.kbd.push(val);
     }
-    processDbgKey(val) {             // redirect debug input to monitor
-        val &= 0xff; this.con.display(val);
-        if (val === 13) {
-            this.con.display(10);
-            const command = this.cmd;
+    processCmd(val) {
+        if (val === 8) this.cmd = this.cmd.substring(0, this.cmd.length - 1);
+        else this.cmd += String.fromCharCode(val & 0xff);
+    }
+    processDbgKey(val) { // redirect debug input to terminal
+        if (val !== 13) {
+            this.processCmd(val);
+            term._inputLine.textContent = this.cmd;
+        } else {
+            term.printHTML(term._promptPS1.innerHTML + this.cmd);
+            term._inputLine.textContent = '';
+            this.monitor.exec(this.cmd);
             this.cmd = '';
-            this.monitor.exec(command);
+            term.html.scrollIntoView(false);
         }
-        else this.cmd += String.fromCharCode(val);
+    }
+}
+
+/* jsShell.js | https://github.com/francoisburdy/js-shell-emulator */
+class JsShell {
+    constructor(container, max_length = 10000) {
+        if (typeof container === 'string') {
+            if (container.charAt(0) === '#')
+                container = container.substring(1);
+            container = document.getElementById(container);
+        }
+        this.containerNode = container;
+        this.html = document.createElement('div');
+        this.html.setAttribute('tabindex', 0);
+        this.html.className = 'jsShell';
+        this._innerWindow = document.createElement('div');
+        this._output = document.createElement('pre');
+        this._output.style.margin = '0';
+        this._promptPS1 = document.createElement('span');
+        this._inputLine = document.createElement('span');
+        this._cursor = document.createElement('span');
+        this._cursor.innerHTML = 'O';
+        this._cursor.style.display = 'none';
+        this._cursor.className = 'cursor';
+        this._input = document.createElement('div');
+        this._input.style.margin = '0';
+        this._input.style.display = 'none';
+        this._input.appendChild(this._promptPS1);
+        this._input.appendChild(this._inputLine);
+        this._input.appendChild(this._cursor);
+        this._innerWindow.appendChild(this._output);
+        this._innerWindow.appendChild(this._input);
+        this.html.appendChild(this._innerWindow);
+        this.containerNode.innerHTML = '';
+        this.containerNode.appendChild(this.html);
+        this.setPrompt('');
+        this._prms = {'_log': this._output, 'MAX_LENGTH': max_length};
+        this._inputLine.textContent = '';
+        this._input.style.display = 'block';         // redirect debug input
+        this._cursor.style.display = 'inline-block'; // to terminal
+    }
+    setPrompt(promptPS) {
+        this._promptPS1.innerHTML = promptPS;
+        return this;
+    }
+    clear() {
+        this._output.innerHTML = '';
+        return this;
+    }
+    print(...args) {
+        console.___log(this._prms, ...args);
+        this.html.scrollTop = this.html.scrollHeight;
+        return this;
+    }
+    write(message, color = null) {
+        if (color) {
+            const newLine = document.createElement('span');
+            newLine.style.color = color;
+            this._output.appendChild(newLine);
+        }
+        return this.print(message, console.NB);
+    }
+    printHTML(content) {
+        const newLine = document.createElement('span');
+        newLine.innerHTML = content;
+        this._output.appendChild(newLine);
+        return this.print();
     }
 }
 
 const URL_OPTS = new URLSearchParams(location.search),
+      term = new JsShell('log', 1000),
       amber = '#b38000', // amber monitor
       green = '#36bf00', // green monitor
       blue = '#a5a4b3',  // blue (white) monitor
@@ -596,6 +680,8 @@ screenLogger = con => (...args) => { // redirect debug output to monitor
     }
     con.display(13); con.display(10);   // CRLF
 };
+console._log = term._prms._log;             // merge terminal and
+console.MAX_LENGTH = term._prms.MAX_LENGTH; // console to redirect debug output
 
 async function main() {
     let con_pos = 1, kbd_pos = 2;
