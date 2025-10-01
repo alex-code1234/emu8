@@ -498,7 +498,7 @@ class Monitor {
                 if (this.emu.dbgw === null) this.emu.CPU.run();
                 else {
                     await this.emu.CPU.run();
-                    this.emu.debug_update();
+                    if (this.emu.dbgw !== null) this.emu.debug_update();
                 }
                 break;
             case 'debug':
