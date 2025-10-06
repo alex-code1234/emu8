@@ -5,6 +5,7 @@ class GenCpu {
         this.CPU_INSTR_CNT = 10240; // ~8.4MHz for 8080 and Z80, ~4Mhz for 8086, ~12MHz for 6502
         this.HLT_STOP = true;       // stop CPU on HLT (must be false for MP/M)
         this.STOP = -1;             // stop address
+        this.STOP_REGS = [];        // register values on stop
         this.RUN = false;           // running
         switch (type) {
             case 0: this.cpu = new Cpu(memo); break;     // 8080
@@ -37,6 +38,23 @@ class GenCpu {
         }
         memo.CPU = this; // set CPU reference
     }
+    chkRegs() {
+        if (this.STOP_REGS.length === 0) return true;
+        const state = this.cpu.cpuStatus();
+        for (let i = 0, n = this.STOP_REGS.length; i < n; i++) {
+            const cond = this.STOP_REGS[i];
+            let idx1 = cond.indexOf(':');
+            if (idx1 < 0) continue; // ignore malformed entry
+            idx1++;
+            const value = cond.substring(idx1).toUpperCase();
+            let idx2 = state.indexOf(cond.substring(0, idx1).toUpperCase());
+            if (idx2 < 0) continue; // ignore invalid entry
+            let svalue = state.substr(idx2 + idx1, 4).toUpperCase();
+            if (value.startsWith('..')) svalue = '..' + svalue.substring(2);
+            if (svalue.indexOf(value) < 0) return false;
+        }
+        return true;
+    }
     async run() {
         this.RUN = true;
         let print = true, res;
@@ -48,8 +66,8 @@ class GenCpu {
                     this.RUN = false;
                     break;
                 }
-                if (!res || (this.STOP >= 0 && this.cpu.getPC() === this.STOP)) {
-                    if (res) { console.info('STOP'); this.STOP = -1; }
+                if (!res || (this.STOP >= 0 && this.cpu.getPC() === this.STOP && this.chkRegs())) {
+                    if (res) { console.info('STOP'); this.STOP = -1; this.STOP_REGS.length = 0; }
                     else if (!this.HLT_STOP) break;
                     else console.info('HALT');
                     this.RUN = false;
@@ -489,12 +507,12 @@ class Monitor {
             case 'g':
                 len = parms.length;
                 if (len > 1 && (tmp = parms[1]) !== '-') this.emu.CPU.cpu.setPC(pi(tmp));
-                if (len > 2) this.emu.CPU.STOP = pi(parms[2]);
+                if (len > 2) this.prepareStop(parms[2]);
                 this.emu.CPU.run();
                 console.info('running...');
                 break;
             case 'step':
-                this.emu.CPU.STOP = ((parms.length > 1) ? pi(parms[1]) : this.emu.disassemble1()[0]) & this.emu.D_AMS;
+                this.prepareStop((parms.length > 1) ? parms[1] : null);
                 if (this.emu.dbgw === null) this.emu.CPU.run();
                 else {
                     await this.emu.CPU.run();
@@ -594,6 +612,17 @@ class Monitor {
                 console.clear();
                 break;
             default: console.error(`invalid command: ${cmd}`); break;
+        }
+    }
+    prepareStop(str) {
+        if (str === null) this.emu.CPU.STOP = this.emu.disassemble1()[0] & this.emu.D_AMS;
+        else {
+            const idx = str.indexOf(';');
+            if (idx < 0) this.emu.CPU.STOP = pi(str) & this.emu.D_AMS;
+            else {
+                this.emu.CPU.STOP = pi(str.substring(0, idx)) & this.emu.D_AMS;
+                this.emu.CPU.STOP_REGS = str.substring(idx + 1).split(',');
+            }
         }
     }
 }
