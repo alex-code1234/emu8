@@ -42,16 +42,19 @@ class GenCpu {
         if (this.STOP_REGS.length === 0) return true;
         const state = this.cpu.cpuStatus();
         for (let i = 0, n = this.STOP_REGS.length; i < n; i++) {
-            const cond = this.STOP_REGS[i];
-            let idx1 = cond.indexOf(':');
-            if (idx1 < 0) continue; // ignore malformed entry
-            idx1++;
-            const value = cond.substring(idx1).toUpperCase();
-            let idx2 = state.indexOf(cond.substring(0, idx1).toUpperCase());
-            if (idx2 < 0) continue; // ignore invalid entry
-            let svalue = state.substr(idx2 + idx1, 4).toUpperCase();
+            const cond = this.STOP_REGS[i],
+                  m = state.match(cond[1]);
+            if (m === null || m.length < 2) continue; // ignore malformed entry
+            let svalue = m[1], value = cond[3];
             if (value.startsWith('..')) svalue = '..' + svalue.substring(2);
-            if (svalue.indexOf(value) < 0) return false;
+            switch (cond[2]) {
+                case '<': if (value >= svalue) return false; break;
+                case '>': if (value <= svalue) return false; break;
+                case '==': if (value !== svalue) return false; break;
+                case '!=': if (value === svalue) return false; break;
+                case '<=': if (value > svalue) return false; break;
+                case '>=': if (value < svalue) return false; break;
+            }
         }
         return true;
     }
@@ -481,6 +484,7 @@ class Monitor {
         this.addr = 0;
         this.debug_height = debug_height;
         this.logger = logger;
+        this.parser = new RegExp('([a-z]+)([!<>=]+)([\.0-9a-f]+)$', 'i');
     }
     async exec(command) {
         const parms = command.trim().split(/[\s\t]+/);
@@ -622,6 +626,20 @@ class Monitor {
             else {
                 this.emu.CPU.STOP = pi(str.substring(0, idx)) & this.emu.D_AMS;
                 this.emu.CPU.STOP_REGS = str.substring(idx + 1).split(',');
+                let err = null;
+                for (let i = 0, n = this.emu.CPU.STOP_REGS.length; i < n; i++) {
+                    const txt = this.emu.CPU.STOP_REGS[i],
+                          exp = txt.match(this.parser);
+                    if (exp === null || exp.length < 4) {
+                        err = `invalid expression: ${txt}`; break;
+                    }
+                    exp[1] = new RegExp(`${exp[1]}\:([0-9a-f]+)( |#|\||$)`, 'i');
+                    this.emu.CPU.STOP_REGS[i] = exp;
+                }
+                if (err !== null) {
+                    this.emu.CPU.STOP = -1; this.emu.CPU.STOP_REGS.length = 0;
+                    throw new Error(err);
+                }
             }
         }
     }
