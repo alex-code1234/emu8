@@ -248,7 +248,6 @@ class Kim1Monitor extends Monitor {
     }
     async handler(parms, cmd) {
         switch (cmd) {
-            case 'stop': this.emu.stop(); break;
             case 'bj': this.emu.loadHex(progs[0]); break;
             case 'ad': this.emu.loadHex(progs[1]); break;
             default: await super.handler(parms, cmd); break;

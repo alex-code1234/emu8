@@ -295,7 +295,7 @@ async function main() {
           mem = await IBMIO(con),
           cpu = new GenCpu(mem, 4),
           emu = new Emulator(cpu, mem, 4),
-          mon = new IBMMonitor(emu),
+          mon = new Monitor(emu),
           kbd = new IBMKbd(emu);
     mem.ram.set(loads[3], 0xf6000);
     mem.ram.set(loads[4], 0xfe000);

@@ -485,6 +485,8 @@ class Monitor {
         this.debug_height = debug_height;
         this.logger = logger;
         this.parser = new RegExp('([a-z]+)([!<>=]+)([\.0-9a-f]+)$', 'i');
+        this.find = null;
+        this.findidx = -1;
     }
     async exec(command) {
         const parms = command.trim().split(/[\s\t]+/);
@@ -614,6 +616,42 @@ class Monitor {
                 break;
             case 'cls':
                 console.clear();
+                break;
+            case 'find': // find byte sequence
+                if (parms.length >= 2) {
+                    const str = parms[1].trim();
+                    if ((str.length % 2) !== 0) {
+                        console.error('bytes must be in 2 digits each'); break;
+                    }
+                    this.find = []; this.findidx = 0;
+                    for (let i = 0, n = str.length; i < n; i += 2)
+                        this.find.push(pi(str.substring(i, i + 2)));
+                }
+                if (this.find === null) { console.error('missing: bytes'); break; }
+                if (this.findidx < 0) { console.log('not found'); break; }
+                const maxmem = this.emu.D_AMS + 1;
+                do {
+                    while (this.findidx < maxmem &&
+                            this.emu.memo.rd(this.findidx++) !== this.find[0]) ;
+                    if (this.findidx >= maxmem) break;
+                    let i = 1, tmpidx = this.findidx;
+                    while (i < this.find.length &&
+                            this.emu.memo.rd(this.findidx++) === this.find[i]) i++;
+                    if (i >= this.find.length) break;
+                    this.findidx = tmpidx;
+                } while (this.findidx < maxmem);
+                if (this.findidx >= maxmem) {
+                    this.findidx = -1; console.log('not found'); break;
+                }
+                this.findidx -= this.find.length - 1;
+                this.addr = this.emu.printMem(this.findidx - 1, undefined, undefined, this.logger);
+                break;
+            case 'esc':  // send string to console
+                if (parms.length < 2) { console.error('missing: str'); break; }
+                this.emu.memo.con.print(parms[1]);
+                break;
+            case 'stop': // stop emulation
+                this.emu.stop();
                 break;
             default: console.error(`invalid command: ${cmd}`); break;
         }

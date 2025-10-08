@@ -4,8 +4,9 @@
     <meta name='viewport' content='width=device-width, initial-scale=1.0'/>
     <meta charset='utf-8'/>
     <style type='text/css'>
-@font-face { font-family: 'CP437'; src: url('../emu/github/emu8/cp437.ttf'); }
-@font-face { font-family: 'VT220'; src: url('../emu/github/emu8/Glass_TTY_VT220.ttf'); }
+:root {
+    --key_size: 36px;
+}
 [data-theme='dark'] {                   /* color theme dark */
     --background: #121212;                                /* background (0dp elevation surface) */
     --surface: rgba(255, 255, 255, 0.05);                 /* surface (1dp elevation surface) */
@@ -45,6 +46,8 @@
 [data-theme='light'] .surface {
     box-shadow: 0 1px 4px 0 rgba(0, 0, 0, 0.05);
 }
+@font-face { font-family: 'CP437'; src: url('../emu/github/emu8/cp437.ttf'); }
+@font-face { font-family: 'VT220'; src: url('../emu/github/emu8/Glass_TTY_VT220.ttf'); }
 body {                                  /* base */
     font-family: Ubuntu Mono, Monaco, Courier, monospace; /* font */
     font-size: 14px;                                      /* font size */
@@ -99,12 +102,7 @@ input[type='checkbox'] {                /* check box */
     height: 505px; overflow: auto;
 }
 .cursor { background-color: var(--onbackground); border-right-color: var(--onbackground); }
-#scr {                                  /* emulated screen */
-    width: 800px; height: 480px;
-    margin: auto; display: block;
-}
 .keyboard {                             /* soft keyboard */
-    --key_size: 36px;
     background-color: #00000000; color: var(--onbackground); opacity: 1.0;
     width: calc(36 * var(--key_size) / 2 + 34 * var(--key_size) / 10 + var(--key_size) / 2);
     margin-left: auto; margin-right: auto; padding: 5px; font-family: sans-serif;
@@ -119,6 +117,9 @@ input[type='checkbox'] {                /* check box */
 }
 .section.right {
     grid-template-columns: repeat(6, calc(var(--key_size) / 2));
+}
+.section.vert {
+    grid-template-columns: repeat(2, calc(var(--key_size) / 2));
 }
 .key {
     border: calc(var(--key_size) / 30) solid var(--onbackground);
@@ -138,14 +139,23 @@ input[type='checkbox'] {                /* check box */
 .sp4 { grid-column: span 4; }                             /* backspace capslock enter */
 .sp3 { grid-column: span 3; }                             /* tab backslash leftctrl rightctrl */
 .sp2 { grid-column: span 2; }                             /* empty key */
-#emulator {                             /* emulator area */
-    padding: 0px !important;
-    overflow: auto;
-}
 .log_wnd {                              /* debugger window */
     border: 1px solid var(--dbgborder); padding: 8px; opacity: 1.0;
     background-color: var(--dbgbckgrnd); color: var(--dbgcolor);
 }
+#emulator {                             /* emulator area */
+    padding: 0px !important;
+    overflow: auto;
+}
+#scr {                                  /* emulated screen */
+    width: 800px; height: 480px;
+    margin: auto; display: block;
+}
+#con {
+    position: absolute; opacity: 0.12; z-index: 100;
+    width: 0px; /*vertical bar, remove extra width */
+}
+#kbd { opacity: 1.0; z-index: 50; }
     </style>
     <script type='text/javascript'>
 window.onerror = function(event, source, line, col, error) {
@@ -169,7 +179,7 @@ window.onerror = function(event, source, line, col, error) {
         <div class='tab-content surface' id='terminal'></div>
         <div class='tab-content surface' id='emulator'>
             <canvas id='scr'></canvas>
-            <div class='keyboard'>
+            <div class='keyboard' id='kbd'>
                 <div class='section left'>
                     <div class='key'>Esc</div><div class='key'>F1</div><div class='key'>F2</div>
                     <div class='key'>F3</div><div class='key'>F4</div><div class='key'>F5</div>
@@ -219,6 +229,13 @@ window.onerror = function(event, source, line, col, error) {
                     <div class='sp2'></div><div class='key i'>&#8593;</div><div class='sp2'></div>
                     <div class='key i'>&#8592;</div><div class='key i'>&#8595;</div>
                     <div class='key i'>&#8594;</div>
+                </div>
+            </div>
+            <div class='keyboard' id='con'>
+                <div class='section vert'>
+                    <div class='key i'>&#x2588</div>
+                    <div class='key i'>&#x25a6</div>
+                    <div class='key i'>&#x25d0</div>
                 </div>
             </div>
         </div>
@@ -364,6 +381,84 @@ class JsShell {
     }
 }
 
+// Touch screen keyboard
+// layout         - layout descriptor:
+//     sec\n
+//     row\n
+//     ...
+//     sec\n
+//     row\n
+//     ...
+//     sec - section descriptor (max 2, first is left side, second is right side)
+//     row - row descriptor (max 6):
+//         key key key ...
+//     key - key descriptor (max 30 for left side, 6 for right side):
+//         [ [ ]spc[,lbl][ ] ] (no spaces, enclosed in [] if icon)
+//     spc - 1,2,3,4,5 or 20 key span
+//     lbl - key face, can be lbl1..lbl2
+// kbd(txt, down) - keyboard handler; txt - key text, down - key down (true) / key up (false)
+function SoftKeyboard(layout, kbd, kbdElem = document.getElementsByClassName('keyboard')[0]) {
+    let tmp, s = '', i = 0;
+    const data = layout.split('\n'), n = data.length,
+    key = val => {
+        let icon = false;
+        if (val.charAt(0) === '[' && val.charAt(val.length - 1) === ']') {
+            icon = true; val = val.substring(1, val.length - 1);
+        }
+        const prms = val.split(',');
+        let m = prms.length;
+        if (m === 3 && prms[1].length === 0) {
+            prms[2] = ',' + prms[2]; prms.splice(1, 1); m--;                // special case <,,>
+        }
+        if (m < 1 || m > 2) throw new Error(`invalid key: ${val} at: ${i - 1}`);
+        tmp = prms[0].trim() | 0;
+        if (isNaN(tmp)) throw new Error(`expected span number in: ${val} at ${i - 1}`);
+        if ([1, 2, 3, 4, 5, 20].indexOf(tmp) < 0)
+            throw new Error(`invalid span value in: ${val} at ${i - 1}`);
+        if (m === 1)
+            if (tmp === 1) throw new Error(`invalid span value for empty key at: ${i - 1}`);
+            else s += `<div class='sp${tmp}'></div>`;
+        else {
+            const lbls = prms[1].split('..');
+            if (lbls.length === 2 && lbls[0].length === 0 & lbls[1].charAt(0) === '.') {
+                lbls[0] = '.'; lbls[1] = lbls[1].substring(1);              // special case <...>
+            }
+            if (lbls.length > 2) throw new Error(`invalid label in ${val} at ${i - 1}`);
+            s += `<div class='key${(tmp > 1) ? ' sp' + tmp : ''}${icon ? ' i' : ''}'>`;
+            if (lbls.length === 1) s += lbls[0];
+            else s += `<span>${lbls[0]}</span><span>${lbls[1]}</span>`;
+            s += '</div>';
+        }
+    },
+    row = () => {
+        if (i >= n) return;
+        const rowdata = data[i++].match(/\S+/g) ?? [];
+        for (let j = 0, m = rowdata.length; j < m; j++) key(rowdata[j]);
+    },
+    section = left => {
+        if (i >= n) return;
+        if (data[i] !== 'sec') throw new Error(`missing section at: ${i}`);
+        i++;
+        s += `<div class='section ${left ? 'left' : 'right'}'>`;
+        for (let j = 0; j < 6; j++) row();
+        s += '</div>';
+    },
+    generate = () => {
+        section(true);
+        section(false);
+    },
+    handler = (e, down) => {
+        const elem = (e.target.tagName.toUpperCase() === 'SPAN') ? e.target.parentNode : e.target;
+        elem.style.borderColor = down ? 'var(--keypressed)' : 'var(--onbackground)';
+        kbd(elem.innerText.replace('\n', ''), down);
+        return false;
+    };
+    kbdElem.ontouchstart = e => handler(e, true);
+    kbdElem.ontouchend = e => handler(e, false);
+    generate();
+    kbdElem.innerHTML = s;
+}
+
 class Kbd extends Keyboard {
     constructor(con, monitor) {
         super();
@@ -378,10 +473,7 @@ class Kbd extends Keyboard {
         }
     }
     processKey(val) {
-        if (val === 14)
-            this.monitor.emu.stop(); // stop emulation on CTRL-n
-        else
-            this.con.kbd.push(val);
+        this.con.kbd.push(val);
     }
 }
 
@@ -390,9 +482,21 @@ const URL_OPTS = new URLSearchParams(location.search),
       amber = '#b38000', // amber monitor
       green = '#36bf00', // green monitor
       blue = '#a5a4b3',  // blue (white) monitor
-createCon = async (color, font = 'CP437', width = 80, height = 24, canvas = 'scr') => {
+      emu_elem = document.getElementById('emulator'),
+      scr_elem = document.getElementById('scr'),
+      kbd_elem = document.getElementById('kbd'),
+      con_elem = document.getElementById('con'),
+gSVar = str => {
+    if (str.startsWith('var(')) {
+        const p = getComputedStyle(document.body).getPropertyValue(str.substring(4, str.length - 1));
+        if (p) str = p.trim();
+    }
+    return str;
+},
+createCon = async (color, font = 'CP437', width = 80, height = 24, canvas = 'scr',
+        bckgr = '#282828') => {
     let settings = {COLORS: [
-        '#282828', '#0000aa', '#00aa00', '#00aaaa', '#aa0000', '#aa00aa', '#aa5500', color,
+        gSVar(bckgr), '#0000aa', '#00aa00', '#00aaaa', '#aa0000', '#aa00aa', '#aa5500', gSVar(color),
         '#555555', '#5555ff', '#55ff55', '#55ffff', '#ff5555', '#ff55ff', '#ffff55', '#ffffff'
     ]};
     if (font === 'VT220') settings = {...settings, FONT_WIDTH: 10, FONT_HEIGHT: 20, FONT_G0: 'VT220'};
@@ -413,9 +517,73 @@ addTab = (id, name, num = 1) => {
     res.className = 'tab-content surface';
     document.querySelector(`div.tabbed div:nth-of-type(${num})`).after(res);
     return res;
+},
+updateElm = (elem, top) => {
+    if (top) // set full screen toolbar
+        if (document.fullscreenElement) {
+            elem.style.top = '5px';
+            elem.style.left = `${screen.width - 20 - parseInt(gSVar('var(--key_size)'))}px`;
+        } else {
+            elem.style.top = '55px';
+            elem.style.left = `${screen.width - 25 - parseInt(gSVar('var(--key_size)'))}px`;
+        }
+    else {   // set soft keyboard
+        const rts = getComputedStyle(kbd_elem);
+        elem.style.top = `${screen.height - parseInt(rts.height)}px`;
+        elem.style.left = `${screen.width - 15 - parseInt(rts.width)}px`;
+    }
 };
 console._log = term._prms._log;             // merge terminal and
 console.MAX_LENGTH = term._prms.MAX_LENGTH; // console
+let saved_wdx, saved_hgh;
+con_elem.onclick = async e => {
+    let elem = e.target;
+    if (elem.tagName === 'SPAN') elem = elem.parentNode;
+    const txt = elem.innerText.replace('\n', '');
+    switch (txt) {
+        case '\u2588': // enter/exit full screen mode
+            if (document.fullscreenElement) {
+                await document.exitFullscreen();
+                scr_elem.style.width = saved_wdx; scr_elem.style.height = saved_hgh;
+                kbd_elem.style.position = 'relative';
+                kbd_elem.style.left = '0px'; kbd_elem.style.top = '0px';
+                kbd_elem.style.display = 'grid';
+                updateElm(con_elem, true);
+            } else {
+                if (saved_wdx === undefined) {
+                    saved_wdx = scr_elem.style.width; saved_hgh = scr_elem.style.height;
+                }
+                await emu_elem.requestFullscreen();
+                scr_elem.style.width = '100%';
+                const ratio = parseInt(saved_wdx) / parseInt(saved_hgh);
+                scr_elem.style.height = `${screen.width / ratio | 0}px`;
+                kbd_elem.style.position = 'absolute';
+                updateElm(kbd_elem, false);
+                updateElm(con_elem, true);
+            }
+            break;
+        case '\u25a6': // show/hide keyboard
+            const kbd_style = getComputedStyle(kbd_elem);
+            kbd_elem.style.display = (kbd_style.display === 'none') ? 'grid' : 'none';
+            break;
+        case '\u25d0': // increase/decrease menu contrast
+            let rstyle = getComputedStyle(kbd_elem), style = kbd_elem.style;
+            if (rstyle.display === 'none') {
+                rstyle = getComputedStyle(con_elem); style = con_elem.style;
+            }
+            switch (rstyle.opacity) {
+                case '0.12': style.opacity = '0.25'; break;
+                case '0.25': style.opacity = '0.5'; break;
+                case '0.5': style.opacity = '0.75'; break;
+                case '0.75': style.opacity = '0.85'; break;
+                case '0.85': style.opacity = '1'; break;
+                case '1': style.opacity = '0.12'; break;
+            }
+            break;
+    }
+};
+screen.orientation.onchange = e => { setTimeout(() => updateElm(con_elem, true), 100); };
+updateElm(con_elem, true);
 
 (async () => {
     try {
