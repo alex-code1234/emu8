@@ -285,24 +285,30 @@ function SM_1800_5602(memo) {
 function SM_5635_10(memo) {
     let piol = null, pioh = null, // IOB addr lo/hi
         err = 0x00;               // IO result
-    const
+    const buff = new Uint8Array(128),
+          mmm = {'rd': adr => buff[adr], 'wr': (adr, val) => buff[adr] = val},
     read = num => {
         switch (num) {
             case 0x70: // status
                 if (piol !== null && pioh !== null) { // execute command
                     const adr = pioh << 8 | piol;
-                    let op = memo.rd(adr + 1);
-                    const cnt = memo.rd(adr + 2), trk = memo.rd(adr + 3), sec = memo.rd(adr + 4),
-                          dma = memo.rd(adr + 6) << 8 | memo.rd(adr + 5);
-                    let drv = 0; if (op >= 48) { op -= 48; drv = 1; }
+                    let op = memo.rd(adr + 1),
+                        cnt = memo.rd(adr + 2), trk = memo.rd(adr + 3), sec = memo.rd(adr + 4),
+                        dma = memo.rd(adr + 6) << 8 | memo.rd(adr + 5),
+                        drv = 0;
+                    if (op >= 48) { op -= 48; drv = 1; }
                     switch (op) {
-                        case 2:         // format
-                            
-                            break;
-                        case 4: case 6: // read/write
+                        case 2: case 4: case 6:     // format/read/write
                             const hnd = memo.DRIVES[drv];
-                            if (hnd === null) err = 0x80; // empty drive, set not ready
-                            else err = trnErr(hnd.transfer(trk, sec, dma, memo, op === 4, cnt));
+                            if (hnd !== null) {
+                                let trns = memo;
+                                if (op === 2) {
+                                    trns = mmm; sec = 1; cnt = 26;
+                                    buff.fill(memo.rd(dma));
+                                }
+                                err = trnErr(hnd.transfer(trk, sec, dma, trns, op === 4, cnt));
+                            }
+                            else err = 0x80;        // empty drive, set not ready
                             break;
                         case 7: err = 0x02; break;  // write deleted not supported, set CRC error
                         default: err = 0x00; break; // seek, recalibrate, verify CRC - no error
