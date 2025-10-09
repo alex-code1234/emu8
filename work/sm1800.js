@@ -280,11 +280,68 @@ function SM_1800_5602(memo) {
     return {read, write, state};
 }
 
+// sm 5635.10 - FDC ES 5074
+// sm 5635.09 - FDC SM 5615
+function SM_5635_10(memo) {
+    let piol = null, pioh = null, // IOB addr lo/hi
+        err = 0x00;               // IO result
+    const
+    read = num => {
+        switch (num) {
+            case 0x70: // status
+                if (piol !== null && pioh !== null) { // execute command
+                    const adr = pioh << 8 | piol;
+                    let op = memo.rd(adr + 1);
+                    const cnt = memo.rd(adr + 2), trk = memo.rd(adr + 3), sec = memo.rd(adr + 4),
+                          dma = memo.rd(adr + 6) << 8 | memo.rd(adr + 5);
+                    let drv = 0; if (op >= 48) { op -= 48; drv = 1; }
+                    switch (op) {
+                        case 2:         // format
+                            
+                            break;
+                        case 4: case 6: // read/write
+                            const hnd = memo.DRIVES[drv];
+                            if (hnd === null) err = 0x80; // empty drive, set not ready
+                            else err = trnErr(hnd.transfer(trk, sec, dma, memo, op === 4, cnt));
+                            break;
+                        case 7: err = 0x02; break;  // write deleted not supported, set CRC error
+                        default: err = 0x00; break; // seek, recalibrate, verify CRC - no error
+                    }
+                    piol = null; pioh = null;
+                    return drvRd(0x0c); // interrupt pending
+                }
+                return drvRd(0x08);     // no interrupt
+            case 0x71: // result
+                return 0x00;
+            case 0x73: // result byte
+                const res = err; err = 0x00;
+                return res;
+        }
+    },
+    write = (num, data) => {
+        switch (num) {
+            case 0x71: piol = data & 0xff; break;                   // IOB lo
+            case 0x72: pioh = data & 0xff; break;                   // IOB hi
+            case 0x77: piol = null; pioh = null; err = 0x00; break; // reset
+        }
+    },
+    drvRd = byte => {
+        if (memo.DRIVES[0] !== null) byte |= 0x01; else byte &= 0xfe; // drive 0 ready
+        if (memo.DRIVES[1] !== null) byte |= 0x02; else byte &= 0xfd; // drive 1 ready
+        return byte;
+    },
+    trnErr = byte => (byte === 2 || byte === 3) ? 0x08 : // c, h, s    -> address error
+            (byte === 5 || byte === 6) ? 0x02 :          // read/write -> CRC error
+            byte,                                        // no translation
+    state = () => {
+        return {err, piol, pioh};
+    };
+    return {read, write, state};
+}
+
 class SMMonitor extends Monitor {
     constructor(emu) {
         super(emu);
-        this.find = null;
-        this.findidx = -1;
     }
     async handler(parms, cmd) {
         try { switch (cmd) {
@@ -379,9 +436,11 @@ async function main() {
           mon = new SMMonitor(emu),
           kbd = new SM_1800_7201_in(con, mon);
     mem.add(SM_1800_2001(mem), [0x60, 0x63, 0x64]);
-    mem.add(SM_1800_5602(mem), [0x88, 0x89, 0x8a, 0x98, 0x9a]);
+//    mem.add(SM_1800_5602(mem), [0x88, 0x89, 0x8a, 0x98, 0x9a]);
+    mem.add(SM_5635_10(mem), [0x70, 0x71, 0x72, 0x73, 0x77]);
     term.setPrompt('> ');
-    await mon.exec('rom MONID10.ROM');
+//await mon.exec('rom MONID10.ROM');
+await mon.exec('rom MONID.ROM');
 //mem.ram.set([
 //0x21, 0x00, 0x08, 0xaf, 0xf5, 0xf1, 0x2b, 0x86, 0xf5, 0x7c, 0xb5, 0xc2, 0x05, 0x10, 0xf1, 0xfe,
 //0x97, 0xca, 0x00, 0x10, 0x01, 0x1d, 0x10, 0xcd, 0x4c, 0x00, 0xcd, 0x40, 0x00, 0x6f, 0x7b, 0x69,
@@ -394,9 +453,9 @@ async function main() {
 //await mon.exec('disk 0 SM_SPO.dsk');
 //await mon.exec('disk 1 sm1800/disks/4.098.056DUBL.bin');
 //await mon.exec('disk 0 SM_CPM.dsk');
-//await mon.exec('disk 0 sm1800/disks/dos1copy.bin');
-//await mon.exec('disk 1 sm1800/disks/dos2copy.bin');
-await mon.exec('disk 0 SM_DOS.dsk');
+await mon.exec('disk 0 sm1800/disks/dos1copy.bin');
+await mon.exec('disk 1 sm1800/disks/dos2copy.bin');
+//await mon.exec('disk 0 SM_DOS.dsk');
     mon.exec('g');
     while (true) await mon.exec(await term.prompt());
 }
