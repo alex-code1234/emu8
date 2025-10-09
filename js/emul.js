@@ -47,6 +47,7 @@ class GenCpu {
             if (m === null || m.length < 2) continue; // ignore malformed entry
             let svalue = m[1], value = cond[3];
             if (value.startsWith('..')) svalue = '..' + svalue.substring(2);
+            else if (value.length < svalue.length) svalue = svalue.substr(0, value.length);
             switch (cond[2]) {
                 case '<': if (value >= svalue) return false; break;
                 case '>': if (value <= svalue) return false; break;
