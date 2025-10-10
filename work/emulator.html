@@ -454,7 +454,7 @@ class Kbd extends Keyboard {
     constructor(con, monitor,
             kbdElem = document.getElementsByClassName('keyboard')[0], // DOM element
             touch = false) {                                          // use down/up interface
-        super(kbdElem);
+        super(kbdElem, touch);
         if (touch) {
             kbdElem.onclick = null;
             kbdElem.ontouchstart = e => this.touchHandler(e, true);
@@ -527,18 +527,17 @@ addTab = (id, name, num = 1) => {
     return res;
 },
 updateElm = (elem, top) => {
-    if (top) // set full screen toolbar
-        if (document.fullscreenElement) {
-            elem.style.top = '5px';
-            elem.style.left = `${screen.width - 20 - parseInt(gSVar('var(--key_size)'))}px`;
-        } else {
-            elem.style.top = '55px';
-            elem.style.left = `${screen.width - 25 - parseInt(gSVar('var(--key_size)'))}px`;
-        }
-    else {   // set soft keyboard
+    let sw = window.innerWidth, sh = window.innerHeight, tp = '55px', gap = 25;
+    if (document.fullscreenElement) {
+        sw = screen.width; sh = screen.height; tp = '5px'; gap = 20;
+    }
+    if (top) { // set full screen toolbar
+        elem.style.top = tp;
+        elem.style.left = `${sw - gap - parseInt(gSVar('var(--key_size)'))}px`;
+    } else {   // set soft keyboard
         const rts = getComputedStyle(kbd_elem);
-        elem.style.top = `${screen.height - parseInt(rts.height)}px`;
-        elem.style.left = `${screen.width - 15 - parseInt(rts.width)}px`;
+        elem.style.top = `${sh - 15 - parseInt(rts.height)}px`;
+        elem.style.left = `${sw - 15 - parseInt(rts.width)}px`;
     }
 };
 console._log = term._prms._log;             // merge terminal and

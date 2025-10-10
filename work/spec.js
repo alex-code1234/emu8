@@ -322,6 +322,11 @@ class SpecKbd extends Kbd {
         }
     }
     translateKey(e, soft, isDown) {
+        if (!soft) {
+console.log(e.key);
+if (e.key === 'Shift') e = {'key': 'НР'};
+else if (e.key === 'Enter') e = {'key': 'ВК'};
+        }
         const key = this.checkKey(e.key);
         this.ports[3] = isDown ? 1 : 0;
         for (let i = 0; i < 3; i++)
@@ -574,7 +579,7 @@ async function main() {
                     0xff505050, 0xffd5b37f, 0xff90ee90, 0xffffffb0, 0xffcbc0ff, 0xffff9fcf, 0xff3fd0f4, 0xffffffff],
           cf16 = cb => [clrs16[cb >>> 4], clrs16[cb & 0x0f]];
     const con = await SpecCon(/*cf16*/),
-          spk = await Speaker(undefined, undefined),
+//          spk = await Speaker(undefined, undefined),
           mem = new SpecMemIO(con, /*spk*/null, null/*, 8, 16*/),
           cpu = new SpecCpu(con, mem),
           emu = new Emulator(cpu, mem, 0),

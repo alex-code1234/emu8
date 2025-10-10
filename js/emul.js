@@ -352,7 +352,8 @@ class Emulator {
 }
 
 class Keyboard {
-    constructor(kbdElem = document.getElementsByClassName('keyboard')[0]) {
+    constructor(kbdElem = document.getElementsByClassName('keyboard')[0],
+            touch = false) { // use down/up interface
         this.kbdElem = kbdElem;
         this.fs_shift = false;
         this.fs_ctrl = false;
@@ -405,7 +406,8 @@ class Keyboard {
             }
         };
         document.onkeydown = e => {
-            switch (e.key) {
+            if (touch) this.kbdHandler(e, false, true);
+            else switch (e.key) {
                 case 'Shift': this.fs_shift = true; break;
                 case 'Control': this.fs_ctrl = true; break;
                 case 'Alt': this.fs_alt = true; break;
@@ -413,7 +415,8 @@ class Keyboard {
             }
         };
         document.onkeyup = e => {
-            switch (e.key) {
+            if (touch) this.kbdHandler(e, false, false);
+            else switch (e.key) {
                 case 'Shift': this.fs_shift = false; break;
                 case 'Control': this.fs_ctrl = false; break;
                 case 'Alt': this.fs_alt = false; break;
