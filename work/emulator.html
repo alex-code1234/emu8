@@ -464,13 +464,15 @@ class Kbd extends Keyboard {
         super();
         this.con = con;
         this.monitor = monitor;
+        this.checkStyle = getComputedStyle(document.getElementById('emulator'));
     }
-    kbdHandler(txt, soft) {
-        if (soft && this.monitor.emu.CPU.RUN) {
-            const val = super.kbdHandler(txt, soft);
-            if (val !== null)
-                this.processKey(val);
-        }
+    kbdHandler(e, soft, isDown) {
+        if (!this.monitor.emu.CPU.RUN || this.checkStyle.display === 'none') return;
+        const val = this.translateKey(e, soft, isDown);
+        if (val !== null) this.processKey(val);
+    }
+    translateKey(e, soft, isDown) {
+        return super.kbdHandler(e, soft, isDown);
     }
     processKey(val) {
         this.con.kbd.push(val);

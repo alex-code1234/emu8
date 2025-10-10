@@ -158,16 +158,15 @@ async function IBMIO(con) {
     return result;
 }
 
-class IBMKbd extends Keyboard {
-    constructor(emu) {
-        super();
-        this.CPU = emu.CPU;
-        this.PPI = emu.memo.ppi;
+class IBMKbd extends Kbd {
+    constructor(con, mon) {
+        super(con, mon);
+        this.CPU = mon.emu.CPU;
+        this.PPI = mon.emu.memo.ppi;
     }
-    kbdHandler(txt, soft) {
-        if (!soft || !this.CPU.RUN) return;
+    translateKey(e, soft, isDown) {
         let cde = 0, modifier = [];
-        switch (txt) {
+        switch (e.key) {
             case 'Esc': cde = 0x01; break;
             case '!1': cde = 0x02; break;
             case '@2': cde = 0x03; break;
@@ -247,8 +246,12 @@ class IBMKbd extends Keyboard {
             if (this.fs_shift) modifier.push(0x2a);
             if (this.fs_ctrl) modifier.push(0x1d);
             if (this.fs_alt) modifier.push(0x38);
-            this.keyPress(cde, modifier);
+            return [cde, modifier];
         }
+        return null;
+    }
+    processKey(val) {
+        this.keyPress(...val);
     }
     async keyPress(cde, modifier) {
         await this.mods(modifier, false);
@@ -269,18 +272,6 @@ class IBMKbd extends Keyboard {
     }
 }
 
-class IBMMonitor extends Monitor {
-    constructor(emu) {
-        super(emu);
-    }
-    async handler(parms, cmd) {
-        switch (cmd) {
-            case 'stop': this.emu.stop(); break;
-            default: await super.handler(parms, cmd); break;
-        }
-    }
-}
-
 async function main() {
     let loads = [
         loadScript('../emu/github/emu8/js/js8086.js'),
@@ -296,7 +287,7 @@ async function main() {
           cpu = new GenCpu(mem, 4),
           emu = new Emulator(cpu, mem, 4),
           mon = new Monitor(emu),
-          kbd = new IBMKbd(emu);
+          kbd = new IBMKbd(con, mon);
     mem.ram.set(loads[3], 0xf6000);
     mem.ram.set(loads[4], 0xfe000);
     const ega_rom = loads[5],

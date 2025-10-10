@@ -330,7 +330,7 @@ function SpecKbd(mx = false) {
 class SpecMemIO extends MemIO {
     constructor(con, speaker = null, kbd = [0xff, 0xff, 0xff, 0], ramdisks = 0, colors = 2, onepage = false) {
         super(con, 0, false);
-this.cycles = 0;
+//this.cycles = 0;
         this.colors = colors;
         if (colors > 2) {
             this.cram = new Uint8Array(0x3000); this.cval = 0;
@@ -395,7 +395,7 @@ this.cycles = 0;
         if (a < 0xffec) this.fdc.write(a & 0x03, v); else
         if (a < 0xfff0) {
             if (a === 0xffee) this.pitEnable = true;
-this.cycles = this.CPU.cpu.cycles;
+//this.cycles = this.CPU.cpu.cycles;
             this.pit.write(a & 0x03, v);
         } else
         if (a < 0xfff4) {
@@ -457,17 +457,17 @@ this.cycles = this.CPU.cpu.cycles;
         switch (num) {
             case 0:
                 if (this.pitEnable) {
-for (let i = 0; i < 4; i++) {
+//for (let i = 0; i < 4; i++) {
                     this.pitBit = this.pitBit ? 0 : 1;
-//                    this.speaker.tick(this.pitBit, this.CPU.cpu.cycles);
-this.speaker.tick(this.pitBit, this.cycles += 1000);
-}
+                    this.speaker.tick(this.pitBit, this.CPU.cpu.cycles);
+//this.speaker.tick(this.pitBit, this.cycles += 1000);
+//}
                 }
                 break;
             case 1: 
-for (let i = 0; i < 4; i++) {
+//for (let i = 0; i < 4; i++) {
             this.pit.counters[2].tick(); 
-}
+//}
             break;
             case 2: this.pitEnable = false; break;
         }
@@ -543,12 +543,12 @@ class SpecMonitor extends Monitor {
                 this.emu.memo.tape.push(...new Uint8Array(await hndl.arrayBuffer()));
                 console.log(this.emu.memo.tape.length);
                 break;
-case 'ttt':
-this.emu.loadBin(
-new Uint8Array(await (await preLoadFile('xtree.rks')).arrayBuffer()).slice(4),
-0x0000
-);
-break;
+//case 'ttt':
+//this.emu.loadBin(
+//new Uint8Array(await (await preLoadFile('xtree.rks')).arrayBuffer()).slice(4),
+//0x0000
+//);
+//break;
             case 'state':
                 console.log(this.emu.memo.state());
                 console.log(this.emu.memo.fdc?.state());
@@ -568,27 +568,27 @@ async function main() {
           clrs16 = [0xff202020, 0xffff2020, 0xff20ff20, 0xffaaaa20, 0xff2020ff, 0xff8a4476, 0xff0090b4, 0xffeeeeee,
                     0xff505050, 0xffd5b37f, 0xff90ee90, 0xffffffb0, 0xffcbc0ff, 0xffff9fcf, 0xff3fd0f4, 0xffffffff],
           cf16 = cb => [clrs16[cb >>> 4], clrs16[cb & 0x0f]];
-    const con = await SpecCon(cf16),
-          kbd = SpecKbd(true),
+    const con = await SpecCon(/*cf16*/),
+          kbd = SpecKbd(/*true*/),
           spk = await Speaker(undefined, undefined),
-          mem = new SpecMemIO(con, spk, kbd.ports, 8, 16),
+          mem = new SpecMemIO(con, /*spk*/null, kbd.ports/*, 8, 16*/),
           cpu = new SpecCpu(con, mem),
           emu = new Emulator(cpu, mem, 0),
           mon = new SpecMonitor(emu);
-//    await mon.exec('r c000 SPEC.ROM');
+    await mon.exec('r c000 SPEC.ROM');
 //await mon.exec('m 100 3e 91 32 03 ff 3e fb 32 01 ff 3a 02 ff 2f e6 03 47 3a 00 ff 2f e6 34 b0 c9 ' +
 //                     'cd 00 01 21 00 00 22 fc 8f cd 15 c8 c3 19 01'); // G119
 //    await mon.exec('r 0 loderun.bin');
-//    mon.exec('g c000');
+    mon.exec('g c000');
 //await mon.exec('r d400 spec_mx/test.i80');
 //await mon.exec('m dad4 40'); await mon.exec('m daeb 80'); await mon.exec('m daf5 c0'); await mon.exec('m dafc 00');
 //mon.exec('g d400');
-await mon.exec('r 0 spec_mx/Specimx.rom');
+//await mon.exec('r 0 spec_mx/Specimx.rom');
 //await mon.exec('r 0 spec_mx/nc.rom');
 //await mon.exec('r 0 spec_mx/nc_orig.rom');
-mem.fdc.Disk[1] = new Uint8Array(await (await preLoadFile('spec_mx/bst_mx0.odi')).arrayBuffer());
-mem.fdc.Disk[0] = new Uint8Array(await (await preLoadFile('spec_mx/lafans2.odi')).arrayBuffer());
-mon.exec('g 0');
+//mem.fdc.Disk[1] = new Uint8Array(await (await preLoadFile('spec_mx/bst_mx0.odi')).arrayBuffer());
+//mem.fdc.Disk[0] = new Uint8Array(await (await preLoadFile('spec_mx/lafans2.odi')).arrayBuffer());
+//mon.exec('g 0');
     term.setPrompt('> ');
     while (true) await mon.exec(await term.prompt());
 }

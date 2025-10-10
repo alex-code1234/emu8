@@ -364,8 +364,8 @@ class Keyboard {
         kbdElem.onclick = e => {
             let elem = e.target;
             if (elem.tagName === 'SPAN') elem = elem.parentNode;
-            const txt = elem.innerText.replace('\n', '');
-            switch (txt) {
+            const key = elem.innerText.replace('\n', '');
+            switch (key) {
                 case 'CapsLock':
                     this.fs_caps = !this.fs_caps; this.fs_shift = this.fs_caps;
                     shfts[0].style.borderColor = shfts[1].style.borderColor = this.fs_caps ?
@@ -388,7 +388,7 @@ class Keyboard {
                             'var(--keypressed)' : 'var(--onbackground)';
                     break;
                 default:
-                    this.kbdHandler(txt, true);
+                    this.kbdHandler({key}, true, false);
                     if (!this.fs_caps && this.fs_shift) {
                         shfts[0].style.borderColor = shfts[1].style.borderColor = 'var(--onbackground)';
                         this.fs_shift = false;
@@ -421,9 +421,9 @@ class Keyboard {
             }
         };
     }
-    kbdHandler(dat, soft, isDown) {
+    kbdHandler(e, soft, isDown) {
         let val = null;
-        switch (dat) {
+        switch (e.key) {
             case 'Escape':
             case 'Esc': val = 27; break;
             case 'F1':
@@ -461,10 +461,10 @@ class Keyboard {
             case 'ArrowDown':
             case '\u2193': val = 24; break; // down arrow
             default:
-                if (dat.length > 1) val = dat.charCodeAt(this.fs_shift ? 0 : 1);
+                if (e.key.length > 1) val = e.key.charCodeAt(this.fs_shift ? 0 : 1);
                 else {
-                    if (soft && !this.fs_shift) dat = dat.toLowerCase();
-                    val = dat.charCodeAt(0);
+                    if (soft && !this.fs_shift) e.key = e.key.toLowerCase();
+                    val = e.key.charCodeAt(0);
                 }
                 break;
         }
