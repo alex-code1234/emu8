@@ -209,10 +209,27 @@ async function Speaker(volume = 0.03, filter = true, canvas = null) {
     return {tick, start, stop, destroy, setPointAttrs, drawPoints};
 }
 
-function SpecKbd(mx = false) {
-    const ports = new Uint8Array([0xff, 0xff, 0xff, 0]),
-    checkKey = txt => {
-        if (mx) switch (txt) {
+class SpecKbd extends Kbd {
+    constructor(con, mon, mx = false) {
+        const s1 = mx ?
+'1,АР2  1,КОИ      1,F1       1,F2       1,F3   1,F4   1,F5     1,F6 1,F7 1,F8       1,F9       1,СТР' :
+'1,F1   1,F2       1,F3       1,F4       1,F5   1,F6   1,F7     1,F8 1,F9 [1,\u25a0] [1,\u25a1] [1,\u2341]',
+              s2 = mx ?
+'4,\u0020' :
+'1,АР2  1,\u0020';
+        SoftKeyboard(`sec
+3      ${s1} 2
+3      1,;..+ 1,1..!     1,2.."     1,3..#     1,4..$ 1,5..% 1,6..&   1,7..'     1,8..(  1,9..)     1,0     1,-..=
+4      1,J..Й 1,C..Ц     1,U..У     1,K..К     1,E..Е 1,N..Н 1,G..Г   1,[..Ш     1,]..Щ  1,Z..З     1,H..Х  1,:..*
+5      1,F..Ф 1,Y..Ы     1,W..В     1,A..А     1,P..П 1,R..Р 1,O..О   1,L..Л     1,D..Д  1,V..Ж     1,\\..Э 1,...>
+3 3    1,Q..Я 1,^..Ч     1,S..С     1,M..М     1,I..И 1,T..Т 1,X..Ь   1,B..Б     1,@..Ю  1,,..<     1,/..?  1,_..Ъ
+3 3,НР 1,Р/Л  [1,\u21d6] [1,\u2191] [1,\u2193] 1,ТАБ  ${s2} [1,\u2190] 1,ПВ    [1,\u2192] 1,ПС    1,ВК`);
+        super(con, mon, undefined, true);
+        this.mx = mx;
+        this.ports = new Uint8Array([0xff, 0xff, 0xff, 0]);
+    }
+    checkKey(txt) {
+        if (this.mx) switch (txt) {
             case 'АР2':    return [0xff, 0x7f, 0xf7]; // АР2
             case 'КОИ':    return [0xff, 0x7f, 0xfb]; // КОИ
             case 'F1':     return [0xff, 0x7f, 0xfd]; // F1
@@ -303,28 +320,16 @@ function SpecKbd(mx = false) {
             case '\u2192': return [0xfb, 0xfb, 0xff]; // →
             default: return [0xff, 0xff, 0xff];
         }
-    },
-    update = (txt, down) => {
-        const key = checkKey(txt);
-        ports[3] = down ? 1 : 0;
+    }
+    translateKey(e, soft, isDown) {
+        const key = this.checkKey(e.key);
+        this.ports[3] = isDown ? 1 : 0;
         for (let i = 0; i < 3; i++)
-            if (down) ports[i] &= key[i]; else ports[i] |= ~key[i];
-    };
-    const s1 = mx ?
-'1,АР2  1,КОИ      1,F1       1,F2       1,F3   1,F4   1,F5     1,F6 1,F7 1,F8       1,F9       1,СТР' :
-'1,F1   1,F2       1,F3       1,F4       1,F5   1,F6   1,F7     1,F8 1,F9 [1,\u25a0] [1,\u25a1] [1,\u2341]',
-          s2 = mx ?
-'4,\u0020' :
-'1,АР2  1,\u0020';
-    SoftKeyboard(`sec
-3      ${s1} 2
-3      1,;..+ 1,1..!     1,2.."     1,3..#     1,4..$ 1,5..% 1,6..&   1,7..'     1,8..(  1,9..)     1,0     1,-..=
-4      1,J..Й 1,C..Ц     1,U..У     1,K..К     1,E..Е 1,N..Н 1,G..Г   1,[..Ш     1,]..Щ  1,Z..З     1,H..Х  1,:..*
-5      1,F..Ф 1,Y..Ы     1,W..В     1,A..А     1,P..П 1,R..Р 1,O..О   1,L..Л     1,D..Д  1,V..Ж     1,\\..Э 1,...>
-3 3    1,Q..Я 1,^..Ч     1,S..С     1,M..М     1,I..И 1,T..Т 1,X..Ь   1,B..Б     1,@..Ю  1,,..<     1,/..?  1,_..Ъ
-3 3,НР 1,Р/Л  [1,\u21d6] [1,\u2191] [1,\u2193] 1,ТАБ  ${s2} [1,\u2190] 1,ПВ    [1,\u2192] 1,ПС    1,ВК`,
-    update);
-    return {ports};
+            if (isDown) this.ports[i] &= key[i];
+            else this.ports[i] |= ~key[i];
+        return null; // do not call processKey
+    }
+    processKey(val) { }
 }
 
 class SpecMemIO extends MemIO {
@@ -569,12 +574,13 @@ async function main() {
                     0xff505050, 0xffd5b37f, 0xff90ee90, 0xffffffb0, 0xffcbc0ff, 0xffff9fcf, 0xff3fd0f4, 0xffffffff],
           cf16 = cb => [clrs16[cb >>> 4], clrs16[cb & 0x0f]];
     const con = await SpecCon(/*cf16*/),
-          kbd = SpecKbd(/*true*/),
           spk = await Speaker(undefined, undefined),
-          mem = new SpecMemIO(con, /*spk*/null, kbd.ports/*, 8, 16*/),
+          mem = new SpecMemIO(con, /*spk*/null, null/*, 8, 16*/),
           cpu = new SpecCpu(con, mem),
           emu = new Emulator(cpu, mem, 0),
-          mon = new SpecMonitor(emu);
+          mon = new SpecMonitor(emu),
+          kbd = new SpecKbd(con, mon/*, true*/);
+    mem.kbd = kbd.ports;
     await mon.exec('r c000 SPEC.ROM');
 //await mon.exec('m 100 3e 91 32 03 ff 3e fb 32 01 ff 3a 02 ff 2f e6 03 47 3a 00 ff 2f e6 34 b0 c9 ' +
 //                     'cd 00 01 21 00 00 22 fc 8f cd 15 c8 c3 19 01'); // G119

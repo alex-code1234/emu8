@@ -382,7 +382,7 @@ class JsShell {
 }
 
 // Touch screen keyboard
-// layout         - layout descriptor:
+// layout - layout descriptor:
 //     sec\n
 //     row\n
 //     ...
@@ -396,8 +396,7 @@ class JsShell {
 //         [ [ ]spc[,lbl][ ] ] (no spaces, enclosed in [] if icon)
 //     spc - 1,2,3,4,5 or 20 key span
 //     lbl - key face, can be lbl1..lbl2
-// kbd(txt, down) - keyboard handler; txt - key text, down - key down (true) / key up (false)
-function SoftKeyboard(layout, kbd, kbdElem = document.getElementsByClassName('keyboard')[0]) {
+function SoftKeyboard(layout, kbdElem = document.getElementsByClassName('keyboard')[0]) {
     let tmp, s = '', i = 0;
     const data = layout.split('\n'), n = data.length,
     key = val => {
@@ -446,22 +445,21 @@ function SoftKeyboard(layout, kbd, kbdElem = document.getElementsByClassName('ke
     generate = () => {
         section(true);
         section(false);
-    },
-    handler = (e, down) => {
-        const elem = (e.target.tagName.toUpperCase() === 'SPAN') ? e.target.parentNode : e.target;
-        elem.style.borderColor = down ? 'var(--keypressed)' : 'var(--onbackground)';
-        kbd(elem.innerText.replace('\n', ''), down);
-        return false;
     };
-    kbdElem.ontouchstart = e => handler(e, true);
-    kbdElem.ontouchend = e => handler(e, false);
     generate();
     kbdElem.innerHTML = s;
 }
 
 class Kbd extends Keyboard {
-    constructor(con, monitor) {
-        super();
+    constructor(con, monitor,
+            kbdElem = document.getElementsByClassName('keyboard')[0], // DOM element
+            touch = false) {                                          // use down/up interface
+        super(kbdElem);
+        if (touch) {
+            kbdElem.onclick = null;
+            kbdElem.ontouchstart = e => this.touchHandler(e, true);
+            kbdElem.ontouchend = e => this.touchHandler(e, false);
+        }
         this.con = con;
         this.monitor = monitor;
         this.checkStyle = getComputedStyle(document.getElementById('emulator'));
@@ -476,6 +474,14 @@ class Kbd extends Keyboard {
     }
     processKey(val) {
         this.con.kbd.push(val);
+    }
+    touchHandler(e, down) {
+        let elem = e.target;
+        if (elem.tagName === 'SPAN') elem = elem.parentNode;
+        elem.style.borderColor = down ? 'var(--keypressed)' : 'var(--onbackground)';
+        const key = elem.innerText.replace('\n', '');
+        this.kbdHandler({key}, true, down);
+        return false;
     }
 }
 
