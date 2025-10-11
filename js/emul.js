@@ -406,22 +406,22 @@ class Keyboard {
             }
         };
         document.onkeydown = e => {
-            if (touch) this.kbdHandler(e, false, true);
-            else switch (e.key) {
+            switch (e.key) {
                 case 'Shift': this.fs_shift = true; break;
                 case 'Control': this.fs_ctrl = true; break;
                 case 'Alt': this.fs_alt = true; break;
-                default: this.kbdHandler(e, false, true); break;
+                default: this.kbdHandler(e, false, true); return;
             }
+            if (touch) this.kbdHandler(e, false, true);
         };
         document.onkeyup = e => {
-            if (touch) this.kbdHandler(e, false, false);
-            else switch (e.key) {
+            switch (e.key) {
                 case 'Shift': this.fs_shift = false; break;
                 case 'Control': this.fs_ctrl = false; break;
                 case 'Alt': this.fs_alt = false; break;
-                default: this.kbdHandler(e, false, false); break;
+                default: this.kbdHandler(e, false, false); return;
             }
+            if (touch) this.kbdHandler(e, false, false);
         };
     }
     kbdHandler(e, soft, isDown) {

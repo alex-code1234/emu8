@@ -468,7 +468,7 @@ class Kbd extends Keyboard {
         if (!this.monitor.emu.CPU.RUN || this.checkStyle.display === 'none') return;
         let conKey;                     // map key up events from hrdw keyboard to sys menu
         if (!soft && !isDown && (conKey = this.checkConKey(e))) { // sys menu key?
-            con_elem.click({'target': {'innerText': conKey}});    // emulate sys menu click
+            con_elem.onclick({'target': {'innerText': conKey}});  // emulate sys menu click
             return;
         }
         const val = this.translateKey(e, soft, isDown);
@@ -489,9 +489,9 @@ class Kbd extends Keyboard {
         return false;
     }
     checkConKey(e) {
-        if (!this.fs_shift) return null; // map Shift+key
+        if (!this.fs_alt) return null;   // map Alt+key
         switch (e.key) {
-            case 'F10': return '\u2588'; // full screen mode
+            case '=': return '\u2588';   // full screen mode
             case 'F11': return '\u25a6'; // soft keyboard switch
             case 'F12': return '\u25d0'; // contrast
         }
@@ -577,7 +577,7 @@ con_elem.onclick = async e => {
                 await emu_elem.requestFullscreen();
                 scr_elem.style.width = '100%';
                 const ratio = parseInt(saved_wdx) / parseInt(saved_hgh);
-                scr_elem.style.height = `${screen.width / ratio | 0}px`;
+                scr_elem.style.height = `${Math.min(screen.height, screen.width / ratio | 0)}px`;
                 kbd_elem.style.position = 'absolute';
                 updateElm(kbd_elem, false);
                 updateElm(con_elem, true);
