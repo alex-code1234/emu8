@@ -309,7 +309,7 @@ class Emulator {
     debug(h, show = true) {
         if (show) {
             if (this.dbgw !== null) { console.error('debug active'); return; }
-            const x = screen.width - this.D_DCW - 17 - this.D_DRW - 17 - 5,
+            const x = window.innerWidth - this.D_DCW - 17 - this.D_DRW - 17 - 5,
                   y = 5;
             this.dbgw = console.open(x, y, this.D_DCW, h + 17,
                     'var(--dbgcolor)', 'var(--dbgbckgrnd)');
