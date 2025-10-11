@@ -466,6 +466,11 @@ class Kbd extends Keyboard {
     }
     kbdHandler(e, soft, isDown) {
         if (!this.monitor.emu.CPU.RUN || this.checkStyle.display === 'none') return;
+        let conKey;                     // map key up events from hrdw keyboard to sys menu
+        if (!soft && !isDown && (conKey = this.checkConKey(e))) { // sys menu key?
+            con_elem.click({'target': {'innerText': conKey}});    // emulate sys menu click
+            return;
+        }
         const val = this.translateKey(e, soft, isDown);
         if (val !== null) this.processKey(val);
     }
@@ -482,6 +487,15 @@ class Kbd extends Keyboard {
         const key = elem.innerText.replace('\n', '');
         this.kbdHandler({key}, true, down);
         return false;
+    }
+    checkConKey(e) {
+        if (!this.fs_shift) return null; // map Shift+key
+        switch (e.key) {
+            case 'F10': return '\u2588'; // full screen mode
+            case 'F11': return '\u25a6'; // soft keyboard switch
+            case 'F12': return '\u25d0'; // contrast
+        }
+        return null;
     }
 }
 
