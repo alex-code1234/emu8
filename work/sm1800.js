@@ -204,7 +204,7 @@ function SM_1800_5602(memo) {
           mmm = {'rd': adr => buff[adr], 'wr': (adr, val) => buff[adr] = val},
     read = num => {
         if (num === 0x98) { // state
-            if (cmd === 0x41 && (status & 0x10) === 0 && pos === 255)
+            if (cmd & 0x40 && (status & 0x10) === 0 && pos === 255)
                 if (f40 > 1) f40 = 0;
                 else { status |= 0x40; f40++; }
             else f40 = 0;
@@ -228,15 +228,13 @@ function SM_1800_5602(memo) {
     write = (num, data) => {
         switch (num) {
             case 0x89:      // CW0
-                if (data & 0x20) { // step
+                drv = (data & 0x01) ? 1 : 0;
+                fdc = memo.DRIVES[drv];
+                if (fdc === null) status |= 0x10;
+                else if (data & 0x20) { // step
                     trk += (data & 0x10) ? 1 : -1;
                     if (trk < 0 || trk >= 77) status |= 0x10;
-                    else {
-                        drv = (data & 0x01) ? 1 : 0;
-                        fdc = memo.DRIVES[drv];
-                        if (fdc === null) status |= 0x10;
-                        else { status &= 0xef; sec = 0; pos = 255; }
-                    }
+                    else { status &= 0xef; sec = 0; pos = 255; }
                 }
                 status |= 0x01;
                 break;
@@ -291,24 +289,24 @@ function SM_5635_10(memo) {
         switch (num) {
             case 0x70: // status
                 if (piol !== null && pioh !== null) { // execute command
-                    const adr = pioh << 8 | piol;
-                    let op = memo.rd(adr + 1),
-                        cnt = memo.rd(adr + 2), trk = memo.rd(adr + 3), sec = memo.rd(adr + 4),
-                        dma = memo.rd(adr + 6) << 8 | memo.rd(adr + 5),
-                        drv = 0;
-                    if (op >= 48) { op -= 48; drv = 1; }
-                    switch (op) {
+                    const adr = pioh << 8 | piol,
+                          byt = memo.rd(adr + 1),
+                          op = byt & 0x07,
+                          drv = (byt & 0x10) >>> 4,    // limit drive to 1 bit (2 drives)
+                          trk = memo.rd(adr + 3),
+                          dma = memo.rd(adr + 6) << 8 | memo.rd(adr + 5),
+                          hnd = (drv >= 0 && drv < 2) ? memo.DRIVES[drv] : null;
+                    let cnt = memo.rd(adr + 2),
+                        sec = memo.rd(adr + 4) & 0x1f; // limit sector to 5 bits (26 sectors)
+                    if (hnd === null) err = 0x80;   // empty or invalid drive, set not ready
+                    else switch (op) {
                         case 2: case 4: case 6:     // format/read/write
-                            const hnd = memo.DRIVES[drv];
-                            if (hnd !== null) {
-                                let trns = memo;
-                                if (op === 2) {
-                                    trns = mmm; sec = 1; cnt = 26;
-                                    buff.fill(memo.rd(dma));
-                                }
-                                err = trnErr(hnd.transfer(trk, sec, dma, trns, op === 4, cnt));
+                            let trns = memo;
+                            if (op === 2) {
+                                trns = mmm; sec = 1; cnt = 26;
+                                buff.fill(memo.rd(dma));
                             }
-                            else err = 0x80;        // empty drive, set not ready
+                            err = trnErr(hnd.transfer(trk, sec, dma, trns, op === 4, cnt));
                             break;
                         case 7: err = 0x02; break;  // write deleted not supported, set CRC error
                         default: err = 0x00; break; // seek, recalibrate, verify CRC - no error
@@ -445,7 +443,9 @@ async function main() {
 //    mem.add(SM_1800_5602(mem), [0x88, 0x89, 0x8a, 0x98, 0x9a]);
     mem.add(SM_5635_10(mem), [0x70, 0x71, 0x72, 0x73, 0x77]);
     term.setPrompt('> ');
+// MONID 1.0: for SM_1800_5602
 //await mon.exec('rom MONID10.ROM');
+// MONID 1.3: for SM_5635_10
 await mon.exec('rom MONID.ROM');
 //mem.ram.set([
 //0x21, 0x00, 0x08, 0xaf, 0xf5, 0xf1, 0x2b, 0x86, 0xf5, 0x7c, 0xb5, 0xc2, 0x05, 0x10, 0xf1, 0xfe,
@@ -458,10 +458,23 @@ await mon.exec('rom MONID.ROM');
 //await mon.exec('r sm1800/sm_timer.hex 1'); // test timer module
 //await mon.exec('disk 0 SM_SPO.dsk');
 //await mon.exec('disk 1 sm1800/disks/4.098.056DUBL.bin');
-//await mon.exec('disk 0 SM_CPM.dsk');
-await mon.exec('disk 0 sm1800/disks/dos1copy.bin');
-await mon.exec('disk 1 sm1800/disks/dos2copy.bin');
+// CPM 2.2: uses SM_1800_5602 only if not patched
+await mon.exec('disk 0 SM_CPM.dsk');
+//await mon.exec('disk 1 ../emu/github/emu8/cpm/cpma.cpm');
+// DOS 2.0: unknown MONID version if MONID1.3 and SM_1800_5602 loaded
+//await mon.exec('disk 0 sm1800/disks/dos1copy.bin');
+//await mon.exec('disk 1 sm1800/disks/dos2copy.bin');
 //await mon.exec('disk 0 SM_DOS.dsk');
     mon.exec('g');
     while (true) await mon.exec(await term.prompt());
 }
+
+/*case 0x89: // wd1793; CP/M: patch
+this.ram[0xf748] = this.ram[0xf749] = 0x00;
+this.ram[0xf74f] = this.ram[0xf750] = this.ram[0xf753] = 0x00;
+this.ram.set([0x3e, 0x04, 0xc3, 0xca, 0xf9], 0xf9a5);
+this.ram.set([0x3e, 0x06, 0x47, 0x3a, 0x9f, 0xfd, 0xb7, 0x78, 0xca, 0xd5, 0xf9, 0xf6, 0x30, 0x32,
+        0xf8, 0xf9, 0x3a, 0x9b, 0xfd, 0x32, 0xfa, 0xf9, 0x3a, 0x9c, 0xfd, 0x32, 0xfb, 0xf9, 0x2a,
+        0x9d, 0xfd, 0x22, 0xfc, 0xf9, 0x3e, 0xf7, 0xd3, 0x71, 0x3e, 0xf9, 0xd3, 0x72, 0xdb, 0x70,
+        0xdb, 0x73, 0xc9, 0x80, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00], 0xf9c8);
+break;*/
