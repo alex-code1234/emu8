@@ -344,6 +344,42 @@ function SM_5635_10(memo) {
     return {read, write, state};
 }
 
+// sm 1800.6202 - paper tape puncher/reader
+function SM_1800_6202(memo) {
+    let pos = 0;
+    const buff = [],
+    read = num => {
+        if (num === 0x20) return (pos >= buff.length) ? 0x1a : buff[pos++] & 0xff;
+        let res = 0x04;
+        if (pos <= buff.length) res |= 0x01;
+        return res;
+    },
+    write = (num, data) => {
+        buff.push(data & 0xff);
+    },
+    tape = data => {
+        pos = 0;
+        if (data === undefined) {
+            let i = 0;            // remove starting NIL [00 (x40)] segment
+            while (i < buff.length && buff[i] === 0x00) i++;
+            if (i >= 40) buff.splice(0, 40);
+            i = buff.length - 40; // remove ending NIL [00 (x40)] segment
+            if (i >= 0) {
+                while (i < buff.length && buff[i] === 0x00) i++;
+                if (i >= buff.length) buff.splice(buff.length - 40, 40);
+            }
+            if (buff.length === 0) return null;
+            const res = new Uint8Array(buff);
+            buff.length = 0;
+            return res;
+        }
+        buff.length = 0;
+        for (let i = 0, n = data.length; i < n; i++) buff.push(data[i]);
+    },
+    state = () => { return {pos, 'size': buff.length, buff}; };
+    return {read, write, tape, state};
+}
+
 class SMMonitor extends Monitor {
     constructor(emu) {
         super(emu);
@@ -423,8 +459,23 @@ class SMMonitor extends Monitor {
                 if (phnd === undefined) { console.error(`no handler for port: ${port}`); break; }
                 console.log(phnd.state ? phnd.state() : 'no state');
                 break;
-            case 'dflag': // set/clear internal debug flag
-                this.emu.memo.dflag = (parms.length < 2) ? undefined : pi(parms[1], false);
+            case 'tape': // load/unload tape
+                const tphn = this.emu.memo.portHnds.get(0x20);
+                if (tphn === undefined) { console.error('tape device not connected'); break; }
+                if (parms.length < 2) {
+                    const tbuf = tphn.tape();
+                    if (tbuf === null) console.log('tape empty');
+                    else downloadFile('tape.dat', tbuf);
+                } else {
+                    let tbuf = (parms[1] === 'reset') ? [] : await loadFile(parms[1], false);
+                    if (parms.length > 2 && parms[2] === '1') {
+                        tbuf = toIntelHex(tbuf, undefined, 0x10).split('');
+                        for (let i = 0, n = tbuf.length; i < n; i++)
+                            tbuf[i] = tbuf[i].charCodeAt(0);
+                    }
+                    tphn.tape(tbuf);
+                    console.log(tbuf.length);
+                }
                 break;
             default: await super.handler(parms, cmd); break;
         } } catch (e) { console.error(e.stack); }
@@ -441,6 +492,7 @@ async function main() {
           mon = new SMMonitor(emu),
           kbd = new SM_1800_7201_in(con, mon);
     mem.add(SM_1800_2001(mem), [0x60, 0x63, 0x64]);
+    mem.add(SM_1800_6202(mem), [0x20, 0x21]);
 //    mem.add(SM_1800_5602(mem), [0x88, 0x89, 0x8a, 0x98, 0x9a]);
     mem.add(SM_5635_10(mem), [0x70, 0x71, 0x72, 0x73, 0x77]);
 mem.add({'write': (p, v) => {

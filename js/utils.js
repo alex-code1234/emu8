@@ -178,7 +178,7 @@ function toIntelHex(data, addr = 0x100, rec_length = 0x20) {
             uint[0] = ~uint[0] + 1;
             const slen = count.toString(16).toUpperCase().padStart(2, '0'),
                   chk = uint[0].toString(16).toUpperCase().padStart(2, '0');
-            s += `:${slen}${addr.toString(16).toUpperCase().padStart(4, '0')}00${l}${chk}\n`;
+            s += `:${slen}${addr.toString(16).toUpperCase().padStart(4, '0')}00${l}${chk}\r\n`;
             addr += count;
         }
     }
