@@ -13,19 +13,34 @@ function fmt(num, len = 4, base = 8) { // override for 12-bit mode
 class GenCpu12 extends GenCpu {        // override for 12-bit mode
     constructor(memo) {
         super(memo, 0);                     // CPU class MUST be Cpu(memo)
+        this.memo = memo;
         if (memo.setCpu) memo.setCpu(this); // set CPU reference
     }
-    chkRegs() {                        // override breakpoints [memo, address, cond, value]
+    chkRegs() {                        // override breakpoints, add [null, address, cond, value]
         if (this.STOP_REGS.length === 0) return true;
+        const state = this.cpu.cpuStatus();
         for (let i = 0, n = this.STOP_REGS.length; i < n; i++) {
-            const [mem, adr, cond, val] = this.STOP_REGS[i], sval = mem.rd(adr);
-            switch (cond) {
-                case '<': if (val >= sval) return false;
-                case '>': if (val <= sval) return false;
-                case '==': if (val !== sval) return false;
-                case '!=': if (val === sval) return false;
-                case '<=': if (val > sval) return false;
-                case '>=': if (val < sval) return false;
+            const cond = this.STOP_REGS[i];
+            let svalue;
+            if (cond[0] === null) // address breakpoint
+                svalue = fmt(this.memo.rd(cond[1]));
+            else {                // status breakpoint
+                const m = state.match(cond[1]);
+                if (m === null || m.length < 2) continue; // ignore malformed entry
+                svalue = m[1];
+            }
+            let value = cond[3];
+            if (value.length < svalue.length) svalue = svalue.substr(0, value.length);
+            else for (let j = 0, len = value.length; j < len; j++)
+                if (value.charAt(j) === '.' && svalue.charAt(j) !== '.')
+                    svalue = svalue.substring(0, j) + '.' + svalue.substring(j + 1);
+            switch (cond[2]) {
+                case '<': if (value >= svalue) return false; break;
+                case '>': if (value <= svalue) return false; break;
+                case '==': if (value !== svalue) return false; break;
+                case '!=': if (value === svalue) return false; break;
+                case '<=': if (value > svalue) return false; break;
+                case '>=': if (value < svalue) return false; break;
             }
         }
         return true;
@@ -118,23 +133,29 @@ class Emulator12 extends Emulator {    // override for 12-bit mode
 class Monitor12 extends Monitor {      // override for 12-bit mode
     constructor(emu) {
         super(emu);
-        this.parser = new RegExp('([0-7]+)([!<>=]+)([0-7]+)$', 'i'); // breakpoints
+        this.parser = new RegExp('([_]?[0-7a-z]+)([!<>=]+)([\.0-7]+)$', 'i'); // breakpoints
     }
-    prepareStop(str) {                 // override breakpoints [memo, address, cond, value]
+    prepareStop(str) {                 // override breakpoints, add [null, address, cond, value]
         if (str === null) this.emu.CPU.STOP = this.emu.disassemble1()[0] & this.emu.D_AMS;
         else {
             const idx = str.indexOf(';');
             if (idx < 0) this.emu.CPU.STOP = pi(str) & this.emu.D_AMS;
             else {
                 this.emu.CPU.STOP = pi(str.substring(0, idx)) & this.emu.D_AMS;
-                const conds = str.substring(idx + 1).split(',');
+                this.emu.CPU.STOP_REGS = str.substring(idx + 1).split(',');
                 let err = null;
-                for (let i = 0, n = conds.length; i < n; i++) {
-                    const txt = conds[i], exp = txt.match(this.parser);
+                for (let i = 0, n = this.emu.CPU.STOP_REGS.length; i < n; i++) {
+                    const txt = this.emu.CPU.STOP_REGS[i],
+                          exp = txt.match(this.parser);
                     if (exp === null || exp.length < 4) {
                         err = `invalid expression: ${txt}`; break;
                     }
-                    this.emu.CPU.STOP_REGS.push([this.emu.memo, pi(exp[1]), exp[2], pi(exp[3])]);
+                    if (exp[1].startsWith('_')) { // add memory breakpoint
+                        exp[0] = null;
+                        exp[1] = pi(exp[1].substring(1));
+                    }
+                    else exp[1] = new RegExp(`${exp[1]}\:([\.0-7]+)( |#|\||$)`, 'i');
+                    this.emu.CPU.STOP_REGS[i] = exp;
                 }
                 if (err !== null) {
                     this.emu.CPU.STOP = -1; this.emu.CPU.STOP_REGS.length = 0;
@@ -229,7 +250,7 @@ const AC = 0, PC = 1, MQ = 2, SR = 3,  // registers
 function Cpu(memo) {                   // KK8_E CPU
     let tmp, dev, instr, code, addr, dat;
     const regs = new Array(15),
-          devices = new Map(), asm = new Map(),
+          devices = new Map(), asm = new Map(),     // ext devices - {status, reset, process}
     sts = (reg, chr) => regs[reg] ? chr : '.',
     reset = () => regs.fill(0),
     disassembleInstruction = a => {
@@ -643,6 +664,38 @@ class ASR33 extends Kbd {              // system console
     }
 }
 
+function RX01(CPU) {                   // RX8E/RX01 disk drive
+    let ie = 0, flags = 0, intf = 0, errst = 0;
+    const cpu = CPU.cpu, regs = cpu.regs,
+    status = () => [ie, flags],
+    reset = () => process(7),
+    process = num => {
+console.log(num);
+        switch (num) {
+            case 0: // SEL
+                console.warn('drive select not implemented');
+                break;
+            case 5: // SDN
+                if (flags & 1) regs[PC] = regs[PC] + 1 & 0o7777;
+                flags &= ~1;
+                break;
+            case 7: // INIT
+                ie = 0; flags = 0;
+                setTimeout(() => { ie = 1; done(); }, 100);
+                break;
+        }
+    },
+    done = () => { flags |= 1; intf = errst; if (ie) cpu.setInterrupt(1); },
+    res = {
+        status, reset, process
+    };
+    cpu.devices.set(0o75, res);
+    cpu.asm.set(0o6751, 'LCD');  cpu.asm.set(0o6752, 'XDR');
+    cpu.asm.set(0o6753, 'STR');  cpu.asm.set(0o6754, 'SER'); cpu.asm.set(0o6755, 'SDN');
+    cpu.asm.set(0o6756, 'INTR'); cpu.asm.set(0o6757, 'INIT');
+    return res;
+}
+
 class PDP8EMon extends Monitor12 {     // system monitor
     constructor(emu) {
         super(emu);
@@ -672,7 +725,8 @@ async function main() {
           cpu = new GenCpu12(mem),               // CPU (uses Cpu(memo) class)
           emu = new Emulator12(cpu, mem),
           mon = new PDP8EMon(emu),
-          kbd = new ASR33(con, mon);             // PDP8E system console
+          kbd = new ASR33(con, mon),             // PDP8E system console
+          dsk = RX01(cpu);                       // RX8E/RX01 disk
 //    await mon.exec('tape MAINDEC-8E-D0AB-pb.bpt'); await mon.exec('x pc 200 sr 7777');      // #1
 //    await mon.exec('tape MAINDEC-8E-D0BB-pb.bpt'); await mon.exec('x pc 200');              // #2
 //    await mon.exec('tape MAINDEC-8E-D0GC-pb.bpt'); await mon.exec('x pc 200 if 0');         // DCA
@@ -721,7 +775,9 @@ async function main() {
 //    await mon.exec('tape MAINDEC-08-DHMCA-A-pb.bpt'); await mon.exec('x pc 200 sr 0001');   // TSE
 //    await mon.exec('tse 0');                                                                // TSE
 //    await mon.exec('tape MAINDEC-08-DHMCA-A-pb.bpt'); await mon.exec('x pc 200 sr 4001');   // TSE
+//    await mon.exec('tape MAINDEC-8E-D0JC-pb.bpt'); await mon.exec('x pc 200 if 0');         // JMx
 //    await mon.exec('tape FOCAL-69.bpt'); await mon.exec('x pc 200');
+    await mon.exec('tape MAINDEC-08-DIRXA-D-pb.bpt'); await mon.exec('x pc 200');
     term.setPrompt('> ');
     while (true) await mon.exec(await term.prompt());
 }
