@@ -81,7 +81,7 @@ class Emulator12 extends Emulator {    // override for 12-bit mode
         }
         return length;
     }
-    printMem(a, lines = 16, mem, logger = console.log) {
+    printMem(a, lines = 16, mem, logger = console.log) { // redefine for octal
         if (mem === undefined) mem = this.memo;
         logger(`Addr     0    1    2    3    4    5    6    7  6bit             7bit     3x8`);
         for (let i = 0; i < lines; i++) {
@@ -516,12 +516,12 @@ function KM8_E(count = 1) {            // extension
             interrupt();
         };
         jms = cpu._jms; cpu._jms = a => {
-            tmp2 = regs[II]; jms(a);
-            if (tmp2) { regs[IF] = regs[IB]; regs[UF] = regs[UB]; }
+            regs[IF] = regs[IB]; regs[UF] = regs[UB];
+            jms(a);
         };
         jmp = cpu._jmp; cpu._jmp = a => {
-            tmp2 = regs[II]; jmp(a);
-            if (tmp2) { regs[IF] = regs[IB]; regs[UF] = regs[UB]; }
+            regs[IF] = regs[IB]; regs[UF] = regs[UB];
+            jmp(a);
         };
         gtf = cpu._gtf; cpu._gtf = () => {
             gtf(); regs[AC] = (regs[AC] & 0b1111110000000) | regs[SF];
@@ -533,33 +533,33 @@ function KM8_E(count = 1) {            // extension
         };
         cpu._ext62x0 = op => {
             switch (op & 0o70) {
-                case 0o00:
+                case 0o00: // CINT, CDF 0, CIF 0
                     if (tse && op & 4) { regs[UIF] = 0; return; }
                     if (op & 1) regs[DF] = 0;
                     if (op & 2) { regs[IB] = 0; regs[II] = 1; }
                     break;
-                case 0o10:
+                case 0o10: // RDF, CDF 1, CIF 1
                     if (op & 4) regs[AC] |= regs[DF] << 3;
                     else {
                         if (op & 1) regs[DF] = 1;
                         if (op & 2) { regs[IB] = 1; regs[II] = 1; }
                     }
                     break;
-                case 0o20:
+                case 0o20: // RIF, CDF 2, CIF 2
                     if (op & 4) regs[AC] |= regs[IF] << 3;
                     else {
                         if (op & 1) regs[DF] = 2;
                         if (op & 2) { regs[IB] = 2; regs[II] = 1; }
                     }
                     break;
-                case 0o30:
+                case 0o30: // RIB, CDF 3, CIF 3
                     if (op & 4) regs[AC] |= regs[SF];
                     else {
                         if (op & 1) regs[DF] = 3;
                         if (op & 2) { regs[IB] = 3; regs[II] = 1; }
                     }
                     break;
-                case 0o40:
+                case 0o40: // RMF, CDF 4, CIF 4
                     if (op & 4) {
                         tmp2 = regs[SF];
                         regs[IB] = tmp2 >> 3 & 0o7; regs[DF] = tmp2 & 0o7; regs[II] = 1;
@@ -569,17 +569,17 @@ function KM8_E(count = 1) {            // extension
                         if (op & 2) { regs[IB] = 4; regs[II] = 1; }
                     }
                     break;
-                case 0o50:
+                case 0o50: // SINT, CDF 5, CIF 5
                     if (tse && op & 4) { if (regs[UIF]) regs[PC] = regs[PC] + 1 & 0o7777; return; }
                     if (op & 1) regs[DF] = 5;
                     if (op & 2) { regs[IB] = 5; regs[II] = 1; }
                     break;
-                case 0o60:
+                case 0o60: // CUF, CDF 6, CIF 6
                     if (tse && op & 4) { regs[UB] = 0; return; }
                     if (op & 1) regs[DF] = 6;
                     if (op & 2) { regs[IB] = 6; regs[II] = 1; }
                     break;
-                case 0o70:
+                case 0o70: // SUF, CDF 7, CIF 7
                     if (tse && op & 4) { regs[UB] = 1; regs[II] = 1; return; }
                     if (op & 1) regs[DF] = 7;
                     if (op & 2) { regs[IB] = 7; regs[II] = 1; }
@@ -665,30 +665,182 @@ class ASR33 extends Kbd {              // system console
 }
 
 function RX01(CPU) {                   // RX8E/RX01 disk drive
-    let ie = 0, flags = 0, intf = 0, errst = 0;
-    const cpu = CPU.cpu, regs = cpu.regs,
+    let ie = 0, flags = 0,                       // IE bit and flags
+        intf = 0, err = 0, errst = 0,            // interface, error code and error status
+        cmd = 0, maint = 0, bit8 = 0,            // command, maint. mode and 8-bit transfer flag
+        drv = 0, trk = 0, sec = 0,               // drive, track and sector
+        part = 0, count = 0;                     // transfer part and count
+    const DSK = [null, null], BUF = new Uint8Array(128), mmm = ArrMemo(BUF),
+          cpu = CPU.cpu, regs = cpu.regs,
     status = () => [ie, flags],
     reset = () => process(7),
     process = num => {
-console.log(num);
         switch (num) {
             case 0: // SEL
                 console.warn('drive select not implemented');
                 break;
+            case 1: // LCD
+                const tmp = regs[AC] & 0o7777; regs[AC] &= 0o10000;
+                cmd = tmp >> 1 & 0o7; maint = tmp & 0o200; bit8 = tmp & 0o100;
+                drv = (tmp & 0o20) ? 1 : 0;
+                if (maint) flags = 0o7;
+                else switch (cmd) {
+                    case 0: // fill buffer
+                    case 2: // write sector
+                    case 3: // read sector
+                    case 6: // write deleted data
+                        part = 0; flags |= 4;
+                        break;
+                    case 1: // empty buffer
+                        empty12();
+                        break;
+                    case 4: // nop
+                        errst &= 0o303;     // turn off Init Done bit
+                        part = 0; count = 0;
+                        done();
+                        break;
+                    case 5: // read status
+                        if (DSK[drv] === null) {
+                            err = 0o110; flags |= 2;
+                            done();
+                        }
+                        else if (sec === 1) {
+                            errst |= 0o200; // turn on Drv Rdy bit
+                            errst &= 0o303; // turn off Init Done bit
+                            done();
+                        }
+                        break;
+                    case 7: // read error register
+                        part = 0; count = 0;
+                        done();
+                        intf = err;         // reset interface reg to error
+                        break;
+                }
+                break;
+            case 2: // XDR
+                if (maint) regs[AC] |= intf & 0o7777;
+                else switch (cmd) {
+                    case 0: // fill buffer
+                        intf = regs[AC] & 0o7777;
+                        if (part) {
+                            BUF[count++] |= (intf & 0o7400) >> 8;
+                            BUF[count++] = intf & 0o0377;
+                            part = 0;
+                        } else {
+                            BUF[count++] = (intf & 0o7760) >> 4;
+                            BUF[count] = (intf & 0o0017) << 4;
+                            part = 1;
+                        }
+                        if (count < 96) flags |= 4;
+                        else {
+                            for (; count < 128; count++) BUF[count] = BUF[96];
+                            part = 0; count = 0;
+                            done();
+                        }
+                        break;
+                    case 1: // empty buffer
+                        regs[AC] = (regs[AC] & 0o10000) | (intf & 0o7777);
+                        empty12();
+                        break;
+                    case 2: // write sector
+                    case 3: // read sector
+                        intf = regs[AC] & 0o7777;
+                        if (part === 0) { sec = intf & 0o177; flags |= 4; part = 1; }
+                        else {
+                            part = 0; count = 0;
+                            trk = intf & 0o377;
+                            if (trk < 0 || trk > 76) { err = 0o40; flags |= 2; }
+                            else if (sec < 1 || sec > 26) { err = 0o70; flags |= 2; }
+                            else if (DSK[drv] === null) { err = 0o110; flags |= 2; }
+                            else {
+                                err = 0;
+                                DSK[drv].transfer(trk, sec, 0, mmm, cmd === 3);
+                            }
+                            done();
+                        }
+                        break;
+                    case 4: // nop
+                    case 5: // read status
+                    case 7: // read error register
+                        regs[AC] |= intf & 0o7777;
+                        break;
+                    case 6: // write deleted data
+                        console.warn('write deleted not implemented');
+                        break;
+                }
+                break;
+            case 3: // STR
+                if (flags & 4) {
+                    regs[PC] = regs[PC] + 1 & 0o7777;
+                    if (maint === 0) flags &= ~4;
+                }
+                break;
+            case 4: // SER
+                if (flags & 2) {
+                    regs[PC] = regs[PC] + 1 & 0o7777;
+                    if (maint === 0) flags &= ~2;
+                }
+                break;
             case 5: // SDN
-                if (flags & 1) regs[PC] = regs[PC] + 1 & 0o7777;
-                flags &= ~1;
+                if (flags & 1) {
+                    regs[PC] = regs[PC] + 1 & 0o7777;
+                    if (maint === 0) {
+                        if (ie) cpu.setInterrupt(0);
+                        flags &= ~1;
+                    }
+                }
+                break;
+            case 6: // INTR
+                if (ie && flags & 1) cpu.setInterrupt(0);
+                ie = regs[AC] & 1;
+                if (ie && flags & 1) cpu.setInterrupt(1);
                 break;
             case 7: // INIT
+                intf = 0; err = 0; errst = 0;
+                cmd = 0; maint = 0; bit8 = 0;
+                drv = 0; trk = 1; sec = 1;
+                part = 0; count = 0;
+                if (ie) cpu.setInterrupt(0);
                 ie = 0; flags = 0;
-                setTimeout(() => { ie = 1; done(); }, 100);
+                if (DSK[drv] === null) { err = 0o110; flags |= 2; }
+                else DSK[drv].transfer(trk, sec, 0, mmm, true);
+                done();
                 break;
         }
     },
-    done = () => { flags |= 1; intf = errst; if (ie) cpu.setInterrupt(1); },
+    done = () => {
+        flags |= 1; intf = errst; if (ie) cpu.setInterrupt(1);
+    },
+    empty12 = () => {
+        if (count < 96) {
+            if (part) {
+                intf = ((BUF[count++] & 0o17) << 8) | BUF[count++];
+                part = 0;
+            } else {
+                intf = (BUF[count++] << 4) | (BUF[count] >> 4);
+                part = 1;
+            }
+            flags |= 4;
+        } else {
+            part = 0; count = 0;
+            done();
+        }
+    },
     res = {
-        status, reset, process
+        status, reset, process,
+        'setDsk': (drv, img) => {
+            if (img === null) DSK[drv] = null;
+            else {
+                DSK[drv] = Disk(77, 26, 128, 1, 0x10000, null); // empty disk
+                if (img.length > 0) {
+                    if (img.length !== 256256) throw new Error(`disk image error: ${img.length}`);
+                    DSK[drv].drive.set(img, 0);
+                }
+            }
+            reset();
+        }
     };
+    reset();
     cpu.devices.set(0o75, res);
     cpu.asm.set(0o6751, 'LCD');  cpu.asm.set(0o6752, 'XDR');
     cpu.asm.set(0o6753, 'STR');  cpu.asm.set(0o6754, 'SER'); cpu.asm.set(0o6755, 'SDN');
@@ -714,14 +866,90 @@ class PDP8EMon extends Monitor12 {     // system monitor
                 else tmp = 0;
                 console.log(tmp);
                 break;
+case 'odp': // octal dump
+const mmm = this.emu.memo, regs = mmm.CPU.cpu.regs,
+      sif = regs[IF], MAXMEM = 32768,
+rm = a => {
+    regs[IF] = a >> 12;
+    return mmm.rd(a & 0o7777);
+};
+let s = '', ma = 0;
+do {
+    s += `${fmt(ma, 5)}:`;
+    for (let i = 0; i < 8; i++) s += ` ${fmt(rm(ma + i), 4)}`;
+    s += '\n';
+    do {
+        ma = ma + 8;
+        if (ma >= MAXMEM-8) break;
+    } while (
+        rm(ma)   === rm(ma-8) &&
+        rm(ma+1) === rm(ma-7) &&
+        rm(ma+2) === rm(ma-6) &&
+        rm(ma+3) === rm(ma-5) &&
+        rm(ma+4) === rm(ma-4) &&
+        rm(ma+5) === rm(ma-3) &&
+        rm(ma+6) === rm(ma-2) &&
+        rm(ma+7) === rm(ma-1)
+    );
+} while (ma < MAXMEM);
+regs[IF] = sif;
+downloadFile('dump.txt', new Uint8Array(s.split('').map(c => c.charCodeAt(0))));
+break;
+case 'ttt':
+const data = (await loadFile('trace.txt', true)).split('\r\n'),
+      ndat = [];
+for (let i = 0, n = data.length; i < n; i++) {
+    const s = data[i];
+    if ((s.startsWith('7735 ') || s.startsWith('7736 ')) &&
+            ndat[ndat.length - 1].startsWith('7736 '))
+        continue;
+    if ((s.startsWith('7652 ') || s.startsWith('7653 ')) &&
+            ndat[ndat.length - 1].startsWith('7653 '))
+        continue;
+    if ((s.startsWith('7673 ') || s.startsWith('7674 ')) &&
+            ndat[ndat.length - 1].startsWith('7674 '))
+        continue;
+    if ((s.startsWith('7700 ') || s.startsWith('7701 ')) &&
+            ndat[ndat.length - 1].startsWith('7701 '))
+        continue;
+    ndat.push(s);
+}
+console.log(ndat.length);
+downloadFile('trace.txt', new Uint8Array(ndat.join('\r\n').split('').map(c => c.charCodeAt(0))));
+break;
+case 'dbg':
+if (this.step === undefined) {
+    this.step = this.emu.memo.CPU.cpu.step;
+    const regs = this.emu.memo.CPU.cpu.regs,
+          data = (await loadFile('trace1.txt', true)).split('\r\n');
+    let idx = 0;
+    this.emu.memo.CPU.cpu.step = () => {
+        const s = `${fmt(regs[PC], 4)} ${fmt(regs[AC] & 0o7777, 4)}`;
+        let s1 = data[idx++];
+        if (s1.startsWith('7736 ') || s1.startsWith('7653 ') || s1.startsWith('7674 ') ||
+                s1.startsWith('7701 '))
+            s1 = data[idx++];
+        if (s !== s1) {
+            console.warn(`idx: ${idx - 1}    expected: ${s1}    actual: ${s}`);
+            this.emu.memo.CPU.RUN = false;
+        }
+        return this.step();
+    };
+} else {
+    this.emu.memo.CPU.cpu.step = this.step;
+    this.step = undefined;
+}
+console.log(this.step);
+break;
             default: await super.handler(parms, cmd); break;
         } } catch (e) { console.error(e.stack); }
     }
 }
 
 async function main() {
+    await loadScript('../emu/github/emu8/js/disks.js');
     const con = await createCon(amber, 'VT220'), // actual console
-          mem = KM8_E(),                         // extended memory
+          mem = KM8_E(),                         // 8K extended memory
           cpu = new GenCpu12(mem),               // CPU (uses Cpu(memo) class)
           emu = new Emulator12(cpu, mem),
           mon = new PDP8EMon(emu),
@@ -771,13 +999,34 @@ async function main() {
 //    await mon.exec('tape MAINDEC-8E-D0DB-pb.bpt'); await mon.exec('x pc 200 if 0');         // AND
 //    await mon.exec('tape MAINDEC-8E-D0EB-pb.bpt'); await mon.exec('x pc 200 if 0');         // TAD
 //    await mon.exec('tape MAINDEC-08-D1EB-pb.bpt'); await mon.exec('x pc 200');              // ExMem
-//    await mon.exec('tse 1');                                                                // TSE
-//    await mon.exec('tape MAINDEC-08-DHMCA-A-pb.bpt'); await mon.exec('x pc 200 sr 0001');   // TSE
-//    await mon.exec('tse 0');                                                                // TSE
-//    await mon.exec('tape MAINDEC-08-DHMCA-A-pb.bpt'); await mon.exec('x pc 200 sr 4001');   // TSE
+/*    await mon.exec('tse 1');                                                                // TSE
+    await mon.exec('tape MAINDEC-08-DHMCA-A-pb.bpt'); await mon.exec('x pc 200 sr 0001');   // TSE*/
+/*    await mon.exec('tse 0');                                                                // TSE
+    await mon.exec('tape MAINDEC-08-DHMCA-A-pb.bpt'); await mon.exec('x pc 200 sr 4001');   // TSE*/
 //    await mon.exec('tape MAINDEC-8E-D0JC-pb.bpt'); await mon.exec('x pc 200 if 0');         // JMx
 //    await mon.exec('tape FOCAL-69.bpt'); await mon.exec('x pc 200');
-    await mon.exec('tape MAINDEC-08-DIRXA-D-pb.bpt'); await mon.exec('x pc 200');
+/*    await mon.exec('tape MAINDEC-08-DIRXA-D-pb.bpt'); await mon.exec('x pc 200');
+    dsk.setDsk(0, []); dsk.setDsk(1, []);*/
+/*    await mon.exec('m 200 1607 6046 6041 5202 2207 5200 7402 7600');   // print ASCII example
+    await mon.exec('m 7600 240 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1');
+    await mon.exec('m 7640   1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1');*/
+/*    await mon.exec('m 0 201 2022 7410 7402 3017 7004 3020 1422 6046'); // print ASCII interrupt
+    await mon.exec('m 11 7300 1020 7010 1017 6001 5400 1 0 0 7577');
+    await mon.exec('m 200 5010 7004 2021 5202 5201');
+    await mon.exec('m 7600 240 241 242 243 244 245 246 247 250 251 252 253 254 255 256 257');
+    await mon.exec('m 7620 260 261 262 263 264 265 266 267 270 271 272 273 274 275 276 277');
+    await mon.exec('m 7640 300 301 302 303 304 305 306 307 310 311 312 313 314 315 316 317');
+    await mon.exec('m 7660 320 321 322 323 324 325 326 327 330 331 332 333 334 335 336 337');*/
+/*    dsk.setDsk(0, (await loadFile('pdp8/os8sys', false)).slice(256));
+    await mon.exec('m 20 0000 0000 0000 0000 7126 1060 6751 7201');
+    await mon.exec('m 30 4053 4053 7104 6755 5054 6754 7450 7610');
+    await mon.exec('m 40 5046 1060 7041 1061 3060 5024 6751 4053');
+    await mon.exec('m 50 3002 2050 5047 0000 6753 5033 6752 5453');
+    await mon.exec('m 60 7024 6030 0000 0000 0000 0000 0000 0000');
+    await mon.exec('x pc 33');*/
+/*    dsk.setDsk(0, await loadFile('pdp8/os8_rx.rx01', false));
+    await mon.exec('r pdp8/os8boot3.oct 1');
+    await mon.exec('x pc 22');*/
     term.setPrompt('> ');
     while (true) await mon.exec(await term.prompt());
 }
