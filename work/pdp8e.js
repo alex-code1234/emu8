@@ -107,27 +107,6 @@ class Emulator12 extends Emulator {    // override for 12-bit mode
         }
         return a;
     }
-    loadTape(data) {                   // PDP8E - load binary tape (.bin or .bpt file)
-        const mem = this.memo, length = data.length;
-        let i = 0, addr = 0;
-        while (i < length) {
-            const column = data[i++];
-            switch (column & 0o300) {
-                case 0o000: // data
-                    mem.wr(addr++ & 0o7777, column << 6 & 0o7700 | data[i++] & 0o77);
-                    break;
-                case 0o100: // origin
-                    addr = column << 6 & 0o7700 | data[i++] & 0o77;
-                    break;
-                case 0o300: // field
-                    const field = column >> 3 & 0o7;
-                    if (mem.setField) mem.setField(field);
-                    else console.warn(`field ${field} setting at column: ${i}`);
-                    break;
-            }
-        }
-        return length;
-    }
 }
 
 class Monitor12 extends Monitor {      // override for 12-bit mode
@@ -237,7 +216,7 @@ function MM8_E() {                     // memory
     rd = a => RAM[a],
     wr = (a, v) => RAM[a] = v & 0o7777;
     RAM.fill(0);
-    return {rd, wr, CPU, 'setCpu': v => CPU = v};
+    return {rd, wr, CPU, 'setCpu': v => CPU = v, 'clear': () => RAM.fill(0)};
 }
 
 const AC = 0, PC = 1, MQ = 2, SR = 3,  // registers
@@ -597,9 +576,12 @@ function KM8_E(count = 1) {            // extension
             cpu.asm.set(0o6204, 'CINT'); cpu.asm.set(0o6254, 'SINT');
             cpu.asm.set(0o6264, 'CUF');  cpu.asm.set(0o6274, 'SUF');
         }
+    },
+    clear = () => {
+        for (let i = 0; i <= count; i++) RAM[i].clear();
     };
     for (let i = 0; i < count; i++) RAM.push(MM8_E());
-    return {rd, wr, setTSE, setField, CPU, setCpu};
+    return {rd, wr, setTSE, setField, CPU, setCpu, clear};
 }
 
 function PDP_Device(                   // console IO device
@@ -638,25 +620,33 @@ function PDP_Device(                   // console IO device
 }
 
 class ASR33 extends Kbd {              // system console
+    static init(con, mon, ka, ta) {
+        const cpu = mon.emu.CPU.cpu,
+              ie = [0],                             // shared interrupt flag
+        devkbd = PDP_Device(cpu,
+            () => con.kbd.length > 0,               // kbd ready
+            () => (con.kbd.shift() & 0xff) | 0o200, // kbd get
+            ie, true, [0o17400, 0o377]
+        ),
+        devcon = PDP_Device(cpu,
+            () => true,                             // con ready
+            ac => con.display(ac & 0x7f),           // con put
+            ie, false
+        );
+        cpu.devices.set(ka, devkbd);                // set input device
+        cpu.devices.set(ta, devcon);                // set output device
+        cpu.asm.set(0b110000000000 | ka << 3, 'KCF'); cpu.asm.set(0b110000000001 | ka << 3, 'KSF');
+        cpu.asm.set(0b110000000010 | ka << 3, 'KCC'); cpu.asm.set(0b110000000100 | ka << 3, 'KRS');
+        cpu.asm.set(0b110000000101 | ka << 3, 'KIE'); cpu.asm.set(0b110000000110 | ka << 3, 'KRB');
+        cpu.asm.set(0b110000000000 | ta << 3, 'SPF'); cpu.asm.set(0b110000000001 | ta << 3, 'TSF');
+        cpu.asm.set(0b110000000010 | ta << 3, 'TCF'); cpu.asm.set(0b110000000100 | ta << 3, 'TPC');
+        cpu.asm.set(0b110000000101 | ta << 3, 'SPI'); cpu.asm.set(0b110000000110 | ta << 3, 'TLS');
+        return {devkbd, devcon};
+    }
     constructor(con, mon) {
         super(con, mon);
-        const cpu = mon.emu.CPU.cpu,
-              ie = [0];                                 // shared interrupt flag
-        this.devkbd = PDP_Device(cpu,
-                () => con.kbd.length > 0,               // kbd ready
-                () => (con.kbd.shift() & 0xff) | 0o200, // kbd get
-                ie, true, [0o17400, 0o377]);
-        cpu.devices.set(0o3, this.devkbd);       // set input device
-        cpu.devices.set(0o4, PDP_Device(cpu,     // set output device
-                () => true,                             // con ready
-                ac => con.display(ac & 0x7f),           // con put
-                ie, false));
-        cpu.asm.set(0b110000011000, 'KCF'); cpu.asm.set(0b110000011001, 'KSF');
-        cpu.asm.set(0b110000011010, 'KCC'); cpu.asm.set(0b110000011100, 'KRS');
-        cpu.asm.set(0b110000011101, 'KIE'); cpu.asm.set(0b110000011110, 'KRB');
-        cpu.asm.set(0b110000100000, 'SPF'); cpu.asm.set(0b110000100001, 'TSF');
-        cpu.asm.set(0b110000100010, 'TCF'); cpu.asm.set(0b110000100100, 'TPC');
-        cpu.asm.set(0b110000100101, 'SPI'); cpu.asm.set(0b110000100110, 'TLS');
+        const devs = ASR33.init(con, mon, 0o3, 0o4);
+        this.devkbd = devs.devkbd;
     }
     processKey(val) {
         super.processKey(val);
@@ -848,6 +838,92 @@ function RX01(CPU) {                   // RX8E/RX01 disk drive
     return res;
 }
 
+class PDP8EEmu extends Emulator12 {    // emulator
+    constructor(cpu, mem) {
+        super(cpu, mem);
+    }
+    loadTape(data) {                   // load binary tape (.bin or .bpt file)
+        const mem = this.memo, length = data.length;
+        let i = 0, addr = 0;
+        while (i < length) {
+            const column = data[i++];
+            switch (column & 0o300) {
+                case 0o000: // data
+                    mem.wr(addr++ & 0o7777, column << 6 & 0o7700 | data[i++] & 0o77);
+                    break;
+                case 0o100: // origin
+                    addr = column << 6 & 0o7700 | data[i++] & 0o77;
+                    break;
+                case 0o300: // field
+                    const field = column >> 3 & 0o7;
+                    if (mem.setField) mem.setField(field);
+                    else console.warn(`field ${field} setting at column: ${i}`);
+                    break;
+            }
+        }
+        return length;
+    }
+    saveCore() {                       // generate octal core dump
+        const mem = this.memo, regs = mem.CPU.cpu.regs, MAXMEM = 32768, sif = regs[IF],
+        rm = a => { regs[IF] = a >> 12; return mem.rd(a & 0o7777); };
+        let str = '', ma = 0;
+        do {
+            str += `${fmt(ma, 5)}:`;
+            for (let i = 0; i < 8; i++) str += ` ${fmt(rm(ma + i), 4)}`;
+            str += '\n';
+            do {
+                ma += 8;
+                if (ma >= MAXMEM - 8) break;
+            } while (
+                rm(ma)     === rm(ma - 8) && rm(ma + 1) === rm(ma - 7) &&
+                rm(ma + 2) === rm(ma - 6) && rm(ma + 3) === rm(ma - 5) &&
+                rm(ma + 4) === rm(ma - 4) && rm(ma + 5) === rm(ma - 3) &&
+                rm(ma + 6) === rm(ma - 2) && rm(ma + 7) === rm(ma - 1)
+            );
+        } while (ma < MAXMEM);
+        regs[IF] = sif;
+        return str;
+    }
+    loadCore(str) {                    // load octal core dump
+        const mem = this.memo, regs = mem.CPU.cpu.regs, MAXMEM = 32768, sif = regs[IF],
+              data = str.split('\n'),
+        wm = (a, v) => { regs[IF] = a >> 12; mem.wr(a & 0o7777, v); };
+        mem.clear();
+        let count = 0, ma;
+        for (let i = 0, n = data.length; i < n; i++) {
+            const s = data[i];
+            if (s.length === 0) continue;
+            count++;
+            const d = s.split(' ');
+            if (d.length !== 9 || !d[0].endsWith(':')) throw new Error(`invalid core format: ${s}`);
+            ma = pi(d[0].substring(0, d[0].length - 1));
+            for (let j = 1; j < 9; j++) wm(ma++, pi(d[j]));
+        }
+        regs[IF] = sif;
+        return count * 8;
+    }
+    loadPAL(str) {                     // load PAL listing
+        const mem = this.memo, regs = mem.CPU.cpu.regs, MAXMEM = 32768, sif = regs[IF],
+              data = str.split('\n'),
+        wm = (a, v) => { regs[IF] = a >> 12; mem.wr(a & 0o7777, v); };
+        let count = 0, ma, vv;
+        for (let i = 0, n = data.length; i < n; i++) {
+            const s = data[i];
+            if (s.length < 11) continue;
+            try {
+                ma = pi(s.substring(0, 5));
+                vv = pi(s.substring(7, 11));
+            } catch {
+                continue;
+            }
+            wm(ma, vv);
+            count++;
+        }
+        regs[IF] = sif;
+        return count;
+    }
+}
+
 class PDP8EMon extends Monitor12 {     // system monitor
     constructor(emu) {
         super(emu);
@@ -866,81 +942,22 @@ class PDP8EMon extends Monitor12 {     // system monitor
                 else tmp = 0;
                 console.log(tmp);
                 break;
-case 'odp': // octal dump
-const mmm = this.emu.memo, regs = mmm.CPU.cpu.regs,
-      sif = regs[IF], MAXMEM = 32768,
-rm = a => {
-    regs[IF] = a >> 12;
-    return mmm.rd(a & 0o7777);
-};
-let s = '', ma = 0;
-do {
-    s += `${fmt(ma, 5)}:`;
-    for (let i = 0; i < 8; i++) s += ` ${fmt(rm(ma + i), 4)}`;
-    s += '\n';
-    do {
-        ma = ma + 8;
-        if (ma >= MAXMEM-8) break;
-    } while (
-        rm(ma)   === rm(ma-8) &&
-        rm(ma+1) === rm(ma-7) &&
-        rm(ma+2) === rm(ma-6) &&
-        rm(ma+3) === rm(ma-5) &&
-        rm(ma+4) === rm(ma-4) &&
-        rm(ma+5) === rm(ma-3) &&
-        rm(ma+6) === rm(ma-2) &&
-        rm(ma+7) === rm(ma-1)
-    );
-} while (ma < MAXMEM);
-regs[IF] = sif;
-downloadFile('dump.txt', new Uint8Array(s.split('').map(c => c.charCodeAt(0))));
-break;
-case 'ttt':
-const data = (await loadFile('trace.txt', true)).split('\r\n'),
-      ndat = [];
-for (let i = 0, n = data.length; i < n; i++) {
-    const s = data[i];
-    if ((s.startsWith('7735 ') || s.startsWith('7736 ')) &&
-            ndat[ndat.length - 1].startsWith('7736 '))
-        continue;
-    if ((s.startsWith('7652 ') || s.startsWith('7653 ')) &&
-            ndat[ndat.length - 1].startsWith('7653 '))
-        continue;
-    if ((s.startsWith('7673 ') || s.startsWith('7674 ')) &&
-            ndat[ndat.length - 1].startsWith('7674 '))
-        continue;
-    if ((s.startsWith('7700 ') || s.startsWith('7701 ')) &&
-            ndat[ndat.length - 1].startsWith('7701 '))
-        continue;
-    ndat.push(s);
-}
-console.log(ndat.length);
-downloadFile('trace.txt', new Uint8Array(ndat.join('\r\n').split('').map(c => c.charCodeAt(0))));
-break;
-case 'dbg':
-if (this.step === undefined) {
-    this.step = this.emu.memo.CPU.cpu.step;
-    const regs = this.emu.memo.CPU.cpu.regs,
-          data = (await loadFile('trace1.txt', true)).split('\r\n');
-    let idx = 0;
-    this.emu.memo.CPU.cpu.step = () => {
-        const s = `${fmt(regs[PC], 4)} ${fmt(regs[AC] & 0o7777, 4)}`;
-        let s1 = data[idx++];
-        if (s1.startsWith('7736 ') || s1.startsWith('7653 ') || s1.startsWith('7674 ') ||
-                s1.startsWith('7701 '))
-            s1 = data[idx++];
-        if (s !== s1) {
-            console.warn(`idx: ${idx - 1}    expected: ${s1}    actual: ${s}`);
-            this.emu.memo.CPU.RUN = false;
-        }
-        return this.step();
-    };
-} else {
-    this.emu.memo.CPU.cpu.step = this.step;
-    this.step = undefined;
-}
-console.log(this.step);
-break;
+            case 'core': // octal core dump save/load
+                if (parms.length < 2) {
+                    tmp = this.emu.saveCore();
+                    downloadFile('core.txt', new Uint8Array(
+                        tmp.split('').map(c => c.charCodeAt(0))
+                    ));
+                } else {
+                    tmp = await loadFile(parms[1], true);
+                    console.log(this.emu.loadCore(tmp));
+                }
+                break;
+            case 'pal':  // load PAL listing
+                if (parms.length < 2) { console.error('missing fname'); break; }
+                tmp = await loadFile(parms[1], true);
+                console.log(this.emu.loadPAL(tmp));
+                break;
             default: await super.handler(parms, cmd); break;
         } } catch (e) { console.error(e.stack); }
     }
@@ -951,7 +968,7 @@ async function main() {
     const con = await createCon(amber, 'VT220'), // actual console
           mem = KM8_E(),                         // 8K extended memory
           cpu = new GenCpu12(mem),               // CPU (uses Cpu(memo) class)
-          emu = new Emulator12(cpu, mem),
+          emu = new PDP8EEmu(cpu, mem),
           mon = new PDP8EMon(emu),
           kbd = new ASR33(con, mon),             // PDP8E system console
           dsk = RX01(cpu);                       // RX8E/RX01 disk
@@ -1027,6 +1044,32 @@ async function main() {
 /*    dsk.setDsk(0, await loadFile('pdp8/os8_rx.rx01', false));
     await mon.exec('r pdp8/os8boot3.oct 1');
     await mon.exec('x pc 22');*/
+/*    const cons = addKey('&#x21c4'),                 // console switch button
+          cnv2 = document.createElement('canvas');  // second console
+    cnv2.style.display = 'none';                    // initially hidden
+    con.canvas.canvas.parentNode.insertBefore(cnv2, con.canvas.canvas);
+    const con2 = await createCon(green, 'VT220', undefined, undefined, cnv2),
+          kbd2 = ASR33.init(con2, mon, 0o40, 0o41); // 1st terminal on PT08
+    cons.onclick = e => {
+        if (cnv2.style.display === 'none') {
+            con.canvas.canvas.style.display = 'none';
+            cnv2.style.display = 'block';
+        } else {
+            cnv2.style.display = 'none';
+            con.canvas.canvas.style.display = 'block';
+        }
+    };
+    kbd.processKey = function(val) {
+        if (cnv2.style.display === 'none') {
+            this.con.kbd.push(val);
+            this.devkbd.setFlag(1);
+        } else {
+            con2.kbd.push(val);
+            kbd2.devkbd.setFlag(1);
+        }
+    };
+    await mon.exec('tape pdp8/edu20c.pt');
+    await mon.exec('x if 0 df 1 pc 7645');*/
     term.setPrompt('> ');
     while (true) await mon.exec(await term.prompt());
 }

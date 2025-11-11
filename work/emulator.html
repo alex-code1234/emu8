@@ -540,6 +540,11 @@ addTab = (id, name, num = 1) => {
     document.querySelector(`div.tabbed div:nth-of-type(${num})`).after(res);
     return res;
 },
+addKey = chr => {
+    const div = document.getElementsByClassName('vert')[0];
+    div.innerHTML += `<div class='key i'>${chr}</div>`;
+    return div.childNodes[div.childNodes.length - 1];
+},
 updateElm = (elem, top) => {
     let sw = window.innerWidth, sh = window.innerHeight, tp = '55px', gap = 25;
     if (document.fullscreenElement) {
