@@ -399,7 +399,7 @@ function Cpu(memo) {                   // KK8_E CPU
                 else if ((instr & 0o700) === 0o200) _this._ext62x0(instr);
                 else {
                     dev = devices.get(tmp);
-                    if (dev) dev.process(instr & 0o7);
+                    if (dev) dev.process(instr & 0o7, tmp);
                     else if (dev === undefined) {
                         console.warn(`unknown device: ${fmt(tmp, 2)}`);
                         devices.set(tmp, null);     // disable logging
@@ -587,11 +587,11 @@ function KM8_E(count = 1) {            // extension
 function PDP_Device(                   // console IO device
         cpu,                           // cpu reference
         ready,                         // function(), returns device ready flag
-        transfer,                      // function(AC), outputs AC or returns value if input device
+        transfer,                      // function([AC]), outputs AC or returns value if input
         ie,                            // [ie], shared interrupt enabled flag
-        clear_ac = true,               // true for input device, false for output device
-        mask_ac = [0o10000, 0o7777]) { // input value mask to AND with AC [retain_bits, set_bits]
-    let flag = 0, count = 0;
+        clear_ac,                      // true for input device, false for output device
+        mask_ac = 0o7777) {            // input value mask
+    let flag = 0, kbuf = 0;            // ready flag and keyboard buffer
     const regs = cpu.regs,
     setFlag = value => { flag = value; if (ie[0]) cpu.setInterrupt(flag); },
     status = () => [ie[0], flag],
@@ -607,12 +607,14 @@ function PDP_Device(                   // console IO device
                 if (flag) regs[PC] = regs[PC] + 1 & 0o7777;
             }
             if (num & 2) { setFlag(0); if (clear_ac) regs[AC] &= 0o10000; }
-            if (num & 4) {
-                const ac = regs[AC],
-                      result = transfer(ac);
-                if (clear_ac) regs[AC] = (ac & mask_ac[0]) | (result & mask_ac[1]);
-                else setFlag(1);
-            }
+            if (num & 4)
+                if (clear_ac) {
+                    if (kbuf === 0) kbuf = transfer(); // fill keyboard buffer
+                    regs[AC] |= kbuf & mask_ac;
+                } else {
+                    transfer(regs[AC]); setFlag(1);
+                }
+            if (clear_ac && num & 2) kbuf = 0;         // clear keyboard buffer
         }
     };
     ie[0] = 1;
@@ -626,7 +628,7 @@ class ASR33 extends Kbd {              // system console
         devkbd = PDP_Device(cpu,
             () => con.kbd.length > 0,               // kbd ready
             () => (con.kbd.shift() & 0xff) | 0o200, // kbd get
-            ie, true, [0o17400, 0o377]
+            ie, true, 0o377                         // 8bit
         ),
         devcon = PDP_Device(cpu,
             () => true,                             // con ready
@@ -838,6 +840,153 @@ function RX01(CPU) {                   // RX8E/RX01 disk drive
     return res;
 }
 
+function DK8EA(CPU) {                  // DK8EA line frequency clock (100 ticks/sec)
+    let ie = 0,                                  // IE bit
+        tick_flag = 0,                           // set by clock tick, reset by user
+        irq_count = 0;                           // interrupt issued
+    const cpu = CPU.cpu, regs = cpu.regs,
+    status = () => [ie, tick_flag << 1 | irq_count],
+    reset = () => {
+        if (irq_count > 0) { irq_count = 0; cpu.setInterrupt(0); }
+        ie = 0; tick_flag = 0;
+    },
+    process = num => {
+        switch (num) {
+            case 1: // CLEI
+                if (ie === 0) {
+                    if (tick_flag && irq_count === 0) {
+                        irq_count = 1; cpu.setInterrupt(1);
+                    }
+                    ie = 1;
+                }
+                break;
+            case 2: // CLDI
+                if (ie) {
+                    if (irq_count) {
+                        irq_count = 0; cpu.setInterrupt(0);
+                    }
+                    ie = 0;
+                }
+                break;
+            case 3: // CLSK
+                if (tick_flag) {
+                    regs[PC] = regs[PC] + 1 & 0o7777;
+                    if (irq_count) {
+                        irq_count = 0; cpu.setInterrupt(0);
+                    }
+                    tick_flag = 0;
+                }
+                break;
+        }
+    },
+    timer = () => {
+        if (tick_flag === 0) {
+            tick_flag = 1;
+            if (ie && irq_count === 0) {
+                irq_count = 1; cpu.setInterrupt(1);
+            }
+        }
+        setTimeout(timer, 100);
+    },
+    res = {status, reset, process};
+    timer();
+    cpu.devices.set(0o13, res);
+    cpu.asm.set(0o6131, 'CLEI'); cpu.asm.set(0o6132, 'CLDI'); cpu.asm.set(0o6133, 'CLSK');
+    return res;
+}
+
+function RF08(mem) {                   // RF08/RS08 fixed head disk
+    let done = 0, sta = 0, da = 0;               // done flag, status and disk address
+    const DSK = new Uint16Array(4 * 128 * 2048), // disk buffer (1,048,576 x 2)
+          CPU = mem.CPU, cpu = CPU.cpu, regs = cpu.regs,
+    status = () => [(sta & 0o700) >> 6, (sta & 0o7) | done << 3],
+    reset = () => { done = 1; sta = 0; da = 0; cpu.setInterrupt(0); },
+    process = (num, adr) => {
+        switch (num) {
+            case 1: switch (adr) {
+                case 0o60: da &= ~0o7777; done = 0; sta &= ~0o1007; intr(); break;    // DCMA
+                case 0o61: sta &= 0o7007; cpu.setInterrupt(0); break;                 // DCIM
+                case 0o62: if (sta & 0o1007) regs[PC] = regs[PC] + 1 & 0o7777; break; // DFSE
+                case 0o64: da &= 0o7777; intr(); break;                               // DCXA
+            } break;
+            case 2: switch (adr) {
+                case 0o61:                                                            // DSAC
+                    if (true) // maintenace not implemented
+                        regs[PC] = regs[PC] + 1 & 0o7777;
+                    regs[AC] &= 0o10000;
+                    break;
+                case 0o62: if (done) regs[PC] = regs[PC] + 1 & 0o7777; break;         // DFSC
+            } break;
+            case 3: switch (adr) {
+                case 0o60: dma(true); break;                                          // DMAR
+                case 0o62:                                                            // DISK
+                    if (sta & 0o1007 || done) regs[PC] = regs[PC] + 1 & 0o7777;
+                    break;
+                case 0o64:                                                            // DXAL
+                    da &= 0o7777; da |= (regs[AC] & 0o377) << 12; regs[AC] &= 0o10000; intr();
+                    break;
+            } break;
+            case 5: switch (adr) {
+                case 0o60: dma(false); break;                                         // DMAW
+                case 0o61:                                                            // DIML
+                    sta = (sta & 0o7007) | (regs[AC] & 0o770); regs[AC] &= 0o10000; intr();
+                    break;
+                case 0o64:                                                            // DXAC
+                    regs[AC] &= 0o10000; regs[AC] |= da >> 12 & 0o377; intr();
+                    break;
+            } break;
+            case 6: switch (adr) {
+                case 0o61: regs[AC] = (regs[AC] & 0o10000) | (sta & 0o7777); break;   // DIMA
+                case 0o62: regs[AC] = (regs[AC] & 0o10000) | (da & 0o7777); break;    // DMAC
+                case 0o64:                                                            // DMMT
+                    // maintenace not implemented
+                    regs[AC] &= 0o10000;
+                    break;
+            } break;
+        }
+    },
+    intr = () => {
+        cpu.setInterrupt(
+            ((done && sta & 0o100) ||
+            (sta & 0o1007 && sta & 0o400) ||
+            (sta & 0o4000 && sta & 0o200)) ? 1 : 0
+        );
+    },
+    dma = read => {
+        da |= regs[AC] & 0o7777; regs[AC] &= 0o10000;
+        const sif = regs[IF];                            // save IF register
+        regs[IF] = (sta & 0o70) >> 3;                    // set extension
+        let wc;
+        do {
+            mem.wr(0o7750, mem.rd(0o7750) + 1 & 0o7777); // incr word count
+            wc = mem.rd(0o7750);
+            mem.wr(0o7751, mem.rd(0o7751) + 1 & 0o7777); // incr mem addr
+            if (read) mem.wr(mem.rd(0o7751), DSK[da]);
+            else DSK[da] = mem.rd(mem.rd(0o7751));
+            da = da + 1 & 0o3777777;                     // incr disk addr
+        } while (wc !== 0);
+        regs[IF] = sif;                                  // restore IF register
+        done = 1; intr();
+    },
+    res = {
+        status, reset, process,
+        'setDsk': img => {
+            if (img === null) DSK.fill(0);
+            else DSK.set(new Uint16Array(img.buffer), 0);
+            reset();
+        }
+    };
+    reset();
+    cpu.devices.set(0o60, res); cpu.devices.set(0o61, res);
+    cpu.devices.set(0o62, res); cpu.devices.set(0o64, res);
+    cpu.asm.set(0o6601, 'DCMA'); cpu.asm.set(0o6603, 'DMAR'); cpu.asm.set(0o6605, 'DMAW');
+    cpu.asm.set(0o6611, 'DCIM'); cpu.asm.set(0o6612, 'DSAC'); cpu.asm.set(0o6615, 'DIML');
+    cpu.asm.set(0o6616, 'DIMA'); cpu.asm.set(0o6621, 'DFSE'); cpu.asm.set(0o6622, 'DFSC');
+    cpu.asm.set(0o6623, 'DISK'); cpu.asm.set(0o6626, 'DMAC'); cpu.asm.set(0o6641, 'DCXA');
+    cpu.asm.set(0o6643, 'DXAL'); cpu.asm.set(0o6645, 'DXAC'); cpu.asm.set(0o6646, 'DMMT');
+    return res;
+}
+
 class PDP8EEmu extends Emulator12 {    // emulator
     constructor(cpu, mem) {
         super(cpu, mem);
@@ -966,7 +1115,7 @@ class PDP8EMon extends Monitor12 {     // system monitor
 async function main() {
     await loadScript('../emu/github/emu8/js/disks.js');
     const con = await createCon(amber, 'VT220'), // actual console
-          mem = KM8_E(),                         // 8K extended memory
+          mem = KM8_E(7),                        // 8K extended memory
           cpu = new GenCpu12(mem),               // CPU (uses Cpu(memo) class)
           emu = new PDP8EEmu(cpu, mem),
           mon = new PDP8EMon(emu),
@@ -1022,7 +1171,7 @@ async function main() {
     await mon.exec('tape MAINDEC-08-DHMCA-A-pb.bpt'); await mon.exec('x pc 200 sr 4001');   // TSE*/
 //    await mon.exec('tape MAINDEC-8E-D0JC-pb.bpt'); await mon.exec('x pc 200 if 0');         // JMx
 //    await mon.exec('tape FOCAL-69.bpt'); await mon.exec('x pc 200');
-/*    await mon.exec('tape MAINDEC-08-DIRXA-D-pb.bpt'); await mon.exec('x pc 200');
+/*    await mon.exec('tape MAINDEC-08-DIRXA-D-pb.bpt'); await mon.exec('x pc 200');           // RX8E
     dsk.setDsk(0, []); dsk.setDsk(1, []);*/
 /*    await mon.exec('m 200 1607 6046 6041 5202 2207 5200 7402 7600');   // print ASCII example
     await mon.exec('m 7600 240 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1');
@@ -1070,6 +1219,15 @@ async function main() {
     };
     await mon.exec('tape pdp8/edu20c.pt');
     await mon.exec('x if 0 df 1 pc 7645');*/
+    const clc = DK8EA(cpu),                      // system clock
+          fds = RF08(mem);                       // disk
+//    await mon.exec('tape MAINDEC-8E-D8AC-pb.bpt'); await mon.exec('x pc 200');              // DK8EA
+//    await mon.exec('tape pdp8/maindec-x8-dirfa-a-pb'); ???                                  // RF08
+//    await mon.exec('tape pdp8/maindec-08-d5fa-pb'); await mon.exec('x pc 150');             // RF08
+    await mon.exec('tse 1'); // set 32K!                                                    // TSS8
+    await mon.exec('tape pdp8/tss8_init.bin');
+    fds.setDsk(await loadFile('pdp8/tss8_rf.dsk', false));
+    await mon.exec('x if 2 ib 2 pc 4200');
     term.setPrompt('> ');
     while (true) await mon.exec(await term.prompt());
 }
