@@ -457,7 +457,10 @@ function Cpu(memo) {                   // KK8_E CPU
         }
         return true;
     },
-    setInterrupt = flag => regs[IR] = flag ? 1 : 0;
+    setInterrupt = flag => {
+        if (flag & 0o1000) regs[IR] &= flag; // ~flag, clear interrupt
+        else regs[IR] |= flag;               // set interrupt
+    };
     reset();
     asm.set(0o6000, 'SKON'); asm.set(0o6001, 'ION'); asm.set(0o6002, 'IOF'); asm.set(0o6003, 'SRQ');
     asm.set(0o6004, 'GTF');  asm.set(0o6005, 'RTF'); asm.set(0o6006, 'SGT'); asm.set(0o6007, 'CAF');
@@ -590,10 +593,14 @@ function PDP_Device(                   // console IO device
         transfer,                      // function([AC]), outputs AC or returns value if input
         ie,                            // [ie], shared interrupt enabled flag
         clear_ac,                      // true for input device, false for output device
-        mask_ac = 0o7777) {            // input value mask
+        mask_ac = 0o7777,              // input value mask
+        int_bit = 1) {                 // iterrupt request bit
     let flag = 0, kbuf = 0;            // ready flag and keyboard buffer
     const regs = cpu.regs,
-    setFlag = value => { flag = value; if (ie[0]) cpu.setInterrupt(flag); },
+    setFlag = value => {
+        flag = value;
+        if (ie[0]) cpu.setInterrupt(flag ? int_bit : ~int_bit);
+    },
     status = () => [ie[0], flag],
     reset = () => { ie[0] = 1; setFlag(0); },
     process = num => {
@@ -622,18 +629,18 @@ function PDP_Device(                   // console IO device
 }
 
 class ASR33 extends Kbd {              // system console
-    static init(con, mon, ka, ta) {
+    static init(con, mon, ka, ta, int) {
         const cpu = mon.emu.CPU.cpu,
               ie = [0],                             // shared interrupt flag
         devkbd = PDP_Device(cpu,
             () => con.kbd.length > 0,               // kbd ready
             () => (con.kbd.shift() & 0xff) | 0o200, // kbd get
-            ie, true, 0o377                         // 8bit
+            ie, true, 0o377, int                    // 8bit
         ),
         devcon = PDP_Device(cpu,
             () => true,                             // con ready
             ac => con.display(ac & 0x7f),           // con put
-            ie, false
+            ie, false, undefined, int
         );
         cpu.devices.set(ka, devkbd);                // set input device
         cpu.devices.set(ta, devcon);                // set output device
@@ -647,7 +654,7 @@ class ASR33 extends Kbd {              // system console
     }
     constructor(con, mon) {
         super(con, mon);
-        const devs = ASR33.init(con, mon, 0o3, 0o4);
+        const devs = ASR33.init(con, mon, 0o3, 0o4, 1);
         this.devkbd = devs.devkbd;
     }
     processKey(val) {
@@ -777,22 +784,22 @@ function RX01(CPU) {                   // RX8E/RX01 disk drive
                 if (flags & 1) {
                     regs[PC] = regs[PC] + 1 & 0o7777;
                     if (maint === 0) {
-                        if (ie) cpu.setInterrupt(0);
+                        if (ie) cpu.setInterrupt(~2);
                         flags &= ~1;
                     }
                 }
                 break;
             case 6: // INTR
-                if (ie && flags & 1) cpu.setInterrupt(0);
+                if (ie && flags & 1) cpu.setInterrupt(~2);
                 ie = regs[AC] & 1;
-                if (ie && flags & 1) cpu.setInterrupt(1);
+                if (ie && flags & 1) cpu.setInterrupt(2);
                 break;
             case 7: // INIT
                 intf = 0; err = 0; errst = 0;
                 cmd = 0; maint = 0; bit8 = 0;
                 drv = 0; trk = 1; sec = 1;
                 part = 0; count = 0;
-                if (ie) cpu.setInterrupt(0);
+                if (ie) cpu.setInterrupt(~2);
                 ie = 0; flags = 0;
                 if (DSK[drv] === null) { err = 0o110; flags |= 2; }
                 else DSK[drv].transfer(trk, sec, 0, mmm, true);
@@ -801,7 +808,7 @@ function RX01(CPU) {                   // RX8E/RX01 disk drive
         }
     },
     done = () => {
-        flags |= 1; intf = errst; if (ie) cpu.setInterrupt(1);
+        flags |= 1; intf = errst; if (ie) cpu.setInterrupt(2);
     },
     empty12 = () => {
         if (count < 96) {
@@ -847,7 +854,7 @@ function DK8EA(CPU) {                  // DK8EA line frequency clock (100 ticks/
     const cpu = CPU.cpu, regs = cpu.regs,
     status = () => [ie, tick_flag << 1 | irq_count],
     reset = () => {
-        if (irq_count > 0) { irq_count = 0; cpu.setInterrupt(0); }
+        if (irq_count > 0) { irq_count = 0; cpu.setInterrupt(~4); }
         ie = 0; tick_flag = 0;
     },
     process = num => {
@@ -855,7 +862,7 @@ function DK8EA(CPU) {                  // DK8EA line frequency clock (100 ticks/
             case 1: // CLEI
                 if (ie === 0) {
                     if (tick_flag && irq_count === 0) {
-                        irq_count = 1; cpu.setInterrupt(1);
+                        irq_count = 1; cpu.setInterrupt(4);
                     }
                     ie = 1;
                 }
@@ -863,7 +870,7 @@ function DK8EA(CPU) {                  // DK8EA line frequency clock (100 ticks/
             case 2: // CLDI
                 if (ie) {
                     if (irq_count) {
-                        irq_count = 0; cpu.setInterrupt(0);
+                        irq_count = 0; cpu.setInterrupt(~4);
                     }
                     ie = 0;
                 }
@@ -872,7 +879,7 @@ function DK8EA(CPU) {                  // DK8EA line frequency clock (100 ticks/
                 if (tick_flag) {
                     regs[PC] = regs[PC] + 1 & 0o7777;
                     if (irq_count) {
-                        irq_count = 0; cpu.setInterrupt(0);
+                        irq_count = 0; cpu.setInterrupt(~4);
                     }
                     tick_flag = 0;
                 }
@@ -883,7 +890,7 @@ function DK8EA(CPU) {                  // DK8EA line frequency clock (100 ticks/
         if (tick_flag === 0) {
             tick_flag = 1;
             if (ie && irq_count === 0) {
-                irq_count = 1; cpu.setInterrupt(1);
+                irq_count = 1; cpu.setInterrupt(4);
             }
         }
         setTimeout(timer, 100);
@@ -900,12 +907,12 @@ function RF08(mem) {                   // RF08/RS08 fixed head disk
     const DSK = new Uint16Array(4 * 128 * 2048), // disk buffer (1,048,576 x 2)
           CPU = mem.CPU, cpu = CPU.cpu, regs = cpu.regs,
     status = () => [(sta & 0o700) >> 6, (sta & 0o7) | done << 3],
-    reset = () => { done = 1; sta = 0; da = 0; cpu.setInterrupt(0); },
+    reset = () => { done = 1; sta = 0; da = 0; cpu.setInterrupt(~8); },
     process = (num, adr) => {
         switch (num) {
             case 1: switch (adr) {
                 case 0o60: da &= ~0o7777; done = 0; sta &= ~0o1007; intr(); break;    // DCMA
-                case 0o61: sta &= 0o7007; cpu.setInterrupt(0); break;                 // DCIM
+                case 0o61: sta &= 0o7007; cpu.setInterrupt(~8); break;                // DCIM
                 case 0o62: if (sta & 0o1007) regs[PC] = regs[PC] + 1 & 0o7777; break; // DFSE
                 case 0o64: da &= 0o7777; intr(); break;                               // DCXA
             } break;
@@ -949,20 +956,23 @@ function RF08(mem) {                   // RF08/RS08 fixed head disk
         cpu.setInterrupt(
             ((done && sta & 0o100) ||
             (sta & 0o1007 && sta & 0o400) ||
-            (sta & 0o4000 && sta & 0o200)) ? 1 : 0
+            (sta & 0o4000 && sta & 0o200)) ? 8 : ~8
         );
     },
     dma = read => {
         da |= regs[AC] & 0o7777; regs[AC] &= 0o10000;
-        const sif = regs[IF];                            // save IF register
-        regs[IF] = (sta & 0o70) >> 3;                    // set extension
-        let wc;
+        const sif = regs[IF],                            // save IF register
+              nif = (sta & 0o70) >> 3;                   // set extension
+        let wc, wa;
         do {
+            regs[IF] = 0;                                // WC and WA in core 0
             mem.wr(0o7750, mem.rd(0o7750) + 1 & 0o7777); // incr word count
-            wc = mem.rd(0o7750);
+            wc = mem.rd(0o7750);                         // word count
             mem.wr(0o7751, mem.rd(0o7751) + 1 & 0o7777); // incr mem addr
-            if (read) mem.wr(mem.rd(0o7751), DSK[da]);
-            else DSK[da] = mem.rd(mem.rd(0o7751));
+            wa = mem.rd(0o7751);                         // word address
+            regs[IF] = nif;                              // set core
+            if (read) mem.wr(wa, DSK[da]);
+            else DSK[da] = mem.rd(wa);
             da = da + 1 & 0o3777777;                     // incr disk addr
         } while (wc !== 0);
         regs[IF] = sif;                                  // restore IF register
@@ -998,7 +1008,8 @@ class PDP8EEmu extends Emulator12 {    // emulator
             const column = data[i++];
             switch (column & 0o300) {
                 case 0o000: // data
-                    mem.wr(addr++ & 0o7777, column << 6 & 0o7700 | data[i++] & 0o77);
+                    if (addr < 0o10000) // check for address overflow
+                        mem.wr(addr++ & 0o7777, column << 6 & 0o7700 | data[i++] & 0o77);
                     break;
                 case 0o100: // origin
                     addr = column << 6 & 0o7700 | data[i++] & 0o77;
@@ -1193,13 +1204,13 @@ async function main() {
 /*    dsk.setDsk(0, await loadFile('pdp8/os8_rx.rx01', false));
     await mon.exec('r pdp8/os8boot3.oct 1');
     await mon.exec('x pc 22');*/
-/*    const cons = addKey('&#x21c4'),                 // console switch button
-          cnv2 = document.createElement('canvas');  // second console
-    cnv2.style.display = 'none';                    // initially hidden
+/*    const cons = addKey('&#x21c4'),                    // console switch button
+          cnv2 = document.createElement('canvas');     // second console
+    cnv2.style.display = 'none';                       // initially hidden
     con.canvas.canvas.parentNode.insertBefore(cnv2, con.canvas.canvas);
     const con2 = await createCon(green, 'VT220', undefined, undefined, cnv2),
-          kbd2 = ASR33.init(con2, mon, 0o40, 0o41); // 1st terminal on PT08
-    cons.onclick = e => {
+          kbd2 = ASR33.init(con2, mon, 0o40, 0o41, 1); // 1st terminal on PT08
+    cons.onclick = e => {                              // console switch button
         if (cnv2.style.display === 'none') {
             con.canvas.canvas.style.display = 'none';
             cnv2.style.display = 'block';
@@ -1208,7 +1219,7 @@ async function main() {
             con.canvas.canvas.style.display = 'block';
         }
     };
-    kbd.processKey = function(val) {
+    kbd.processKey = function(val) {                   // process 2 terminals
         if (cnv2.style.display === 'none') {
             this.con.kbd.push(val);
             this.devkbd.setFlag(1);
@@ -1217,16 +1228,16 @@ async function main() {
             kbd2.devkbd.setFlag(1);
         }
     };
-    await mon.exec('tape pdp8/edu20c.pt');
+    await mon.exec('tape pdp8/edu20c.pt');                                                  // Edu20
     await mon.exec('x if 0 df 1 pc 7645');*/
-    const clc = DK8EA(cpu),                      // system clock
-          fds = RF08(mem);                       // disk
+    const clc = DK8EA(cpu),                            // system clock
+          fds = RF08(mem);                             // disk
 //    await mon.exec('tape MAINDEC-8E-D8AC-pb.bpt'); await mon.exec('x pc 200');              // DK8EA
 //    await mon.exec('tape pdp8/maindec-x8-dirfa-a-pb'); ???                                  // RF08
 //    await mon.exec('tape pdp8/maindec-08-d5fa-pb'); await mon.exec('x pc 150');             // RF08
     await mon.exec('tse 1'); // set 32K!                                                    // TSS8
-    await mon.exec('tape pdp8/tss8_init.bin');
-    fds.setDsk(await loadFile('pdp8/tss8_rf.dsk', false));
+    await mon.exec('tape tss8_init.bin');
+    fds.setDsk(await loadFile('tss8_rf.dsk', false));
     await mon.exec('x if 2 ib 2 pc 4200');
     term.setPrompt('> ');
     while (true) await mon.exec(await term.prompt());
