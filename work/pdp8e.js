@@ -1204,7 +1204,7 @@ async function main() {
 /*    dsk.setDsk(0, await loadFile('pdp8/os8_rx.rx01', false));
     await mon.exec('r pdp8/os8boot3.oct 1');
     await mon.exec('x pc 22');*/
-/*    const cons = addKey('&#x21c4'),                    // console switch button
+    const cons = addKey('&#x21c4'),                    // console switch button
           cnv2 = document.createElement('canvas');     // second console
     cnv2.style.display = 'none';                       // initially hidden
     con.canvas.canvas.parentNode.insertBefore(cnv2, con.canvas.canvas);
@@ -1228,7 +1228,7 @@ async function main() {
             kbd2.devkbd.setFlag(1);
         }
     };
-    await mon.exec('tape pdp8/edu20c.pt');                                                  // Edu20
+/*    await mon.exec('tape pdp8/edu20c.pt');                                                  // Edu20
     await mon.exec('x if 0 df 1 pc 7645');*/
     const clc = DK8EA(cpu),                            // system clock
           fds = RF08(mem);                             // disk
@@ -1236,8 +1236,8 @@ async function main() {
 //    await mon.exec('tape pdp8/maindec-x8-dirfa-a-pb'); ???                                  // RF08
 //    await mon.exec('tape pdp8/maindec-08-d5fa-pb'); await mon.exec('x pc 150');             // RF08
     await mon.exec('tse 1'); // set 32K!                                                    // TSS8
-    await mon.exec('tape tss8_init.bin');
-    fds.setDsk(await loadFile('tss8_rf.dsk', false));
+    await mon.exec('tape pdp8/tss8_init.bin');
+    fds.setDsk(await loadFile('pdp8/tss8_rf.dsk', false));
     await mon.exec('x if 2 ib 2 pc 4200');
     term.setPrompt('> ');
     while (true) await mon.exec(await term.prompt());
