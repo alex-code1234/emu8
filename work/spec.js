@@ -13,7 +13,8 @@
 // http://www.nedopc.org/forum/viewtopic.php?t=9541&start=60
 // https://zx-pk.ru/archive/index.php/t-29118.html
 
-async function SpecCon(cdecode = cb => [0xffeeeeee, 0xff202020]) {          // color decode fnc: clr => [fg, bg]
+// color decode fnc: clr => [fg, bg], monochrome by default
+async function SpecCon(cdecode = cb => [0xffeeeeee, 0xff202020]) {
     let vram = null, cram = null;
     const pxlen = 384 * 256,
           voffs = ((384 / 8 | 0) - 1) * 256,
@@ -41,137 +42,124 @@ async function SpecCon(cdecode = cb => [0xffeeeeee, 0xff202020]) {          // c
 class SpecCpu extends GenCpu {
     constructor(con, memo) {
         super(memo, 0);
-        con.setMemo(memo);                                                  // link con and memo
+        con.setMemo(memo);                              // link con and memo
         this.con = con;
         this.spk = memo.speaker;
-        if (memo.pit) {                                                     // setup PIT update
+        if (memo.pit) {                                 // setup PIT update
             const origStep = memo.CPU.cpu.step.bind(memo.CPU.cpu),
                   pitCntrs = memo.pit.counters;
-            memo.CPU.cpu.step = () => {                                     // override CPU step
-                pitCntrs[0].tick(); pitCntrs[1].tick();                     // PIT clock 2MHz / ~[cycles per instr]
+            memo.CPU.cpu.step = () => {                 // override CPU step
+                pitCntrs[0].tick(); pitCntrs[1].tick();
                 return origStep();
             };
         }
     }
-    async runHz(freq) {                                                     // freq (Hz)
-        const frameRate = (1.0 / 60.0) * 1000.0,                            // animation frame rate in ms
-              rate = (1.0 / freq) * 1000.0,                                 // requested rate in ms
-              maxCycles = frameRate / rate | 0;                             // target cycles
-        this.RUN = true;
-        let print = true, res, cycles = this.cpu.cycles + maxCycles, time, currCycles = maxCycles;
-        do {
-            time = performance.now();
-            while (this.cpu.cycles < cycles) {
-                try { res = this.cpu.step(); }
-                catch(exc) {
-                    console.error(exc);
-                    this.RUN = false;
-                    break;
-                }
-                if (!res || (this.STOP >= 0 && this.cpu.getPC() === this.STOP)) {
-                    if (res) { console.info('STOP'); this.STOP = -1; }
-                    else if (!this.HLT_STOP) break;
-                    else console.info('HALT');
-                    this.RUN = false;
-                    print = false;
-                    break;
-                }
-                if (!this.RUN) break;
-            }
-            time = performance.now() - time;
-            currCycles = (time > frameRate) ? (frameRate - (time - frameRate)) / rate | 0 : maxCycles;
-            cycles += currCycles;
-            await (new Promise((resolve, reject) => requestAnimationFrame(resolve)));
-        } while (this.RUN);
-        if (print) console.info('stopped', `${(currCycles / frameRate / 1000.0).toFixed(2)}MHz`);
-    }
     async run() {
         this.con.start();
-        if (this.spk) this.spk.start();
+        if (this.spk) await this.spk.start();
         await super.run();
-        if (this.spk) this.spk.stop();
+        if (this.spk) await this.spk.stop();
         this.con.stop();
     }
 }
 
 // Speaker interface
-async function Speaker(volume = 0.03, filter = true, canvas = null) {
-    function constructor() {                                         // AudioWorkletProcessor constructor
-        _super();                                                    // super call, fixed during class generation
-        this.ticks = [];                                             // data buffer
-        this.value = 0.5;                                            // sample value 50%
-        this.sample = 48000.0 / 2000000.0;                           // sampling ratio (48kHz - audio, 2MHz - CPU)
-        this.prevCycle = 0;
-        this.port.onmessage = e => {                                 // message handler
-            const data = e.data, length = data.length;
-            for (let i = 0; i < length; i++) {                       // preprocess data
-                const cycle = data[i];                               // calc audio half wave length in 1..1024 range
-                let hwlen = Math.round((cycle - this.prevCycle) * this.sample) | 0;
-                if (hwlen < 1) hwlen = 1; else if (hwlen > 1024) hwlen = 1024;
-                this.ticks.push(hwlen);                              // save in buffer
-                this.prevCycle = cycle;                              // remember cycle
-            }
+async function Speaker(volume = 0.03, filter = [15000, 50, 0.1], canvas = null) {
+    function constructor() {                            // AudioWorkletProcessor constructor
+        _super();                                       // super call, fixed during class generation
+//-----------------------------------------------------------------------------------------------
+this.ticks = [];                   // data buffer
+this.value = 0.5;                  // sample value 50%
+this.sample = 48000.0 / 2000000.0; // sampling ratio (48kHz - audio, 2
+this.prevCycle = 0;
+//-----------------------------------------------------------------------------------------------
+        this.port.onmessage = e => {                    // message handler
+            const data = e.data;
+//-----------------------------------------------------------------------------------------------
+for (let i = 0, length = data.length; i < length; i++) { // preprocess data
+    const cycle = data[i];                               // calc audio half wave length in 1
+    let hwlen = Math.round((cycle - this.prevCycle) * this.sample) | 0;
+    if (hwlen < 1) hwlen = 1; else if (hwlen > 1024) hwlen = 1024;
+    this.ticks.push(hwlen);                              // save in buffer
+    this.prevCycle = cycle;                              // remember cycle
+}
+//-----------------------------------------------------------------------------------------------
         };
     }
-    function process(inps, outs, parms) {                            // AudioWorkletProcessor process method
-        const out = outs[0][0];                                      // mono output
+    function process(inps, outs, parms) {               // AudioWorkletProcessor process method
+        const out = outs[0][0];                         // mono output
         let i = 0;
-        while (i < out.length) {                                     // fill in outputs
-            if (this.ticks.length === 0) {                           // no data in buffer
-                out[i++] = 0;                                        // no signal
-                continue;
-            }
-            let cnt = this.ticks[0];                                 // number of samples
-            while (cnt-- > 0) {
-                out[i++] = this.value;                               // output signal
-                if (i >= out.length) break;                          // finished samples buffer
-            }
-            if (cnt > 0) {                                           // samples batch not done
-                this.ticks[0] = cnt;                                 // remember rest
-                break;
-            }
-            this.ticks.shift();                                      // remove processed data
-            this.value = -this.value;                                // switch value sign for second half
+        while (i < out.length) {                        // fill in outputs
+//-----------------------------------------------------------------------------------------------
+if (this.ticks.length === 0) {  // no data in buffer
+    out[i++] = 0;               // no signal
+    continue;
+}
+let cnt = this.ticks[0];        // number of samples
+while (cnt-- > 0) {
+    out[i++] = this.value;      // output signal
+    if (i >= out.length) break; // finished samples buffer
+}
+if (cnt > 0) {                  // samples batch not done
+    this.ticks[0] = cnt;        // remember rest
+    break;
+}
+this.ticks.shift();             // remove processed data
+this.value = -this.value;       // switch value sign for second half
+//-----------------------------------------------------------------------------------------------
         }
-        return true;                                                 // keep alive
+        return true;
     }
     if (!(await navigator.mediaDevices.getUserMedia({'audio': true})))
-        return null;                                                 // audio disabled, no speaker
-    const p1 = ('' + constructor).substring(9).replace('_super', 'super'), p2 = ('' + process).substring(9),
-          code = `class AP extends AudioWorkletProcessor {${p1}${p2}}registerProcessor('audio-speaker', AP);`,
-          blob = new Blob([code], {type: 'text/javascript'}),        // AudioWorkletProcessor code
-          cntx = new AudioContext();                                 // audio context
-    let url = URL.createObjectURL(blob), prevBit = 0,                // AudioWorkletProcessor data
-        buff = [], bckg = null,                                      // data buffer for AudioWorkletProcessor
-        graph = null, points, ctx2;                                  // audio visualization
-    await cntx.audioWorklet.addModule(url);                          // register AudioWorkletProcessor
-    const proc = new AudioWorkletNode(cntx, 'audio-speaker'),        // AudioWorkletProcessor node
-          gain = cntx.createGain(),                                  // speaker volume node
-    timer = () => {                                                  // timer func
-        proc.port.postMessage(buff);                                 // send data buffer
-        bckg = null; buff = [];                                      // prepare next transfer
+        return null;                                    // audio disabled, no speaker
+    const p1 = ('' + constructor).substring(9).replace('_super', 'super'),
+          p2 = ('' + process).substring(9),
+          p3 = 'registerProcessor("audio-speaker", AP);',
+          blob = new Blob([
+              `class AP extends AudioWorkletProcessor {${p1}${p2}} ${p3}`
+          ], {type: 'text/javascript'}),                // AudioWorkletProcessor code
+          url = URL.createObjectURL(blob),
+          cntx = new AudioContext();                    // audio context
+    await cntx.audioWorklet.addModule(url);             // register AudioWorkletProcessor
+    let graph = null, points, ctx2;                     // audio visualization
+//-----------------------------------------------------------------------------------------------
+let prevBit = 0, buff = [], bckg = null;
+//-----------------------------------------------------------------------------------------------
+    const proc = new AudioWorkletNode(cntx, 'audio-speaker'), // AudioWorkletProcessor node
+          gain = cntx.createGain(),                     // speaker volume node
+    start = async () => {                               // start audio
+        await cntx.resume(); if (graph) draw();
     },
-    tick = (bit, cycles) => {                                        // speaker interface, prepare audio data
-        if (bit ^ prevBit) {                                         // bit changed, process
-            buff.push(cycles);                                       // save data
-            if (bckg !== null) clearTimeout(bckg);                   // re-schedule timeout
-            bckg = setTimeout(timer, 2);                             // send in 2ms (~2.6ms audio processor cycle)
-        }
-        prevBit = bit;                                               // remember bit
+    stop = async () => {                                // stop audio
+        await cntx.suspend();
     },
-    start = () => { cntx.resume(); if (graph) draw(); },             // start audio
-    stop = () => cntx.suspend(),                                     // stop audio
-    destroy = () => { cntx.close(); URL.revokeObjectURL(url); },     // free resources
-    setPointAttrs = (wdt, bgd, fgd) => {                             // set canvas attributes
+    destroy = async () => {                             // free resources
+        await cntx.close(); URL.revokeObjectURL(url);
+    },
+//-----------------------------------------------------------------------------------------------
+timer = () => {                  // timer func
+    proc.port.postMessage(buff); // send data buffer
+    bckg = null; buff = [];      // prepare next transfer
+},
+tick = (bit, cycles) => {        // speaker interface, prepare audio
+    if (bit ^ prevBit) {         // bit changed, process
+        buff.push(cycles);       // save data
+        if (bckg !== null) clearTimeout(bckg); // re-schedule timeout
+        bckg = setTimeout(timer, 2);           // send in 2ms (~2.6ms audio processor cycle)
+    }
+    prevBit = bit;               // remember bit
+},
+//-----------------------------------------------------------------------------------------------
+    setPointAttrs = (wdt, bgd, fgd) => {                // set canvas attributes
         ctx2.lineWidth = wdt; ctx2.fillStyle = bgd; ctx2.strokeStyle = fgd;
     },
-    drawPoints = (pts, clear) => {                                   // update canvas
+    drawPoints = (pts, clear) => {                      // update canvas
         const length = pts.length,
               width = ctx2.canvas.width, height = ctx2.canvas.height,
               height2 = (height / 2) | 0, width2 = width / length;
-        if (clear) ctx2.fillRect(0, 0, width, height);               // clear view
+        if (clear) ctx2.fillRect(0, 0, width, height);  // clear view
         let x = 0;
-        ctx2.beginPath();                                            // draw points
+        ctx2.beginPath();                               // draw points
         for (let i = 0; i < length; i++) {
             const y = ((pts[i] / 128.0) * height2) | 0;
             if (i === 0) ctx2.moveTo(x, y); else ctx2.lineTo(x, y);
@@ -180,33 +168,34 @@ async function Speaker(volume = 0.03, filter = true, canvas = null) {
         ctx2.lineTo(width, height2);
         ctx2.stroke();
     },
-    draw = () => {                                                   // update audio visualization
-        if (cntx.state !== 'running') return;                        // audio not active, no update
-        graph.getByteTimeDomainData(points);                         // get data from analyser node
+    draw = () => {                                      // update audio visualization
+        if (cntx.state !== 'running') return;           // audio not active, no update
+        graph.getByteTimeDomainData(points);            // get data from analyser node
         drawPoints(points, true);
-        requestAnimationFrame(draw);                                 // schedule next update
+        requestAnimationFrame(draw);                    // schedule next update
     };
-    gain.connect(cntx.destination);                                  // connect audio nodes
+    stop();                                             // initially suspended
+    gain.connect(cntx.destination);                     // connect audio nodes
     let middle = gain;
-    if (canvas) {                                                    // visualization requested
-        graph = cntx.createAnalyser();                               // create analyser node
-        points = new Uint8Array(graph.frequencyBinCount);            // and data buffer
-        graph.connect(middle); middle = graph;                       // include into node chain
+    if (canvas) {                                       // visualization requested
+        graph = cntx.createAnalyser();                  // create analyser node
+        points = new Uint8Array(graph.frequencyBinCount); // and data buffer
+        graph.connect(middle); middle = graph;          // include into node chain
         if (typeof canvas === 'string') canvas = document.getElementById(canvas);
         ctx2 = canvas.getContext('2d');
-        setPointAttrs(2, '#000000', '#008000');                      // set draw parameters
+        setPointAttrs(2, '#000000', '#008000');         // set draw parameters
     }
-    if (filter) {                                                    // create hi-lo filter 50..15000
+    if (filter) {                                       // create hi-lo-q filter
         const flt = cntx.createBiquadFilter();
-        flt.frequency.value = 15000; flt.type = 'lowpass'; flt.Q.value = 0.1;
+        flt.frequency.value = filter[0]; flt.type = 'lowpass'; flt.Q.value = filter[2];
         flt.connect(middle);
         const flt2 = cntx.createBiquadFilter();
-        flt2.frequency.value = 50; flt2.type = 'highpass'; flt2.Q.value = 0.1;
+        flt2.frequency.value = filter[1]; flt2.type = 'highpass'; flt2.Q.value = filter[2];
         flt2.connect(flt); middle = flt2;
     }
     proc.connect(middle);
-    gain.gain.value = volume;                                        // set audio volume
-    return {tick, start, stop, destroy, setPointAttrs, drawPoints};
+    gain.gain.value = volume;                           // set audio volume
+    return {start, stop, destroy, tick, setPointAttrs, drawPoints};
 }
 
 class SpecKbd extends Kbd {
@@ -338,9 +327,9 @@ else if (e.key === 'Enter') e = {'key': 'ВК'};
 }
 
 class SpecMemIO extends MemIO {
-    constructor(con, speaker = null, kbd = [0xff, 0xff, 0xff, 0], ramdisks = 0, colors = 2, onepage = false) {
+    constructor(con, speaker = null, kbd = [0xff, 0xff, 0xff, 0],
+            ramdisks = 0, colors = 2, onepage = false) {
         super(con, 0, false);
-//this.cycles = 0;
         this.colors = colors;
         if (colors > 2) {
             this.cram = new Uint8Array(0x3000); this.cval = 0;
@@ -405,7 +394,6 @@ class SpecMemIO extends MemIO {
         if (a < 0xffec) this.fdc.write(a & 0x03, v); else
         if (a < 0xfff0) {
             if (a === 0xffee) this.pitEnable = true;
-//this.cycles = this.CPU.cpu.cycles;
             this.pit.write(a & 0x03, v);
         } else
         if (a < 0xfff4) {
@@ -424,61 +412,56 @@ class SpecMemIO extends MemIO {
         const [p0, p1, p2] = this.ppi.ports,
               [k0, k1, k2, down] = this.kbd;
         switch (num) {
-            case 0:                                                         // port A
-                if (down && p1 !== 0 && (p1 & k1) !== p1)                   // port B set, compare with key
-                    return 0xff;                                            // no match, reset bits
+            case 0:                                       // port A
+                if (down && p1 !== 0 && (p1 & k1) !== p1) // port B set, compare with key
+                    return 0xff;                          // no match, reset bits
                 return k0;
-            case 1:                                                         // port B
-                let tapeBit = 0xfe;                                         // tape bit 0
+            case 1:                                       // port B
+                let tapeBit = 0xfe;                       // tape bit 0
                 if (this.tapeEnabled && this.tapePos < this.tape.length) {
-                    if (this.tape[this.tapePos++]) tapeBit |= 0x01;         // tape bit 1
+                    if (this.tape[this.tapePos++]) tapeBit |= 0x01; // tape bit 1
                     if (this.tapeFixed) this.tapeFixed = false;
                     else if (this.tapePos > 0 && this.tapePos % 16 === 1) { // byte read finished
-                        this.tapePos--; this.tapeFixed = true;              // compensate extra read in
-                    }                                                       // ROM 0xc377 (tape read byte)
+                        this.tapePos--; this.tapeFixed = true; // compensate extra read in
+                    }                                     // ROM 0xc377 (tape read byte)
                 }
-                if (down && ((p0 !== 0 && (p0 & k0) !== k0) ||
-                        ((p2 & 0x0f) !== 0 && (p2 & k2) !== (k2 & 0x0f))))  // port A or Cl set, compare with key
-                    return (k1 | ~0x02) & tapeBit;                          // no match, reset bits except НР
+                if (down && ((p0 !== 0 && (p0 & k0) !== k0) || // port A or Cl set, compare with key
+                        ((p2 & 0x0f) !== 0 && (p2 & k2) !== (k2 & 0x0f))))
+                    return (k1 | ~0x02) & tapeBit;        // no match, reset bits except НР
                 return k1 & tapeBit;
-            case 2:                                                         // port C
-                if (down && p1 !== 0 && (p1 & k1) !== p1)                   // port B set, compare with key
-                    return 0xff;                                            // no match, reset bits
+            case 2:                                       // port C
+                if (down && p1 !== 0 && (p1 & k1) !== p1) // port B set, compare with key
+                    return 0xff;                          // no match, reset bits
                 return k2;
         }
     }
     ppiWr(num) {
         if (num === 2) {
-            if (this.colors === 4) this.cval = this.ppi.ports[2] >>> 6;     // 2-bit color
-            else if (this.colors === 8) {                                   // 3-bit color
+            if (this.colors === 4) this.cval = this.ppi.ports[2] >>> 6; // 2-bit color
+            else if (this.colors === 8) {                               // 3-bit color
                 const pC = this.ppi.ports[2];
                 this.cval = (pC >>> 5 & 0x06) | (pC >>> 4 & 0x01);
             }
-            if (this.speaker) this.speaker.tick((this.ppi.ports[2] & 0x20) ? 1 : 0, this.CPU.cpu.cycles);
+            if (this.speaker)
+                this.speaker.tick((this.ppi.ports[2] & 0x20) ? 1 : 0, this.CPU.cpu.cycles);
         }
     }
     ppiWrB(bit) {
-        if (bit === 7 && this.tapeEnabled)                                  // write bit to tape (inverted)
+        if (bit === 7 && this.tapeEnabled)                // write bit to tape (inverted)
             this.tape.push((this.ppi.ports[2] & 0x80) ? 0 : 1);
-        else if (bit === 5 && this.speaker)                                 // speaker
+        else if (bit === 5 && this.speaker)               // speaker
             this.speaker.tick((this.ppi.ports[2] & 0x20) ? 1 : 0, this.CPU.cpu.cycles);
     }
     pitOut(num) {
         switch (num) {
             case 0:
                 if (this.pitEnable) {
-//for (let i = 0; i < 4; i++) {
                     this.pitBit = this.pitBit ? 0 : 1;
-                    this.speaker.tick(this.pitBit, this.CPU.cpu.cycles);
-//this.speaker.tick(this.pitBit, this.cycles += 1000);
-//}
+                    if (this.speaker)
+                        this.speaker.tick(this.pitBit, this.CPU.cpu.cycles);
                 }
                 break;
-            case 1: 
-//for (let i = 0; i < 4; i++) {
-            this.pit.counters[2].tick(); 
-//}
-            break;
+            case 1: this.pit.counters[2].tick(); break;
             case 2: this.pitEnable = false; break;
         }
     }
@@ -553,12 +536,6 @@ class SpecMonitor extends Monitor {
                 this.emu.memo.tape.push(...new Uint8Array(await hndl.arrayBuffer()));
                 console.log(this.emu.memo.tape.length);
                 break;
-//case 'ttt':
-//this.emu.loadBin(
-//new Uint8Array(await (await preLoadFile('xtree.rks')).arrayBuffer()).slice(4),
-//0x0000
-//);
-//break;
             case 'state':
                 console.log(this.emu.memo.state());
                 console.log(this.emu.memo.fdc?.state());
@@ -573,33 +550,55 @@ async function main() {
     await loadScript('../emu/github/emu8/js/hrdwr8.js');
     const clrs04 = [0xffeeeeee, 0xff2020ff, 0xff20ff20, 0xffff2020],
           cf04 = cb => [clrs04[cb], 0xff202020],
-          clrs08 = [0xffeeeeee, 0xff3fd0f4, 0xff8a4476, 0xff2020ff, 0xffd5b37f, 0xff20ff20, 0xffff2020, 0xff202020],
+          clrs08 = [0xffeeeeee, 0xff3fd0f4, 0xff8a4476, 0xff2020ff, 0xffd5b37f, 0xff20ff20,
+                    0xffff2020, 0xff202020],
           cf08 = cb => [clrs08[cb], 0xff202020],
-          clrs16 = [0xff202020, 0xffff2020, 0xff20ff20, 0xffaaaa20, 0xff2020ff, 0xff8a4476, 0xff0090b4, 0xffeeeeee,
-                    0xff505050, 0xffd5b37f, 0xff90ee90, 0xffffffb0, 0xffcbc0ff, 0xffff9fcf, 0xff3fd0f4, 0xffffffff],
-          cf16 = cb => [clrs16[cb >>> 4], clrs16[cb & 0x0f]];
-    const con = await SpecCon(/*cf16*/),
-//          spk = await Speaker(undefined, undefined),
-          mem = new SpecMemIO(con, /*spk*/null, null/*, 8, 16*/),
-          cpu = new SpecCpu(con, mem),
-          emu = new Emulator(cpu, mem, 0),
-          mon = new SpecMonitor(emu),
-          kbd = new SpecKbd(con, mon/*, true*/);
+          clrs16 = [0xff202020, 0xffff2020, 0xff20ff20, 0xffaaaa20, 0xff2020ff, 0xff8a4476,
+                    0xff0090b4, 0xffeeeeee, 0xff505050, 0xffd5b37f, 0xff90ee90, 0xffffffb0,
+                    0xffcbc0ff, 0xffff9fcf, 0xff3fd0f4, 0xffffffff],
+          cf16 = cb => [clrs16[cb >>> 4], clrs16[cb & 0x0f]],
+          ccb = undefined,  // monochrome
+          //ccb = cf04,       // 4 colors (for ryumik's test)
+          //ccb = cf08,       // 8 colors (for lode runner)
+          //ccb = cf16,       // 16 colors (for RamFOS)
+          spk = undefined,  // no speaker
+          //spk = await Speaker(undefined, undefined, undefined),
+          rmds = 0,         // no RAM disks
+          //rmds = 1,         // for MXOS
+          //rmds = 8,         // for RamFOS
+          clrs = 2,         // system colors
+          //clrs = 4,         // for ryumik's test
+          //clrs = 8,         // for lode runner
+          //clrs = 16,        // for RamFOS
+          pag1 = false,     // only one RAM page, ignore FFFD port value
+          //pag1 = true,      // for MXOS
+          mxkb = undefined, // standard keyboard
+          //mxkb = true,      // MX keyboard (for RamFOS)
+    con = await SpecCon(ccb),
+    mem = new SpecMemIO(con, spk, null, rmds, clrs, pag1),
+    cpu = new SpecCpu(con, mem),
+    emu = new Emulator(cpu, mem, 0),
+    mon = new SpecMonitor(emu),
+    kbd = new SpecKbd(con, mon, mxkb);
     mem.kbd = kbd.ports;
     await mon.exec('r c000 SPEC.ROM');
-//await mon.exec('m 100 3e 91 32 03 ff 3e fb 32 01 ff 3a 02 ff 2f e6 03 47 3a 00 ff 2f e6 34 b0 c9 ' +
-//                     'cd 00 01 21 00 00 22 fc 8f cd 15 c8 c3 19 01'); // G119
-//    await mon.exec('r 0 loderun.bin');
+//    await mon.exec('m 100 3e 91 32 03 ff 3e fb 32 01 ff 3a 02 ff 2f e6 03 47 3a 00 ' + // kbd test
+//                   'ff 2f e6 34 b0 c9 cd 00 01 21 00 00 22 fc 8f cd 15 c8 c3 19 01');  // G119
+//    await mon.exec('r 0 loderun.bin'); // game for 8 colors, G0
+//    console.log(emu.loadBin( // sound test
+//        new Uint8Array(await (await preLoadFile('xtree.rks')).arrayBuffer()).slice(4),
+//        0x0000
+//    ));                      // sound test G6
     mon.exec('g c000');
-//await mon.exec('r d400 spec_mx/test.i80');
-//await mon.exec('m dad4 40'); await mon.exec('m daeb 80'); await mon.exec('m daf5 c0'); await mon.exec('m dafc 00');
-//mon.exec('g d400');
-//await mon.exec('r 0 spec_mx/Specimx.rom');
-//await mon.exec('r 0 spec_mx/nc.rom');
-//await mon.exec('r 0 spec_mx/nc_orig.rom');
-//mem.fdc.Disk[1] = new Uint8Array(await (await preLoadFile('spec_mx/bst_mx0.odi')).arrayBuffer());
-//mem.fdc.Disk[0] = new Uint8Array(await (await preLoadFile('spec_mx/lafans2.odi')).arrayBuffer());
-//mon.exec('g 0');
+//    await mon.exec('r d400 spec_mx/test.i80');                // ryumik's test
+//    await mon.exec('m dad4 40'); await mon.exec('m daeb 80'); // set colors
+//    await mon.exec('m daf5 c0'); await mon.exec('m dafc 00'); // set colors
+//    mon.exec('g d400');                                       // start ryumik's test
+//    await mon.exec('r 0 spec_mx/Specimx.rom'); // RamFOS
+//    await mon.exec('r 0 spec_mx/nc.rom');      // MXOS
+//    mem.fdc.Disk[1] = new Uint8Array(await (await preLoadFile('spec_mx/bst_mx0.odi')).arrayBuffer());
+//    mem.fdc.Disk[0] = new Uint8Array(await (await preLoadFile('spec_mx/lafans2.odi')).arrayBuffer());
+//    mon.exec('g 0');                           // RamFOS and MXOS
     term.setPrompt('> ');
     while (true) await mon.exec(await term.prompt());
 }
