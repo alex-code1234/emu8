@@ -487,18 +487,18 @@ class SpecMonitor extends Monitor {
                     break;
                 }
                 let prm;
-                if ((prm = parms[1]) === 'on' || prm === 'off') {
-                    this.emu.memo.tapeEnabled = prm === 'on';
-                    console.log(this.emu.memo.tapeEnabled);
+                if ((prm = parms[1]) === 'on' || prm === 'off') { // enable/disable tape
+                    this.emu.memo.tapeEnabled = prm === 'on';     // (start/stop tape playing,
+                    console.log(this.emu.memo.tapeEnabled);       // start only after I or R command)
                     break;
                 }
-                if (prm === 'reset') {
+                if (prm === 'reset') {                            // reset tape position
                     const pos = (parms.length > 2) ? pi(parms[2], false) : 0;
                     this.emu.memo.tapePos = pos;
                     console.log(this.emu.memo.tapePos);
                     break;
                 }
-                if (prm === 'view') {
+                if (prm === 'view') {                             // view tape data
                     let i = 0, cnt = 0, s = '', val;
                     const add = v => {
                         s += `${fmt(v, 2)} `;
@@ -515,9 +515,9 @@ class SpecMonitor extends Monitor {
                     };
                     while (i < this.emu.memo.tape.length) {
                         val = 0;
-                        for (let j = 0; j < 8; j++) {
-                            const b1 = this.emu.memo.tape[i++],
-                                  b2 = this.emu.memo.tape[i++];
+                        for (let j = 0; j < 8; j++) {             // load byte from raw data
+                            const b1 = this.emu.memo.tape[i++],   // 1 0 - bit 0
+                                  b2 = this.emu.memo.tape[i++];   // 0 1 - bit 1
                             val |= (b1 === 0 && b2 === 1) ? 1 : 0;
                             if (j < 7) val <<= 1;
                         }
@@ -529,7 +529,7 @@ class SpecMonitor extends Monitor {
                     console.log(this.emu.memo.tape.slice(prm = this.emu.memo.tapePos, prm + 16));
                     break;
                 }
-                this.emu.memo.tape.length = 0;
+                this.emu.memo.tape.length = 0;                    // load tape (raw data)
                 this.emu.memo.tapeEnabled = false;
                 this.emu.memo.tapePos = 0;
                 const hndl = await preLoadFile(prm);
