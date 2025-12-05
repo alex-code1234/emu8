@@ -34,7 +34,8 @@ function Parser(emit) {
     // <exp4> ::= '~' <exp4> | <exp5> | '&' <exp4> | '*' <exp4>
     // <exp3> ::= <exp4> [ '+' <exp4> | '-' <exp4> ]*
     // <exp2> ::= <exp3> [ '<<' <exp3> | '>>' <exp3> ]*
-    // <exp1> ::= <exp2> [ '==' <exp2> | '!=' <exp2> | '>' <exp2> | '<' <exp2> | '>=' <exp2> | '<=' <exp2> ]*
+    // <exp1> ::= <exp2> [ '==' <exp2> | '!=' <exp2> | '>' <exp2> | '<' <exp2> | '>=' <exp2> |
+    //                     '<=' <exp2> ]*
     // <expr> ::= <exp1> [ '&' <exp1> | '|' <exp1> | '^' <exp1> ]*
     init = name => {
         if (digit(look)) { num(); emit('ini', [name, token | 0]); }
@@ -173,8 +174,12 @@ function IL() {
     },
     rentrp = (trp, oldadr, newtyp, newadr) => {
         let changed = false;
-        if (trp.typ1 === 'trp' && trp.val1 === oldadr) { trp.typ1 = newtyp; trp.val1 = newadr; changed = true; }
-        if (trp.typ2 === 'trp' && trp.val2 === oldadr) { trp.typ2 = newtyp; trp.val2 = newadr; changed = true; }
+        if (trp.typ1 === 'trp' && trp.val1 === oldadr) {
+            trp.typ1 = newtyp; trp.val1 = newadr; changed = true;
+        }
+        if (trp.typ2 === 'trp' && trp.val2 === oldadr) {
+            trp.typ2 = newtyp; trp.val2 = newadr; changed = true;
+        }
         if (changed && !trp.ref) // update triplet type if not de-reference assignment
             trp.typ = (typW(trp.typ1, trp.val1) || typW(trp.typ2, trp.val2)) ? 1 : 0;
     },
@@ -209,7 +214,8 @@ function IL() {
                         if (t.typ1 === 'num') { t.typ1 = t.typ2; t.val1 = t.val2; }
                         t.typ2 = undefined; t.val2 = (nm === 1) ? undefined : nm;
                     }
-                    else if ((t.typ1 === 'num' && t.val1 === 0) || (t.typ2 === 'num' && t.val2 === 0)) {
+                    else if ((t.typ1 === 'num' && t.val1 === 0) ||
+                            (t.typ2 === 'num' && t.val2 === 0)) {
                         const adr = (t.typ1 === 'num') ? t.val2 : t.val1,
                               typ = (t.typ1 === 'num') ? t.typ2 : t.typ1;
                         triples.splice(i, 1);  // remove +0 triplet
@@ -242,18 +248,30 @@ function IL() {
     },
     dedupe = () => {
         let result = false;
-        for (let i = 0; i < triples.length; i++) {                    // all triples
-            const t1 = triples[i];                                    // current
-            if (t1.oper === 'asg') continue;                          // skip assignments
-      loop: for (let j = i + 1; j < triples.length; j++) {            // find duplicate after current
-                const t2 = triples[j];                                // candidate
+        for (let i = 0; i < triples.length; i++) {         // all triples
+            const t1 = triples[i];                         // current
+            if (t1.oper === 'asg') continue;               // skip assignments
+      loop: for (let j = i + 1; j < triples.length; j++) { // find duplicate after current
+                const t2 = triples[j];                     // candidate
                 if (t1.typ1 === t2.typ1 && t1.val1 === t2.val1 &&
                         t1.oper === t2.oper &&
                         t1.typ2 === t2.typ2 && t1.val2 === t2.val2) {
-                    triples.splice(j, 1); result = true;              // remove duplicate
-                    for (let k = j, n = triples.length; k < n; k++) { // replace removed with current
+                    const cand = triples[j];               // check for re-assignment
+                    let vr = null;
+                    if (cand.typ1 === 'var') vr = cand.val1;
+                    else if (cand.typ2 === 'var') vr = cand.val2;
+                    if (vr !== null) {                     // variable in expression
+                        let asg = false;
+                        for (let k = i + 1; k < j; k++)
+                            if (triples[k].oper === 'asg' && triples[k].val1 === vr) {
+                                asg = true; break;         // variable changed
+                            }
+                        if (asg) continue;                 // do not remove
+                    }
+                    triples.splice(j, 1); result = true;   // remove duplicate
+                    for (let k = j, n = triples.length; k < n; k++) { // repl removed with current
                         const t3 = triples[k];
-                        if (t3.adr === t2.adr) break loop;            // removed re-assigned, stop replace
+                        if (t3.adr === t2.adr) break loop; // removed re-assigned, stop replace
                         rentrp(t3, t2.adr, 'trp', t1.adr);
                     }
                 }
@@ -293,7 +311,9 @@ function IL() {
             case 'eql': case 'neq': case 'grt': case 'lst': case 'gre': case 'lse':
             case 'xor': case 'and': case 'oro':
                 o2 = stack.pop(); o1 = stack.pop();
-                if (o1[0] === 'num' && o2[0] === 'num') { o1 = o1[1]; o2 = o2[1]; calc(id); return; }
+                if (o1[0] === 'num' && o2[0] === 'num') {
+                    o1 = o1[1]; o2 = o2[1]; calc(id); return;
+                }
                 gen(id, true);
                 break;
             case 'asg':
@@ -358,40 +378,46 @@ function IL() {
 }
 
 function Codec8080() {
-    const regs = {'A': null, 'B': null, 'C': null, 'D': null, 'E': null, 'H': null, 'L': null, 'S': []},
-          acc = 'A', mem = 'HL', work = 'BCD', ref = 'M', prm = 'E',
+    const regs = {
+        'A': null, 'B': null, 'C': null, 'D': null, 'E': null, 'H': null, 'L': null, 'S': []
+    },
+    acc = 'A', mem = 'HL', work = 'BCD', ref = 'M', prm = 'E',
     pair = reg => (reg === 'B') ? 'C' : (reg === 'D') ? 'E' : 'L',
-    move = (dest, src) => { if (dest !== 'M') regs[dest] = (src === 'M') ? regs['L'].substring(1) : regs[src];
-                                                                return `        MOV  ${dest}, ${src}\n`; },
-    movi = (dest, val) => { if (dest !== 'M') regs[dest] = val; return `        MVI  ${dest}, ${val}\n`; },
-    loada = val => { regs['A'] = val;                           return `        LDA  ${val}\n`; },
+    move = (dest, src) => {
+        if (dest !== 'M') regs[dest] = (src === 'M') ? regs['L'].substring(1) : regs[src];
+                                                      return `        MOV  ${dest}, ${src}\n`; },
+    movi = (dest, val) => { if (dest !== 'M') regs[dest] = val;
+                                                      return `        MVI  ${dest}, ${val}\n`; },
+    loada = val => { regs['A'] = val;                 return `        LDA  ${val}\n`; },
     loadr = (reg, val) => { regs[reg] = `${val}_`; regs[pair(reg)] = `_${val}`;
-                                                                return `        LXI  ${reg}, ${val}\n`; },
-    savea = val =>                                                     `        STA  ${val}\n`,
-    callp = val =>                                                     `        CALL ${val}\n`,
-    invra = adr => { regs['A'] = adr;                           return '        CMA\n'; },
-    incr = (reg, adr) => { if (reg !== 'M') regs[reg] = adr;    return `        INR  ${reg}\n`; },
-    adi = (val, adr) => { regs['A'] = adr;                      return `        ADI  ${val}\n`; },
-    add = (reg, adr) => { regs['A'] = adr;                      return `        ADD  ${reg}\n`; },
-    sui = (val, adr) => { regs['A'] = adr;                      return `        SUI  ${val}\n`; },
-    sub = (reg, adr) => { regs['A'] = adr;                      return `        SUB  ${reg}\n`; },
-    xri = (val, adr) => { regs['A'] = adr;                      return `        XRI  ${val}\n`; },
-    xra = (reg, adr) => { regs['A'] = adr;                      return `        XRA  ${reg}\n`; },
-    ani = (val, adr) => { regs['A'] = adr;                      return `        ANI  ${val}\n`; },
-    ana = (reg, adr) => { regs['A'] = adr;                      return `        ANA  ${reg}\n`; },
-    ori = (val, adr) => { regs['A'] = adr;                      return `        ORI  ${val}\n`; },
-    ora = (reg, adr) => { regs['A'] = adr;                      return `        ORA  ${reg}\n`; },
-    cpi = val =>                                                       `        CPI  ${val}\n`,
-    cmp = reg =>                                                       `        CMP  ${reg}\n`,
-    ral = adr => { regs['A'] = adr;                             return '        RAL\n'; },
-    rar = adr => { regs['A'] = adr;                             return '        RAR\n'; },
-    jz = val =>                                                        `        JZ   ${val}\n`,
-    jnz = val =>                                                       `        JNZ  ${val}\n`,
-    jc = val =>                                                        `        JC   ${val}\n`,
-    jnc = val =>                                                       `        JNC  ${val}\n`,
-    decr = (reg, adr) => { if (reg !== 'M') regs[reg] = adr;    return `        DCR  ${reg}\n`; },
-    stax = reg =>                                                      `        STAX ${reg}\n`,
-    ldax = (reg, val) => { regs['A'] = val;                     return `        LDAX ${reg}\n`; },
+                                                      return `        LXI  ${reg}, ${val}\n`; },
+    savea = val =>                                           `        STA  ${val}\n`,
+    callp = val =>                                           `        CALL ${val}\n`,
+    invra = adr => { regs['A'] = adr;                 return '        CMA\n'; },
+    incr = (reg, adr) => { if (reg !== 'M') regs[reg] = adr;
+                                                      return `        INR  ${reg}\n`; },
+    adi = (val, adr) => { regs['A'] = adr;            return `        ADI  ${val}\n`; },
+    add = (reg, adr) => { regs['A'] = adr;            return `        ADD  ${reg}\n`; },
+    sui = (val, adr) => { regs['A'] = adr;            return `        SUI  ${val}\n`; },
+    sub = (reg, adr) => { regs['A'] = adr;            return `        SUB  ${reg}\n`; },
+    xri = (val, adr) => { regs['A'] = adr;            return `        XRI  ${val}\n`; },
+    xra = (reg, adr) => { regs['A'] = adr;            return `        XRA  ${reg}\n`; },
+    ani = (val, adr) => { regs['A'] = adr;            return `        ANI  ${val}\n`; },
+    ana = (reg, adr) => { regs['A'] = adr;            return `        ANA  ${reg}\n`; },
+    ori = (val, adr) => { regs['A'] = adr;            return `        ORI  ${val}\n`; },
+    ora = (reg, adr) => { regs['A'] = adr;            return `        ORA  ${reg}\n`; },
+    cpi = val =>                                             `        CPI  ${val}\n`,
+    cmp = reg =>                                             `        CMP  ${reg}\n`,
+    ral = adr => { regs['A'] = adr;                   return '        RAL\n'; },
+    rar = adr => { regs['A'] = adr;                   return '        RAR\n'; },
+    jz = val =>                                              `        JZ   ${val}\n`,
+    jnz = val =>                                             `        JNZ  ${val}\n`,
+    jc = val =>                                              `        JC   ${val}\n`,
+    jnc = val =>                                             `        JNC  ${val}\n`,
+    decr = (reg, adr) => { if (reg !== 'M') regs[reg] = adr;
+                                                      return `        DCR  ${reg}\n`; },
+    stax = reg =>                                            `        STAX ${reg}\n`,
+    ldax = (reg, val) => { regs['A'] = val;           return `        LDAX ${reg}\n`; },
     shl = `
 @SHLF:  DCR  E
         RM
@@ -412,28 +438,29 @@ function Codec8080() {
         // MOV  A, ?   match, remove if A and ? not changed
         base.phopt('MOV  A, (.)$', cnd => `MOV  ${cnd}, A`, cnd => {
             const pattern = [
-                `MOV  [A${cnd}], `, `MVI  [A${cnd}], `, 'LDA  ', 'CALL ', 'CMA', `INR  [A${cnd}]`, `DCR  [A${cnd}]`,
-                'ADI  ', 'ADD  ', 'SUI  ', 'SUB  ', 'XRI  ', 'XRA  ', 'ANI  ', 'ANA  ', 'ORI  ', 'ORA  ', 'RAL', 'RAR',
-                'LDAX '
+                `MOV  [A${cnd}], `, `MVI  [A${cnd}], `, 'LDA  ', 'CALL ', 'CMA', `INR  [A${cnd}]`,
+                `DCR  [A${cnd}]`, 'ADI  ', 'ADD  ', 'SUI  ', 'SUB  ', 'XRI  ', 'XRA  ', 'ANI  ',
+                'ANA  ', 'ORI  ', 'ORA  ', 'RAL', 'RAR', 'LDAX '
             ];
             if (cnd === 'M') pattern.push('LXI  H, ', 'INX  H', 'DCX  H', 'DAD  ', 'LHLD ');
             return pattern;
         });
         // MOV  ?, any begin
         //    ---
-        // MOV  E, ?   match if ? not M, remove if ? not changed; repl. ? at begin and ren. ? before MOV  ?, . or CALL
+        // MOV  E, ?   match if ? not M, remove if ? not changed;
+        //                   repl. ? at begin and ren. ? before MOV  ?, . or CALL
         base.phopt('MOV  E, ([^M])$', cnd => `MOV  ${cnd}, `,
                 cnd => cnd === 'A' ?
                         ['MOV  A, ', 'STA  ', 'LDA  ', 'MOV  E, ', 'ADI  ', 'LDAX '] :
                         [`MOV  ${cnd}, `, 'MOV  E, '],
                 (lines, start, i, cnd) => {
-            lines.splice(i, 1);                                                   // remove match
-            lines[start] = lines[start].replace(` ${cnd}, `, ' E, ');             // replace ? at begin
+            lines.splice(i, 1);                                        // remove match
+            lines[start] = lines[start].replace(` ${cnd}, `, ' E, ');  // replace ? at begin
             const regexp = new RegExp(` ${cnd}$`);
-            for (let k = start + 1, n = lines.length; k < n; k++) {               // scan from begin + 1 to end
+            for (let k = start + 1, n = lines.length; k < n; k++) {    // scan from begin + 1 to end
                 const line = lines[k];
-                if (line.match(`MOV  ${cnd}, |CALL `) !== null) break;            // break if reset ? | CALL
-                lines[k] = line.replace(regexp, ' E');                            // rename ?
+                if (line.match(`MOV  ${cnd}, |CALL `) !== null) break; // break if reset ? | CALL
+                lines[k] = line.replace(regexp, ' E');                 // rename ?
             }
             return true;
         });
@@ -449,15 +476,17 @@ function Codec8080() {
         );
         // MOV  A, ?       begin
         //    ---
-        // MOV  M | E, A   match, remove begin if only INR or DCR opers in --- and ? not used forward; rename A to ?
+        // MOV  M | E, A   match, remove begin if only INR or DCR opers in ---
+        //                        and ? not used forward; rename A to ?
         base.phopt('MOV  A, ([^EM])$', cnd => 'MOV  [EM], A$', cnd => ['^\(\(?!DCR  A|INR  A\).\)*$'],
                 (lines, start, i, cnd, end) => {
-            if (base.chgop(lines, [`MOV  ., ${cnd}`, `[^,]+ ${cnd}$`], end + 1, lines.length - 1, `MOV  ${cnd}, `)[0])
-                return false;                                                     // ? used forward, exit
-            lines.splice(i, 1);                                                   // remove begin
+            if (base.chgop(lines, [`MOV  ., ${cnd}`, `[^,]+ ${cnd}$`], end + 1, lines.length - 1,
+                    `MOV  ${cnd}, `)[0])
+                return false;                                          // ? used forward, exit
+            lines.splice(i, 1);                                        // remove begin
             const regexp = new RegExp(' A$');
             for (let k = i; k <= end; k++)
-                lines[k] = lines[k].replace(regexp, ` ${cnd}`);                   // rename A to ?
+                lines[k] = lines[k].replace(regexp, ` ${cnd}`);        // rename A to ?
             return true;
         }, true);
         // LXI  H, ?   begin
@@ -465,10 +494,18 @@ function Codec8080() {
         base.phopt('LXI  H, (.+)$', cnd => 'MOV  M, A', cnd => [], (lines, start, i, cnd, end) => {
             if (end !== start + 1) return false;
             if (base.chgop(lines, ['MOV  ., M', '[^,]+ M$'], end + 1, lines.length - 1,
-                    'LXI  H, |POP  H|XCHG|XTHL')[0])
-                return false;                                                     // M used forward, exit
-            lines[start] = lines[start].replace('LXI  H, ', 'STA  ');             // replace begin
-            lines.splice(end, 1);                                                 // remove match
+                    'LXI  H, |POP  H|XCHG|XTHL|INX  H|DCX  H')[0])
+                return false;                                          // M used forward, exit
+            lines[start] = lines[start].replace('LXI  H, ', 'STA  ');  // replace begin
+            lines.splice(end, 1);                                      // remove match
+            while (end < lines.length) { // replace all with STA while HL not changed
+                const tmp = lines[end];
+                if (tmp.match(
+                        /LXI  H,|POP  H|XCHG|XTHL|INX  H|DCX  H|MVI  H,|MVI  L,|MOV  H,|MOV  L,/))
+                    break;
+                if (tmp.indexOf('MOV  M, A') >= 0) lines[end] = lines[start];
+                end++;
+            }
             return true;
         }, true);
         // type 1 optimizations
@@ -477,24 +514,25 @@ function Codec8080() {
         // MOV  L, ?   match, remove begin if A and ? not changed; rename ? to A
         base.phopt('MOV  L, (.)$', cnd => `MOV  ${cnd}, A`, cnd => {
             const pattern = [
-                `MOV  [A${cnd}], `, `MVI  [A${cnd}], `, 'LDA  ', 'CALL ', 'CMA', `INR  [A${cnd}]`, `DCR  [A${cnd}]`,
-                'ADI  ', 'ADD  ', 'SUI  ', 'SUB  ', 'XRI  ', 'XRA  ', 'ANI  ', 'ANA  ', 'ORI  ', 'ORA  ', 'RAL', 'RAR',
-                'LDAX '
+                `MOV  [A${cnd}], `, `MVI  [A${cnd}], `, 'LDA  ', 'CALL ', 'CMA', `INR  [A${cnd}]`,
+                `DCR  [A${cnd}]`, 'ADI  ', 'ADD  ', 'SUI  ', 'SUB  ', 'XRI  ', 'XRA  ', 'ANI  ',
+                'ANA  ', 'ORI  ', 'ORA  ', 'RAL', 'RAR', 'LDAX '
             ];
             if (cnd === 'M') pattern.push('LXI  H, ');
             return pattern;
         }, (lines, start, i, cnd) => {
-            lines[i] = lines[i].replace(`, ${cnd}`, ', A');                       // rename ? to A
-            lines.splice(start, 1);                                               // remove begin
+            lines[i] = lines[i].replace(`, ${cnd}`, ', A');            // rename ? to A
+            lines.splice(start, 1);                                    // remove begin
             return true;
         });
         // MVI  H, 0   begin
         // SHLD        first match, remove preceding MVI  H, 0 if H not changed
         base.phopt('SHLD ', cnd => 'MVI  H, 0', cnd => [], (lines, start, i, cnd) => {
             if (i !== start + 1) return false;
-            let top, ptrn = ['MVI  H, [^0]', 'MOV  H, ', 'LXI  H, ', 'DAD  ', 'LHLD ', 'INX  H', 'DCX  H'];
-            if ((top = base.fndop(lines, start - 1, 'MVI  H, 0')) < 0 ||          // previous not found
-                    base.chgop(lines, ptrn, top + 1, start - 1)[0])               // H changed
+            let top, ptrn = ['MVI  H, [^0]', 'MOV  H, ', 'LXI  H, ', 'DAD  ', 'LHLD ', 'INX  H',
+                             'DCX  H'];
+            if ((top = base.fndop(lines, start - 1, 'MVI  H, 0')) < 0 || // previous not found
+                    base.chgop(lines, ptrn, top + 1, start - 1)[0])      // H changed
                 return false;
             lines.splice(start, 1);
             // MOV  L, ?   begin
@@ -507,14 +545,14 @@ function Codec8080() {
                 start--; cnd = mtch[1];
                 ptrn = [`MOV  L, [^${cnd}]`, 'LXI  H, ', 'DAD  ', 'LHLD ', 'INX  H', 'DCX  H'];
                 if (cnd === 'A') ptrn.push(
-                    'MOV  A, ', 'MVI  A, ', 'LDA  ', 'CALL ', 'CMA', 'INR  A', 'DCR  A', 'ADI  ', 'ADD  ',
-                    'SUI  ', 'SUB  ', 'XRI  ', 'XRA  ', 'ANI  ', 'ANA  ', 'ORI  ', 'ORA  ', 'RAL', 'RAR',
-                    'LDAX '
+                    'MOV  A, ', 'MVI  A, ', 'LDA  ', 'CALL ', 'CMA', 'INR  A', 'DCR  A', 'ADI  ',
+                    'ADD  ', 'SUI  ', 'SUB  ', 'XRI  ', 'XRA  ', 'ANI  ', 'ANA  ', 'ORI  ', 'ORA  ',
+                    'RAL', 'RAR', 'LDAX '
                 );
-                if ((top = base.fndop(lines, start - 1, `MOV  L, ${cnd}`)) < 0 || // previous not found
-                        base.chgop(lines, ptrn, top + 1, start - 1)[0])           // L or ? changed
-                    return true;                                                  // apply first match only
-                lines.splice(start, 1);                                           // apply second match
+                if ((top = base.fndop(lines, start - 1, `MOV  L, ${cnd}`)) < 0 || // prev not found
+                        base.chgop(lines, ptrn, top + 1, start - 1)[0]) // L or ? changed
+                    return true;                                        // apply first match only
+                lines.splice(start, 1);                                 // apply second match
             }
             return true;
         });
@@ -522,15 +560,16 @@ function Codec8080() {
         //    ---
         // LHLD ?      match, remove if HL not changed
         base.phopt('LHLD (.+)$', cnd => `SHLD ${cnd}`, cnd => [
-            'MVI  H, ', 'MOV  H, ', 'MOV  L, ', 'LXI  H, ', 'DAD  ', 'INX  H', 'DCX  H', 'LHLD ', 'XCHG',
-            'CALL @SUBW', 'POP  H'
+            'MVI  H, ', 'MOV  H, ', 'MOV  L, ', 'LXI  H, ', 'DAD  ', 'INX  H', 'DCX  H', 'LHLD ',
+            'XCHG', 'CALL @SUBW', 'POP  H'
         ]);
         // LXI  H, any begin
         // XCHG        match, remove and rename preceding H to D
-        base.phopt('XCHG', cnd => `LXI  H, `, cnd => ['LHLD ', 'LXI  [DH], '], (lines, start, i, cnd) => {
+        base.phopt('XCHG', cnd => `LXI  H, `, cnd => ['LHLD ', 'LXI  [DH], '],
+                (lines, start, i, cnd) => {
             if (i !== start + 1) return false;
-            lines.splice(i, 1);                                                   // remove match
-            lines[start] = lines[start].replace('LXI  H, ', 'LXI  D, ');          // rename H at begin
+            lines.splice(i, 1);                                          // remove match
+            lines[start] = lines[start].replace('LXI  H, ', 'LXI  D, '); // rename H at begin
             return true;
         });
         // LDA  ?      begin
@@ -538,56 +577,87 @@ function Codec8080() {
         // LDA  ?      match, remove if A and ? not changed
         base.phopt('LDA  (.+)$', cnd => `LDA  ${cnd}`, cnd => [
             'MOV  A, ', 'MVI  A, ', 'CALL ', 'CMA', 'INR  A', 'DCR  A',
-            'ADI  ', 'ADD  ', 'SUI  ', 'SUB  ', 'XRI  ', 'XRA  ', 'ANI  ', 'ANA  ', 'ORI  ', 'ORA  ', 'RAL', 'RAR',
-            'LDAX '
+            'ADI  ', 'ADD  ', 'SUI  ', 'SUB  ', 'XRI  ', 'XRA  ', 'ANI  ', 'ANA  ', 'ORI  ',
+            'ORA  ', 'RAL', 'RAR', 'LDAX '
         ]);
         // PUSH H      begin
         //    ---
         // POP  H      match, remove begin and match if HL not changed
         base.phopt('POP  H', cnd => 'PUSH H', cnd => [
-            'MOV  H, ', 'MOV  L, ', 'XCHG', 'LHLD ', 'POP  D', 'POP  B', 'DAD  ', 'LXI  H, ', 'INX  H', 'DCX  H'
+            'MOV  H, ', 'MOV  L, ', 'XCHG', 'LHLD ', 'POP  D', 'POP  B', 'DAD  ', 'LXI  H, ',
+            'INX  H', 'DCX  H'
         ], (lines, start, i, cnd) => {
-            lines.splice(i, 1);                                                   // remove match
-            lines.splice(start, 1);                                               // remove begin
+            lines.splice(i, 1);                                        // remove match
+            lines.splice(start, 1);                                    // remove begin
             return true;
         });
         // LXI  H, ?   begin
         //    ---
         // LXI  H, ?   match, remove match if HL not changed
         base.phopt('LXI  H, (.+)$', cnd => `LXI  H, ${cnd}`, cnd => [
-            'MOV  H, ', 'MOV  L, ', 'XCHG', 'LHLD ', 'POP  D', 'POP  B', 'DAD  ', 'LXI  H, ', 'INX  H', 'DCX  H'
+            'MOV  H, ', 'MOV  L, ', 'XCHG', 'LHLD ', 'POP  D', 'POP  B', 'DAD  ', 'LXI  H, ',
+            'INX  H', 'DCX  H'
         ]);
         // MOV  A, M   |- begin
         // MOV  L, A   |
         //    ---
         // SHLD ?      match, replace begin with 'MOV  L, M' if A not used
         base.phopt('SHLD ', cnd => 'MOV  A, M', cnd => [
-            'MOV  ., A, ', 'CMA', 'INR  A', 'DCR  A', 'ADI  ', 'ADD  ', 'SUI  ', 'SUB  ',
+            'MOV  [^L], A', 'CMA', 'INR  A', 'DCR  A', 'ADI  ', 'ADD  ', 'SUI  ', 'SUB  ',
             'XRI  ', 'XRA  ', 'ANI  ', 'ANA  ', 'ORI  ', 'ORA  ', 'RAL', 'RAR'
         ], (lines, start, i, cnd) => {
             if (lines[start + 1].indexOf('MOV  L, A') >= 0) {
-                lines[start + 1] = lines[start + 1].replace(', A', ', M');        // replace
-                lines.splice(start, 1);                                           // remove begin
+                lines[start + 1] = lines[start + 1].replace(', A', ', M'); // replace
+                lines.splice(start, 1);                                    // remove begin
                 return true;
             }
-            return false;                                                         // no match
+            return false;                                                  // no match
+        });
+        // SHLD var1    begin
+        // LXI  H, var2     replace with MVI|MOV  A, ?
+        // MVI|MOV  M, ?    replace with STA  var2
+        // LHLD var1    match, replace byte var loading using A if A not used
+        //                     and remove match
+        base.phopt('LHLD (.+)$', cnd => `SHLD ${cnd}`, cnd => [
+            '^(?!.*?(?:LXI  H,|MVI  M,|MOV  M,)).*$'
+        ], (lines, start, i, cnd) => {
+            if (i !== start + 3) return false;
+            const l1 = lines[start + 1], l2 = lines[start + 2];
+            if (l1.match(/LXI  H,/) && l2.match(/MVI  M,|MOV  M,/)) {
+                if (base.chgop(lines, ['MOV  ., A', 'CMA', 'INR  A', 'DCR  A', 'ADI  ',
+                        'ADD  ', 'SUI  ', 'SUB  ', 'XRI  ', 'XRA  ', 'ANI  ', 'ANA  ',
+                        'ORI  ', 'ORA  ', 'RAL', 'RAR', 'STA  '], i + 1, lines.length - 1,
+                        'MVI  A,|MOV  A,|LDA  ')[0])
+                    return false;                                      // A used
+                lines[start + 1] = l2.replace(' M,', ' A,');           // replace first
+                lines[start + 2] = l1.replace('LXI  H,', 'STA ');      // replace second
+                lines.splice(i, 1);                                    // remove match
+                return true;
+            }
+            return false;                                              // no match
         });
     },
-          accW = 'HL', workW = 'DE', savW = 'S', secW = 'BC',
-    addW = (reg, adr) => { regs['H'] = `${adr}_`; regs['L'] = `_${adr}`;        return `        DAD  ${reg}\n`; },
-    incrW = (reg, adr) => { regs[reg] = `${adr}_`; regs[pair(reg)] = `_${adr}`; return `        INX  ${reg}\n`; },
-    decrW = (reg, adr) => { regs[reg] = `${adr}_`; regs[pair(reg)] = `_${adr}`; return `        DCX  ${reg}\n`; },
-    loadaW = val => { regs['H'] = `${val}_`; regs['L'] = `_${val}`;             return `        LHLD ${val}\n`; },
-    saveaW = val =>                                                                    `        SHLD ${val}\n`,
+    accW = 'HL', workW = 'DE', savW = 'S', secW = 'BC',
+    addW = (reg, adr) => { regs['H'] = `${adr}_`; regs['L'] = `_${adr}`;
+                                                      return `        DAD  ${reg}\n`; },
+    incrW = (reg, adr) => { regs[reg] = `${adr}_`; regs[pair(reg)] = `_${adr}`;
+                                                      return `        INX  ${reg}\n`; },
+    decrW = (reg, adr) => { regs[reg] = `${adr}_`; regs[pair(reg)] = `_${adr}`;
+                                                      return `        DCX  ${reg}\n`; },
+    loadaW = val => { regs['H'] = `${val}_`; regs['L'] = `_${val}`;
+                                                      return `        LHLD ${val}\n`; },
+    saveaW = val =>                                          `        SHLD ${val}\n`,
     swapW = () => { const h = regs['H'], l = regs['L']; regs['H'] = regs['D']; regs['L'] = regs['E'];
-        regs['D'] = h; regs['E'] = l;                                           return '        XCHG\n'; },
-    saveW = () => { regs['S'].push(`${regs['H']}|${regs['L']}`);                return '        PUSH H\n'; },
+        regs['D'] = h; regs['E'] = l;                 return '        XCHG\n'; },
+    saveW = () => { regs['S'].push(`${regs['H']}|${regs['L']}`);
+                                                      return '        PUSH H\n'; },
     restW = reg => { const s = regs['S'].pop().split('|'); regs[reg] = s[0]; regs[pair(reg)] = s[1];
-                                                                                return `        POP  ${reg}\n`; },
-    saveWr = reg => { regs['S'].push(`${regs[reg]}|${regs[pair(reg)]}`);        return `        PUSH ${reg}\n`; },
+                                                      return `        POP  ${reg}\n`; },
+    saveWr = reg => { regs['S'].push(`${regs[reg]}|${regs[pair(reg)]}`);
+                                                      return `        PUSH ${reg}\n`; },
     swapS = () => { const i = regs['S'].length - 1, s = regs['S'][i].split('|');
         regs['S'][i] = `${regs['H']}|${regs['L']}`;
-        regs['H'] = s[0]; regs['L'] = s[1];                                     return '        XTHL\n'; },
+        regs['H'] = s[0]; regs['L'] = s[1];           return '        XTHL\n'; },
     subW = `
 @SUBW:  MOV  A, L
         SUB  E
@@ -597,10 +667,10 @@ function Codec8080() {
         MOV  H, A
         RET`;
     return {
-        regs, acc, mem, work, ref, prm, move, movi, loada, loadr, savea, callp, invra, incr, adi, add,
-        sui, sub, xri, xra, ani, ana, ori, ora, cpi, cmp, ral, rar, jz, jnz, jc, jnc, decr, stax, shl, shr,
-        peephole, pair,
-        accW, workW, savW, addW, incrW, decrW, loadaW, saveaW, swapW, saveW, restW, saveWr, subW, swapS,
+        regs, acc, mem, work, ref, prm, move, movi, loada, loadr, savea, callp, invra, incr, adi,
+        add, sui, sub, xri, xra, ani, ana, ori, ora, cpi, cmp, ral, rar, jz, jnz, jc, jnc, decr,
+        stax, shl, shr, peephole, pair, accW, workW, savW, addW, incrW, decrW, loadaW, saveaW, swapW,
+        saveW, restW, saveWr, subW, swapS,
         lib: ['@SHLF', shl, '@SHRF', shr, '@SUBW', subW]
     };
 }
@@ -612,17 +682,17 @@ function showTrp(trp) {
 }
 
 function CodeGen(codec) {
-    let triples,                                               // 3-address code
-        vars,                                                  // variables - var: typ=0|1, dim=num, val=null|ini
-        code;                                                  // generated assembly
-    const regs = codec.regs,                                   // regs - reg: var|num|:trp
-    fndop = (lines, start, s) => {                             // find operation before current
+    let triples,                               // 3-address code
+        vars,                                  // variables - var: typ=0|1, dim=num, val=null|ini
+        code;                                  // generated assembly
+    const regs = codec.regs,                   // regs - reg: var|num|:trp
+    fndop = (lines, start, s) => {             // find operation before current
         for (let i = start; i >= 0; i--)
             if (lines[i].match(s) !== null) return i;
         return -1;
     },
-    chgop = (lines, pattern, start, end, br = null) => {       // check if register changed
-        if (br !== null) br = br.split('|');                   // allow multiple brake patterns
+    chgop = (lines, pattern, start, end, br = null) => { // check if register changed
+        if (br !== null) br = br.split('|');             // allow multiple brake patterns
         const chkbr = s => {
             for (let i = 0, n = br.length; i < n; i++)
                 if (s.match(br[i]) !== null) return true;
@@ -637,7 +707,7 @@ function CodeGen(codec) {
         }
         return [false, i];
     },
-    phopt = (match, begin, ptrn, fnc = null, fw = false) => {  // peephole register optimization
+    phopt = (match, begin, ptrn, fnc = null, fw = false) => { // peephole register optimization
         const lines = code.split('\n');
         let i = 0, changed = false;
         while (i < lines.length) {
@@ -659,7 +729,7 @@ function CodeGen(codec) {
                         if (fnc === null) {
                             lines.splice(i, 1);
                             changed = true; continue;
-                        }                                      // fnc(lines, begin (fw:match), match, reg, fw:begin)
+                        }     // fnc(lines, begin (fw:match), match, reg, fw:begin)
                         else if (fnc(lines, st - 1, i, cnd, lid)) {
                             changed = true; continue;
                         }
@@ -677,7 +747,8 @@ function CodeGen(codec) {
     getW = (hi, lo) => {                                       // get word from register pair values
         if (hi === 0 && lo !== null)                           // expanded byte 0 _lo|lo value
             return (valtype(lo) === 'num') ? lo | 0 : lo.startsWith('_') ? lo.substring(1) : lo;
-        if (hi === null || hi.endsWith === undefined || lo === null || lo.startsWith === undefined) return null;
+        if (hi === null || hi.endsWith === undefined || lo === null || lo.startsWith === undefined)
+            return null;
         if (hi.endsWith('_')) {                                // hi_ _lo value
             if (!lo.startsWith('_')) return null;
             hi = hi.substring(0, hi.length - 1); lo = lo.substring(1);
@@ -697,7 +768,7 @@ function CodeGen(codec) {
             let rval = regs[r];
             if (r === codec.savW)                              // stack value is array
                 rval = (rval.length > 0) ? rval[rval.length - 1] : null;
-            if (varval && rval !== null && valtype(rval) === 'trp') { // try to substitute trp with var
+            if (varval && rval !== null && valtype(rval) === 'trp') { // try to subst trp with var
                 if (rval.indexOf('|') > 0) rval = getW(...rval.split('|'));
                 else if (rval.endsWith('_')) rval = rval.substring(0, rval.length - 1);
                 else if (rval.startsWith('_')) rval = rval.substring(1);
@@ -709,13 +780,15 @@ function CodeGen(codec) {
             }
             if (rval === val) lc += r;                         // exact match
             else if (typ === 0) {                              // byte operation
-                if (r === codec.mem.charAt(0) && rval === `${val}_` && regs[codec.mem.charAt(1)] === `_${val}`)
+                if (r === codec.mem.charAt(0) && rval === `${val}_` &&
+                        regs[codec.mem.charAt(1)] === `_${val}`)
                     lc += codec.ref;                           // memory reference
                 else if (r === codec.workW.charAt(0) && rval === `${val}_` &&
                         regs[codec.workW.charAt(1)] === `_${val}`)
                     lc += codec.workW.charAt(1);               // low byte of working register
             }
-            else if (rval === `${val}_` || rval === `_${val}` || rval === `${val}_|_${val}`) lc += r;
+            else if (rval === `${val}_` || rval === `_${val}` || rval === `${val}_|_${val}`)
+                lc += r;
         }
         if (typ === 1 && lc.length > 0) {                      // word operation, check values
             // L - byte, H - 0 => HL - extended byte
@@ -743,38 +816,39 @@ function CodeGen(codec) {
             beforeAsg = 2;                                     // check before re-assignment
         let idx = fndtrp(adr), cnt = 0;
         const n = triples.length;
-        idx += start;                                          // starting from next triplet by default
+        idx += start;                                       // starting from next triplet by default
         while (idx < n) {
             const t = triples[idx++];
-            if (beforeAsg === 1 && t.oper === 'asg') break;    // check only current assignment
-            if (beforeAsg === 2 && t.oper === 'asg' && t.val1 === val) break; // check before val assignment
+            if (beforeAsg === 1 && t.oper === 'asg') break; // check only current assignment
+            if (beforeAsg === 2 && t.oper === 'asg' && t.val1 === val)
+                break; // check before val assignment
             if ((fnc(t) && t.val1 === val) || (sec && t.val2 === val)) cnt++;
         }
         return cnt;
     },
-    rgwork = (adr, rgs) => {                                   // get best secondary register for byte opers
+    rgwork = (adr, rgs) => {                        // get best secondary register for byte opers
         const mv = getW(regs[codec.mem.charAt(0)], regs[codec.mem.charAt(1)]); // possibly var ref
         let res = null;
         for (let i = 0, n = rgs.length; i < n; i++) {
             const name = rgs.charAt(i), rg = regs[name];
-            if (rg === null) return name;                      // free
+            if (rg === null) return name;           // free
             let usg = used(adr, rg);
-            if (usg === 0) return name;                        // not used
+            if (usg === 0) return name;             // not used
             const typ = valtype(rg);
-            if (typ === 'trp') continue;                       // triplet must be saved
-            if (typ === 'var')                                 // prefer to keep variables
-                usg += (rg === mv) ? 500 : 1000;               // lower priority if ref loaded
+            if (typ === 'trp') continue;            // triplet must be saved
+            if (typ === 'var')                      // prefer to keep variables
+                usg += (rg === mv) ? 500 : 1000;    // lower priority if ref loaded
             if (res === null) res = [name, usg];
             else if (res[1] > usg) { res[0] = name; res[1] = usg; }
         }
         if (res === null) throw new Error(`no working registers at ${adr}`);
         return res[0];
     },
-    save = (adr, start) => {                                   // save accumulator (start - for usage check)
+    save = (adr, start) => {                        // save accumulator (start - for usage check)
         const acc = regs[codec.acc];
         let lc;
-        if (acc !== null && used(adr, acc, start) > 0 && (lc = loc(0, acc)) &&  // acc used and
-                lc.replace(codec.savW, '').replace(codec.ref, '').length < 2)   // not in work regs
+        if (acc !== null && used(adr, acc, start) > 0 && (lc = loc(0, acc)) && // acc used and
+                lc.replace(codec.savW, '').replace(codec.ref, '').length < 2)  // not in work regs
             code += codec.move(rgwork(adr, codec.work), codec.acc);
     },
     inreg = (lc, reg) => lc !== null && lc.indexOf(reg) >= 0,  // check if reg in location
@@ -783,24 +857,24 @@ function CodeGen(codec) {
         trp.typ1 = trp.typ2; trp.val1 = trp.val2;
         trp.typ2 = typ; trp.val2 = val;
     },
-    load1 = (trp, canswap, start = 1) => {                     // load primary operand
+    load1 = (trp, canswap, start = 1) => {                 // load primary operand
         const lc = loc(0, trp.val1);
-        if (inreg(lc, codec.acc)) return false;                // already loaded
+        if (inreg(lc, codec.acc)) return false;            // already loaded
         if (canswap && trp.typ2 !== null && inreg(loc(0, trp.val2), codec.acc)) {
-            swap(trp); return true;                            // swappable and secondary already loaded
+            swap(trp); return true;                        // swappable and secondary already loaded
         }
-        save(trp.adr, start);                                  // save accumulator if needed
-        if (lc !== null)                                       // load from reg
+        save(trp.adr, start);                              // save accumulator if needed
+        if (lc !== null)                                   // load from reg
             code += codec.move(codec.acc, lc.charAt(0));
         else switch (trp.typ1) {
-            case 'num':                                        // load immediate
+            case 'num':                                    // load immediate
                 code += codec.movi(codec.acc, trp.val1);
                 break;
-            case 'var':                                        // load var
+            case 'var':                                    // load var
                 code += codec.loada(trp.val1);
-                if (used(trp.adr, trp.val1) > 0) {             // used forward
-                    const wr = rgwork(trp.adr, codec.work);    // get working register
-                    code += codec.move(wr, codec.acc);         // save
+                if (used(trp.adr, trp.val1) > 0) {         // used forward
+                    const wr = rgwork(trp.adr, codec.work); // get working register
+                    code += codec.move(wr, codec.acc);     // save
                 }
                 break;
             default: throw new Error(`unknown operand type: ${trp.typ1} at ${trp.adr}`);
@@ -816,7 +890,7 @@ function CodeGen(codec) {
             }
             return lc.charAt(0);
         }
-        lc = (reg === null) ? rgwork(trp.adr, codec.work) : reg; // get working register if not provided
+        lc = (reg === null) ? rgwork(trp.adr, codec.work) : reg; // get work register if not spec.
         switch (trp.typ2) {
             case 'num':                                        // load immediate
                 code += codec.movi(lc, trp.val2);
@@ -829,8 +903,8 @@ function CodeGen(codec) {
                     save(trp.adr, 2);                          // save if used forward
                 } else {
                     let mem = regs[codec.mem.charAt(0)];
-                    if (mem !== null && mem.toString().endsWith('_') && mem.charAt(0) > '9') { // mem is var ref hi
-                        // save previous mem variable
+                    if (mem !== null && mem.toString().endsWith('_') && mem.charAt(0) > '9') {
+                        // mem is var ref hi, save previous mem variable
                         mem = mem.substring(0, mem.length - 1);
                         if (used(trp.adr, mem) > 0) {          // if used forward
                             if (reg !== null) lc = rgwork(trp.adr, codec.work);
@@ -862,12 +936,12 @@ function CodeGen(codec) {
         triples = trpls; vars = vrs; code = '';
         for (const r in regs) regs[r] = (r === codec.savW) ? [] : null; // clear registers
         for (let i = 0, n = triples.length; i < n; i++) {
-            const prevXTHL = code.endsWith('XTHL\n'),          // check if prev triplet generated XTHL
+            const prevXTHL = code.endsWith('XTHL\n'),        // check if prev triplet generated XTHL
                   trp = triples[i];
             if (!optimize && showtrp) code += `;;; ${showTrp(trp)}`;
-            if (trp.typ !== 0) { generateW(trp); continue; }   // type 1 generation
-            switch (trp.oper) {                                // type 0 generation
-                case 'inv': case 'inc': case 'dec':            // unary operations
+            if (trp.typ !== 0) { generateW(trp); continue; } // type 1 generation
+            switch (trp.oper) {                              // type 0 generation
+                case 'inv': case 'inc': case 'dec':          // unary operations
                     load1(trp, false);
                     switch (trp.oper) {
                         case 'inv': code += codec.invra(trp.adr); break;
@@ -923,46 +997,46 @@ function CodeGen(codec) {
                         code += codec.xra(codec.acc, trp.adr);
                     }
                     break;
-                case 'shl': case 'shr':                        // binary operations
+                case 'shl': case 'shr':                  // binary operations
                     if (trp.typ2 === 'num' && trp.val2 === 1) {
-                        load1(trp, false, 0);                  // 0 - start checking from current triplet
+                        load1(trp, false, 0);            // 0 - start checking from current triplet
                         code += codec.ora(codec.acc, trp.adr); // shift 1 optimization
                         const shlr = (trp.oper === 'shl') ? codec.ral : codec.rar;
                         code += shlr(trp.adr);
                         break;
                     }
-                    load2(trp, codec.prm);                     // load second oper first to primary register
-                    load1(trp, false, 0);                      // 0 - start checking from current triplet
+                    load2(trp, codec.prm);               // load second oper first to primary reg
+                    load1(trp, false, 0);                // 0 - start checking from current triplet
                     code += codec.callp((trp.oper === 'shl') ? '@SHLF' : '@SHRF');
-                    regs[codec.prm] = null;                    // set primary register dirty
-                    regs[codec.acc] = trp.adr;                 // set acc to result
+                    regs[codec.prm] = null;              // set primary register dirty
+                    regs[codec.acc] = trp.adr;           // set acc to result
                     break;
-                case 'asg':                                    // assignment
-                    if (trp.typ1 !== 'var' || trp.ref) {       // indexed variable or de-reference
-                        saveW(trp.adr);                        // save word acc and load LHS
+                case 'asg':                              // assignment
+                    if (trp.typ1 !== 'var' || trp.ref) { // indexed variable or de-reference
+                        saveW(trp.adr);                  // save word acc and load LHS
                         loadW(trp, true, codec.accW, loc(1, trp.val1));
-                        if (trp.ref) {                         // de-reference
-                            if (trp.typ1 === 'trp' &&                               // check if de-referenced
-                                    triples[fndtrp(trp.val1)].adrOnly) {            // no, de-reference
-                                const reg = rgwork(trp.adr, codec.work);            // get temp reg
-                                code += codec.move(reg, codec.ref);                 // result lo
+                        if (trp.ref) {                   // de-reference
+                            if (trp.typ1 === 'trp' &&    // check if de-referenced
+                                    triples[fndtrp(trp.val1)].adrOnly) { // no, de-reference
+                                const reg = rgwork(trp.adr, codec.work); // get temp reg
+                                code += codec.move(reg, codec.ref);      // result lo
                                 code += codec.incrW(codec.mem.charAt(0), trp.adr);
                                 code += codec.move(codec.mem.charAt(0), codec.ref); // result hi
-                                code += codec.move(codec.accW.charAt(1), reg);      // word result in accW
+                                code += codec.move(codec.accW.charAt(1), reg); // word result in accW
                             }
-                            if (trp.typ2 === 'num') {          // check num type and load
+                            if (trp.typ2 === 'num') {    // check num type and load
                                 if (trp.val2 < -128 || trp.val2 > 255)
                                     throw new Error(`illegal assignment: ${trp.val2} at ${trp.adr}`);
                                 code += codec.movi(codec.ref, trp.val2);
                                 break;
                             }
-                            if (trp.typ2 === 'var') {          // check var and trp types
+                            if (trp.typ2 === 'var') {    // check var and trp types
                                 if (vars[trp.val2].typ !== 0)
                                     throw new Error(`illegal assignment: ${trp.val2} at ${trp.adr}`);
                             }
                             else if (triples[fndtrp(trp.val2)].typ !== 0)
                                 throw new Error(`illegal assignment: ${trp.val2} at ${trp.adr}`);
-                        }                                      // load RHS as 1st oper to avoid word acc usage
+                        }                        // load RHS as 1st oper to avoid word acc usage
                         load1({'adr': trp.adr, 'typ1': trp.typ2, 'val1': trp.val2, 'typ': 0}, false);
                         code += codec.move(codec.ref, codec.acc); // do assignment
                         break;
@@ -980,17 +1054,18 @@ function CodeGen(codec) {
                             if (trp.typ2 === 'var') dest = load2(trp);
                             code += codec.move(codec.ref, dest);
                             if (dest === codec.acc)
-                                regs[codec.acc] = trp.val1;    // set acc to result
+                                regs[codec.acc] = trp.val1; // set acc to result
                         }
                     else {
-                        if (trp.typ2 === 'var')                // load as first oper using temp triplet
-                            load1({'adr': trp.adr, 'typ1': 'var', 'val1': trp.val2, 'typ': 0}, false);
+                        if (trp.typ2 === 'var')     // load as first oper using temp triplet
+                            load1({'adr': trp.adr, 'typ1': 'var', 'val1': trp.val2, 'typ': 0},
+                                    false);
                         code += codec.savea(trp.val1);
-                        regs[codec.acc] = trp.val1;            // set acc to result
+                        regs[codec.acc] = trp.val1; // set acc to result
                     }
                     break;
-                case 'idx':                                    // array access
-                    saveW(trp.adr);                            // save accW if needed
+                case 'idx':                         // array access
+                    saveW(trp.adr);                 // save accW if needed
                     const iwr = codec.workW.charAt(0);
                     let usedW;
                     if (regs[codec.mem.charAt(0)] !== `${trp.val1}_`)
@@ -1014,16 +1089,16 @@ function CodeGen(codec) {
                     } else {
                         code += codec.move(codec.acc, codec.ref);
                         if (used(trp.adr, trp.adr, 2, 0, t => t.oper === 'asg', false))
-                            saveW(trp.adr, true);              // save if indexed address used later in asg
+                            saveW(trp.adr, true);     // save if indexed address used later in asg
                     }
                     break;
-                case 'ref':                                    // de-reference
-                    saveW(trp.adr);                            // save accW if needed
+                case 'ref':                           // de-reference
+                    saveW(trp.adr);                   // save accW if needed
                     let optype;
                     if (trp.typ1 === 'var') optype = vars[trp.val1].typ;
                     else if (trp.typ1 === 'num') optype = 1;
                     else optype = triples[fndtrp(trp.val1)].typ;
-                    if (optype === 0) {                        // byte value, expand to word
+                    if (optype === 0) {               // byte value, expand to word
                         load1(trp, false);
                         code += codec.move(codec.accW.charAt(1), codec.acc);
                         if (regs[codec.accW.charAt(0)] !== 0)
@@ -1031,37 +1106,37 @@ function CodeGen(codec) {
                     }
                     else loadW(trp, true, codec.accW, loc(1, trp.val1));
                     code += codec.move(codec.acc, codec.ref);
-                    regs[codec.acc] = trp.adr;                 // set result
+                    regs[codec.acc] = trp.adr;        // set result
                     break;
                 default: throw new Error(`illegal operation: ${trp.oper} at ${trp.adr}`);
             }
-            save(trp.adr, 2);                                  // save result if used after next triplet
+            save(trp.adr, 2);                         // save result if used after next triplet
         }
         if (optimize) {
-            codec.peephole({fndop, chgop, phopt});             // peephole optimization
-            codec.peephole({fndop, chgop, phopt});             // process changed code again
+            codec.peephole({fndop, chgop, phopt});    // peephole optimization
+            codec.peephole({fndop, chgop, phopt});    // process changed code again
         }
-        const lines = code.split('\n');                        // check stack balance
+        const lines = code.split('\n');               // check stack balance
         for (let i = lines.length - 1, count = 0; i >= 0; i--) {
             const line = lines[i];
             if (line.indexOf('POP ') >= 0) count--;
             else if (line.indexOf('PUSH ') >= 0) {
                 count++;
-                if (count > 0) {                               // remove last unused PUSH
-                    regs[codec.savW].pop();                    // remove from stack
-                    lines.splice(i, 1);                        // remove from code
+                if (count > 0) {                      // remove last unused PUSH
+                    regs[codec.savW].pop();           // remove from stack
+                    lines.splice(i, 1);               // remove from code
                     code = lines.join('\n');
                     break;
                 }
             }
         }
-        if (regs[codec.savW].length > 0)                       // non empty stack, generation failed
+        if (regs[codec.savW].length > 0)              // non empty stack, generation failed
             throw new Error(`code generation error: invalid stack\n${code}`);
         return code;
     },
-    saveW = (adr, force = false) => {                          // push word acc
+    saveW = (adr, force = false) => {                 // push word acc
         let w;
-        if (!force) {                                          // check usage counter
+        if (!force) {                                 // check usage counter
             w = getW(regs[codec.accW.charAt(0)], regs[codec.accW.charAt(1)]);
             if (w === null ||                                      // not set
                     (valtype(w) === 'var' && vars[w].typ === 0) || // byte variable
@@ -1070,11 +1145,11 @@ function CodeGen(codec) {
         }
         let s = regs[codec.savW];
         s = (s.length > 0) ? s[s.length - 1] : null;
-        if (s !== null) {                                      // stack is already used
-            if (!force && used(adr, w, 2, 1) === 0)            // don't save if used only in next triple of this asg
+        if (s !== null) {                           // stack is already used
+            if (!force && used(adr, w, 2, 1) === 0) // don't save if used only in next triple of asg
                 return false;
             if (getW(...s.split('|')) === triples[fndtrp(adr) + 1].val1) {
-                code += codec.swapS();                         // stack used in next triplet val1, exchange
+                code += codec.swapS();              // stack used in next triplet val1, exchange
                 return false;
             }
             throw new Error(`can't save word acc value at: ${adr}`);
@@ -1082,18 +1157,18 @@ function CodeGen(codec) {
         code += codec.saveW();                                 // save word acc
         return true;
     },
-    restW = (adr, reg, check = false) => {                     // pop from stack, check - check usage
-        if (reg === codec.accW) {                              // word acc target
+    restW = (adr, reg, check = false) => {           // pop from stack, check - check usage
+        if (reg === codec.accW) {                    // word acc target
             const hl = getW(regs[reg.charAt(0)], regs[reg.charAt(1)]);
             if (hl !== null && valtype(hl) === 'trp' && used(adr, hl, 1, 0, t => true) > 0)
-                code += codec.swapS();                         // current word acc used, save to work reg
-            else code += codec.restW(reg.charAt(0));           // restore to word acc
+                code += codec.swapS();               // current word acc used, save to work reg
+            else code += codec.restW(reg.charAt(0)); // restore to word acc
         }
-        else code += codec.restW(reg.charAt(0));               // restore to reg
-        if (check) {                                           // if check and used forward
+        else code += codec.restW(reg.charAt(0));     // restore to reg
+        if (check) {                                 // if check and used forward
             const w = getW(regs[reg.charAt(0)], regs[reg.charAt(1)]);
             if (w !== null && used(adr, w, 1, 0, t => true) > 0)
-                code += codec.saveWr(reg.charAt(0));           // leave on stack
+                code += codec.saveWr(reg.charAt(0)); // leave on stack
         }
     },
     accWVar = (adr, val) => {                                  // find triplet of byte var in accW
@@ -1103,12 +1178,12 @@ function CodeGen(codec) {
         for (let i = fndtrp(adr) - 1; i >= 0; i--) {           // find last val assignment
             const tt = triples[i];
             if (tt.oper === 'asg' && tt.val1 === val && tt.val2 === rv)
-                return true;                                   // found with assigned triplet from accW_lo
+                return true;                          // found with assigned triplet from accW_lo
         }
-        return false;                                          // not found
+        return false;                                 // not found
     },
-    loadW = (trp, first, reg, lc = null) => {                  // load word operand
-        if (inreg(lc, reg)) return false;                      // already in place
+    loadW = (trp, first, reg, lc = null) => {         // load word operand
+        if (inreg(lc, reg)) return false;             // already in place
         const typ = first ? trp.typ1 : trp.typ2, val = first ? trp.val1 : trp.val2;
         let swap = false;
         switch (typ) {
@@ -1137,7 +1212,8 @@ function CodeGen(codec) {
                     code += codec.swapW();                     // in working regs, swap
                 else if (inreg(lc, codec.savW))                // saved
                     restW(trp.adr, reg, true);                 // restore
-                else if (lc === null) throw new Error(`too complex expression: ${val} at ${trp.adr}`);
+                else if (lc === null)
+                    throw new Error(`too complex expression: ${val} at ${trp.adr}`);
                 else {                                         // type 0 result
                     code += codec.move(reg.charAt(1), lc.charAt(0));
                     if (regs[reg.charAt(0)] !== 0)
@@ -1148,13 +1224,13 @@ function CodeGen(codec) {
         }
         return swap;
     },
-    var0fromAddr = (val, acc) => {                             // load byte var from address in reg pair
+    var0fromAddr = (val, acc) => {                         // load byte var from address in reg pair
         if (valtype(val) === 'var' && vars[val].typ === 0)
-            if (acc && regs[codec.accW.charAt(0)] !== 0) {     // not loaded
+            if (acc && regs[codec.accW.charAt(0)] !== 0) { // not loaded
                 code += codec.move(codec.accW.charAt(1), codec.ref);
                 code += codec.movi(codec.accW.charAt(0), 0);
             }
-            else if (regs[codec.workW.charAt(0)] !== 0) {      // not loaded
+            else if (regs[codec.workW.charAt(0)] !== 0) {  // not loaded
                 code += codec.ldax(codec.workW.charAt(0), val);
                 code += codec.move(codec.workW.charAt(1), codec.acc);
                 code += codec.movi(codec.workW.charAt(0), 0);
@@ -1177,28 +1253,35 @@ function CodeGen(codec) {
                     b1 = inreg(o2lc, codec.workW) ? 1 : inreg(o2lc, codec.accW) ? -1 : 0,
                     b2 = (b0 < 0 || b1 < 0) ? 1 : 0,
                     swap = false, rg = codec.workW.charAt(0);
-                if (b0 === 1) var0fromAddr(trp.val1, true);    // load in place if byte var addr in acc or work regs
+                if (b0 === 1) // load in place if byte var addr in acc or work regs
+                    var0fromAddr(trp.val1, true);
                 else if (b0 === -1) var0fromAddr(trp.val1, false);
-                if (b1 === 1) var0fromAddr(trp.val2, false);   // load in place if byte var addr in work or acc regs
+                if (b1 === 1) // load in place if byte var addr in work or acc regs
+                    var0fromAddr(trp.val2, false);
                 else if (b1 === -1) var0fromAddr(trp.val2, true);
                 if (b0 < 0 && b1 < 0) { b0 = 0; b1 = 0; }      // calculate oper code
-                else if (b0 === 1 && b1 !== 0 && inreg(o1lc, codec.workW)) { b2 = 1; b1 = 1; b0 = 1; }
+                else if (b0 === 1 && b1 !== 0 && inreg(o1lc, codec.workW)) {
+                    b2 = 1; b1 = 1; b0 = 1;
+                }
                 else { if (b0 < 0) b0 = 1; if (b1 < 0) b1 = 1; }
                 switch (b2 << 2 | b1 << 1 | b0) {              // possible operand combinations
-                    case 0:                                                                  // none none   000
+                    case 0:                                                     // none none   000
                         loadW(trp, true, codec.accW, o1lc);    // load first
                         if (o2lc === loc(1, trp.val2))         // different second after loadW, load
                             swap = loadW(trp, false, codec.workW, o2lc);
                         else rg = codec.accW.charAt(0);        // same second, 111 case
                         break;
-                    case 1: swap = loadW(trp, false, codec.workW, o2lc); break;              // 1    none   001
-                    case 2: loadW(trp, true, codec.accW, o1lc); break;                       // none 2      010
-                    case 3: break;                                                           // 1    2      011
-                    case 4: swap = true; break;                                              // 2    1      100
-                    case 5: loadW(trp, false, codec.accW, o2lc); swap = true; break;         // none 1      101
-                    case 6: swap = loadW(trp, true, codec.workW, o1lc); swap = !swap; break; // 2    none   110
-                    default:                                                                 // 1    1      111
-                        if (inreg(o1lc, codec.workW) && inreg(o2lc, codec.workW)) // same operand in work reg
+                    case 1: swap = loadW(trp, false, codec.workW, o2lc); break; // 1    none   001
+                    case 2: loadW(trp, true, codec.accW, o1lc); break;          // none 2      010
+                    case 3: break;                                              // 1    2      011
+                    case 4: swap = true; break;                                 // 2    1      100
+                    case 5: loadW(trp, false, codec.accW, o2lc); swap = true;   // none 1      101
+                            break;
+                    case 6: swap = loadW(trp, true, codec.workW, o1lc);         // 2    none   110
+                            swap = !swap; break;
+                    default:                                                    // 1    1      111
+                        if (inreg(o1lc, codec.workW) &&
+                                inreg(o2lc, codec.workW))      // same operand in work reg
                             code += codec.swapW();             // swap working and accumulator regs
                         rg = codec.accW.charAt(0);
                         break;
@@ -1208,19 +1291,22 @@ function CodeGen(codec) {
                     case 'sub':
                         if (swap) code += codec.swapW();       // swap working and accumulator regs
                         else if (rg === codec.accW.charAt(0)) { // 111 case
-                            code += codec.move(codec.workW.charAt(1), codec.accW.charAt(1)); // copy to working reg
+                            code += codec.move(codec.workW.charAt(1),
+                                    codec.accW.charAt(1));      // copy to working reg
                             code += codec.move(codec.workW.charAt(0), codec.accW.charAt(0));
                         }
                         code += codec.callp('@SUBW');
-                        regs[codec.acc] = null;                // set 8-bit acc dirty and word acc to result
-                        regs[codec.accW.charAt(0)] = `${trp.adr}_`; regs[codec.accW.charAt(1)] = `_${trp.adr}`;
+                        regs[codec.acc] = null; // set 8-bit acc dirty and word acc to result
+                        regs[codec.accW.charAt(0)] = `${trp.adr}_`;
+                        regs[codec.accW.charAt(1)] = `_${trp.adr}`;
                         break;
                     default: throw new Error(`unknown operator: ${trp.oper} at ${trp.adr}`);
                 }
                 break;
             case 'asg':                                        // assignment
                 const ivar = (trp.typ1 !== 'var') ? triples[fndtrp(trp.val1)].val1 : trp.val1;
-                if (vars[ivar].typ !== 1) throw new Error(`illegal assignment: ${ivar} at ${trp.adr}`);
+                if (vars[ivar].typ !== 1)
+                    throw new Error(`illegal assignment: ${ivar} at ${trp.adr}`);
                 const vlc = loc(1, trp.val2);
                 if (!inreg(vlc, codec.accW)) {
                     saveW(trp.adr);                            // save accumulator if needed
@@ -1245,14 +1331,14 @@ function CodeGen(codec) {
                             break;
                         }
                     }
-                    restW(trp.adr, iwr1 + iwr2, true);         // load address to DE (shorter and faster)
+                    restW(trp.adr, iwr1 + iwr2, true); // load address to DE (shorter and faster)
                     code += codec.swapW();
                     code += codec.move(codec.ref, iwr2);
                     code += codec.incrW(codec.mem.charAt(0), trp.adr);
                     code += codec.move(codec.ref, iwr1);
                 }
                 break;
-            case 'idx':                                        // indexed variable
+            case 'idx':                                     // indexed variable
                 const iwr = codec.workW.charAt(0);
                 let usedW;
                 if (trp.typ2 === 'num' || trp.typ2 === 'var') {
@@ -1260,15 +1346,15 @@ function CodeGen(codec) {
                     if (trp.typ2 === 'var') code += codec.loadaW(trp.val2);
                     else code += codec.loadr(codec.mem.charAt(0), trp.val2);
                 }
-                if (vars[trp.val1].typ === 1)                  // word var, double offset
+                if (vars[trp.val1].typ === 1)               // word var, double offset
                     code += codec.addW(codec.mem.charAt(0), trp.adr);
                 if (usedW = isUsedWW(trp.adr)) code += codec.saveWr(iwr);
-                code += codec.swapW();                         // swap working and accumulator regs
+                code += codec.swapW();                      // swap working and accumulator regs
                 code += codec.loadr(codec.mem.charAt(0), trp.val1);
-                code += codec.addW(iwr, trp.adr);              // address of arr[i] in mem/accW
-                if (trp.adrOnly) {                             // asg to indexed var or adr operation
-                    if (usedW) restW(trp.adr, iwr);            // restore work reg if saved
-                    if (!trp.noSave) saveW(trp.adr, true);     // noSave is true for adr operation
+                code += codec.addW(iwr, trp.adr);           // address of arr[i] in mem/accW
+                if (trp.adrOnly) {                          // asg to indexed var or adr operation
+                    if (usedW) restW(trp.adr, iwr);         // restore work reg if saved
+                    if (!trp.noSave) saveW(trp.adr, true);  // noSave is true for adr operation
                 } else {
                     code += codec.move(iwr, codec.ref);                 // result lo
                     code += codec.incrW(codec.mem.charAt(0), trp.adr);
@@ -1277,12 +1363,12 @@ function CodeGen(codec) {
                     if (usedW) restW(trp.adr, iwr);
                 }
                 break;
-            case 'adr':                                        // variable address
-                saveW(trp.adr);                                // save accumulator if needed
-                if (trp.typ1 === 'var')                        // not indexed variable
+            case 'adr':                                     // variable address
+                saveW(trp.adr);                             // save accumulator if needed
+                if (trp.typ1 === 'var')                     // not indexed variable
                     code += codec.loadr(codec.mem.charAt(0), trp.val1);
                 else loadW(trp, true, codec.accW, loc(1, trp.val1));
-                regs[codec.accW.charAt(0)] = `${trp.adr}_`;    // set result
+                regs[codec.accW.charAt(0)] = `${trp.adr}_`; // set result
                 regs[codec.accW.charAt(1)] = `_${trp.adr}`;
                 break;
             default: throw new Error(`illegal operation: ${trp.oper} at ${trp.adr}`);
@@ -3294,6 +3380,99 @@ a1 = b1 + c1; a1 = a1; c1 = b1 - 1; a1 = b1;
         MOV  A, B
         STA  a1
     `, [2, 2, 1]);
+    await test(`
+byte a1 := 1, b1;
+a1 = a1 + 1;
+b1 = 2;
+a1 = a1 + 1;
+    `, `
+:0_ a1_ inc ___ 0 ____ ____ ____
+:1_ a1_ asg :0_ 0 ____ ____ ____
+:2_ b1_ asg 2__ 0 ____ ____ ____
+:3_ a1_ inc ___ 0 ____ ____ ____
+:4_ a1_ asg :3_ 0 ____ ____ ____
+    `, `
+        LDA  a1
+        INR  A
+        STA  a1
+        LXI  H, b1
+        MVI  M, 2
+        INR  A
+        STA  a1
+    `, [3, 2]);
+    await test(`
+byte a1 := 1;
+a1 = a1 + 1;
+a1 = a1 + 1;
+    `, `
+:0_ a1_ inc ___ 0 ____ ____ ____
+:1_ a1_ asg :0_ 0 ____ ____ ____
+:2_ a1_ inc ___ 0 ____ ____ ____
+:3_ a1_ asg :2_ 0 ____ ____ ____
+    `, `
+        LDA  a1
+        INR  A
+        STA  a1
+        INR  A
+        STA  a1
+    `, [3]);
+    await test(`
+word a1 := 1;
+a1 = a1 + 1;
+a1 = a1 + 1;
+    `, `
+:0_ a1_ inc ___ 1 ____ ____ ____
+:1_ a1_ asg :0_ 1 ____ ____ ____
+:2_ a1_ inc ___ 1 ____ ____ ____
+:3_ a1_ asg :2_ 1 ____ ____ ____
+    `, `
+        LHLD a1
+        INX  H
+        SHLD a1
+        INX  H
+        SHLD a1
+    `, [3, 0]);
+    await test(`
+byte a1 := 1; word b1;
+a1 = a1 + 1;
+b1 = 2;
+a1 = a1 + 1;
+    `, `
+:0_ a1_ inc ___ 0 ____ ____ ____
+:1_ a1_ asg :0_ 0 ____ ____ ____
+:2_ b1_ asg 2__ 1 ____ ____ ____
+:3_ a1_ inc ___ 0 ____ ____ ____
+:4_ a1_ asg :3_ 0 ____ ____ ____
+    `, `
+        LDA  a1
+        INR  A
+        STA  a1
+        LXI  H, 2
+        SHLD b1
+        INR  A
+        STA  a1
+    `, [3, 2, 0]);
+    await test(`
+word a1 := 1; byte b1;
+a1 = a1 + 1;
+b1 = 2;
+a1 = a1 + 1;
+    `, `
+:0_ a1_ inc ___ 1 ____ ____ ____
+:1_ a1_ asg :0_ 1 ____ ____ ____
+:2_ b1_ asg 2__ 0 ____ ____ ____
+:3_ a1_ inc ___ 1 ____ ____ ____
+:4_ a1_ asg :3_ 1 ____ ____ ____
+    `, `
+        LHLD a1
+        INX  H
+        SHLD a1
+        MVI  A, 2
+        STA  b1
+        INX  H
+        SHLD a1
+    `, [3, 0, 2]);
+    console.log('finished');
 }
 
 function compiler(frg, vars) {
@@ -3349,32 +3528,33 @@ class CPM22MemIO extends MemIO {
     }
     input(p) {
         switch (p) {
-            case 0x00: return (this.con.kbd.length > 0) ? 0xff : 0x00;                        // console status
-            case 0x01: return (this.con.kbd.length > 0) ? this.con.kbd.shift() & 0x7f : 0x00; // console data
-            case 0x02: return 0x1a;                                                           // printer status
-            case 0x04: return 0xff;                                                           // auxilary status
-            case 0x05: return 0x1a;                                                           // paper tape (aux)
-            case 0x0a: return this.drv;                                                       // fdc drive
-            case 0x0b: return this.trk;                                                       // fdc track
-            case 0x0c: return this.sec & 0x00ff;                                              // fdc sector low
-            case 0x0d: return (this.iocount === 0) ? 0xff : 0x00;                             // fdc command
-            case 0x0e: return this.dskstat;                                                   // fdc status
-            case 0x0f: return this.dma & 0x00ff;                                              // dma address low
-            case 0x10: return (this.dma & 0xff00) >>> 8;                                      // dma address high
-            case 0x11: return (this.sec & 0xff00) >>> 8;                                      // fdc sector high
+            case 0x00: return (this.con.kbd.length > 0) ? 0xff : 0x00; // console status
+            case 0x01: return (this.con.kbd.length > 0) ?              // console data
+                    this.con.kbd.shift() & 0x7f : 0x00;
+            case 0x02: return 0x1a;                                    // printer status
+            case 0x04: return 0xff;                                    // auxilary status
+            case 0x05: return 0x1a;                                    // paper tape (aux)
+            case 0x0a: return this.drv;                                // fdc drive
+            case 0x0b: return this.trk;                                // fdc track
+            case 0x0c: return this.sec & 0x00ff;                       // fdc sector low
+            case 0x0d: return (this.iocount === 0) ? 0xff : 0x00;      // fdc command
+            case 0x0e: return this.dskstat;                            // fdc status
+            case 0x0f: return this.dma & 0x00ff;                       // dma address low
+            case 0x10: return (this.dma & 0xff00) >>> 8;               // dma address high
+            case 0x11: return (this.sec & 0xff00) >>> 8;               // fdc sector high
             default: throw new Error(`unknown input port: ${fmt(p)}`);
         }
     }
     output(p, v) {
         switch (p) {
-            case 0x01:                                                                        // console data
+            case 0x01:                                                 // console data
                 v &= 0xff; this.con.display(v); this.scrcopy += String.fromCharCode(v);
                 break;
-            case 0x0a: this.drv = v & 0xff; break;                                            // fdc drive
-            case 0x0b: this.trk = v & 0xff; break;                                            // fdc track
-            case 0x0c: this.sec = (this.sec & 0xff00) | (v & 0xff); break;                    // fdc sector low
-            case 0x0d:                                                                        // fdc command
-                if (v !== 0 && v !== 1) this.dskstat = 7;                          // illegal command
+            case 0x0a: this.drv = v & 0xff; break;                     // fdc drive
+            case 0x0b: this.trk = v & 0xff; break;                     // fdc track
+            case 0x0c: this.sec = (this.sec & 0xff00) | (v & 0xff); break; // fdc sector low
+            case 0x0d:                                                 // fdc command
+                if (v !== 0 && v !== 1) this.dskstat = 7;              // illegal command
                 else {
                     this.iocount++;
                     (async () => {
@@ -3386,7 +3566,8 @@ class CPM22MemIO extends MemIO {
                                     this.update = false;
                                     dd.diskRW(this.fname, this.data);
                                 }
-                                this.dskstat = dd.transfer(this.trk, this.sec, this.dma, v === 0, this);
+                                this.dskstat = dd.transfer(this.trk, this.sec, this.dma,
+                                        v === 0, this);
                             }
                         } catch(e) {
                             console.error(e.stack);
@@ -3395,9 +3576,9 @@ class CPM22MemIO extends MemIO {
                     })();
                 }
                 break;
-            case 0x0f: this.dma = (this.dma & 0xff00) | (v & 0xff); break;                    // dma address low
-            case 0x10: this.dma = (this.dma & 0x00ff) | ((v & 0xff) << 8); break;             // dma address high
-            case 0x11: this.sec = (this.sec & 0x00ff) | ((v & 0xff) << 8); break;             // fdc sector high
+            case 0x0f: this.dma = (this.dma & 0xff00) | (v & 0xff); break;        // dma address low
+            case 0x10: this.dma = (this.dma & 0x00ff) | ((v & 0xff) << 8); break; // dma address high
+            case 0x11: this.sec = (this.sec & 0x00ff) | ((v & 0xff) << 8); break; // fdc sector high
             default: throw new Error(`unknown output port: ${fmt(p)}`);
         }
     }
