@@ -1,3 +1,6 @@
+// https://deramp.com/downloads/mfe_archive/011-Digital%20Equipment%20Corporation/
+// https://raymii.org/s/articles/Running_TSS_8_on_the_DEC_PiDP-8_i_and_SIMH.html
+
 'use strict';
 
 function pi(s8, oct = true) {          // override for 12-bit mode
@@ -631,31 +634,37 @@ function PDP_Device(                   // console IO device
 class ASR33 extends Kbd {              // system console
     static init(con, mon, ka, ta, int) {
         const cpu = mon.emu.CPU.cpu,
-              ie = [0],                             // shared interrupt flag
+              ie = [0],                                  // shared interrupt flag
+              ptr_ptp = [0o200, null],                   // PTR mask and PTP output
         devkbd = PDP_Device(cpu,
-            () => con.kbd.length > 0,               // kbd ready
-            () => (con.kbd.shift() & 0xff) | 0o200, // kbd get
-            ie, true, 0o377, int                    // 8bit
+            () => con.kbd.length > 0,                    // kbd ready
+            () => (con.kbd.shift() & 0xff) | ptr_ptp[0], // kbd get
+            ie, true, 0o377, int                         // 8bit
         ),
         devcon = PDP_Device(cpu,
-            () => true,                             // con ready
-            ac => con.display(ac & 0x7f),           // con put
+            () => true,                                  // con ready
+            ac => {                                      // con put
+                con.display(ac & 0x7f);
+                if (ptr_ptp[1] !== null) ptr_ptp[1] += String.fromCharCode(ac & 0x7f);
+            },
             ie, false, undefined, int
         );
-        cpu.devices.set(ka, devkbd);                // set input device
-        cpu.devices.set(ta, devcon);                // set output device
+        cpu.devices.set(ka, devkbd);             // set input device
+        cpu.devices.set(ta, devcon);             // set output device
         cpu.asm.set(0b110000000000 | ka << 3, 'KCF'); cpu.asm.set(0b110000000001 | ka << 3, 'KSF');
         cpu.asm.set(0b110000000010 | ka << 3, 'KCC'); cpu.asm.set(0b110000000100 | ka << 3, 'KRS');
         cpu.asm.set(0b110000000101 | ka << 3, 'KIE'); cpu.asm.set(0b110000000110 | ka << 3, 'KRB');
         cpu.asm.set(0b110000000000 | ta << 3, 'SPF'); cpu.asm.set(0b110000000001 | ta << 3, 'TSF');
         cpu.asm.set(0b110000000010 | ta << 3, 'TCF'); cpu.asm.set(0b110000000100 | ta << 3, 'TPC');
         cpu.asm.set(0b110000000101 | ta << 3, 'SPI'); cpu.asm.set(0b110000000110 | ta << 3, 'TLS');
-        return {devkbd, devcon};
+        return {devkbd, devcon, ptr_ptp};
     }
     constructor(con, mon) {
         super(con, mon);
         const devs = ASR33.init(con, mon, 0o3, 0o4, 1);
         this.devkbd = devs.devkbd;
+        this.devcon = devs.devcon;
+        this.ptr_ptp = devs.ptr_ptp;
     }
     processKey(val) {
         super.processKey(val);
@@ -827,7 +836,7 @@ function RX01(CPU) {                   // RX8E/RX01 disk drive
     },
     res = {
         status, reset, process,
-        'setDsk': (drv, img) => {
+        'setDsk': (drv, img) => {                // set drive image
             if (img === null) DSK[drv] = null;
             else {
                 DSK[drv] = Disk(77, 26, 128, 1, 0x10000, null); // empty disk
@@ -837,7 +846,8 @@ function RX01(CPU) {                   // RX8E/RX01 disk drive
                 }
             }
             reset();
-        }
+        },
+        'getDsk': drv => DSK[drv]?.drive         // get drive image
     };
     reset();
     cpu.devices.set(0o75, res);
@@ -980,11 +990,12 @@ function RF08(mem) {                   // RF08/RS08 fixed head disk
     },
     res = {
         status, reset, process,
-        'setDsk': img => {
+        'setDsk': img => {                       // set drive image
             if (img === null) DSK.fill(0);
             else DSK.set(new Uint16Array(img.buffer), 0);
             reset();
-        }
+        },
+        'getDsk': () => DSK                      // get drive image
     };
     reset();
     cpu.devices.set(0o60, res); cpu.devices.set(0o61, res);
@@ -1088,6 +1099,17 @@ class PDP8EMon extends Monitor12 {     // system monitor
     constructor(emu) {
         super(emu);
     }
+    async sendstr(str, nlms = 100, ms = 50) {
+        let i = 0;
+        while (i < str.length) {
+            let ctrl = false, chr = str.charAt(i++);
+            if (chr === '`') { ctrl = true; chr = str.charAt(i++); }
+            let cod = chr.charCodeAt(0);
+            if (ctrl) { if (cod >= 0x60) cod -= 0x60; if (cod >= 0x40) cod -= 0x40; }
+            this.kbd.processKey(cod);
+            await delay(chr === '\r' ? nlms : ms);
+        }
+    }
     async handler(parms, cmd) {
         let tmp;
         try { switch (cmd) {
@@ -1118,6 +1140,45 @@ class PDP8EMon extends Monitor12 {     // system monitor
                 tmp = await loadFile(parms[1], true);
                 console.log(this.emu.loadPAL(tmp));
                 break;
+            case 'type': // automated keyboard input
+                switch (parms[1]) {
+                    case 'start': await this.sendstr('S\r12-06-84\r16:52\r\r'); break;
+                    case 'login': await this.sendstr('LOGIN 2 LXHE\r'); break;
+                    default:
+                        const txt = await loadFile(parms[1], true);
+                        await this.sendstr(txt.replaceAll('\n', ''));
+                        break;
+                }
+                break;
+            case 'ptp':  // low speed PTP
+                if (parms.length < 2) {
+                    console.log(this.kbd.ptr_ptp[1]);
+                    if (this.kbd.ptr_ptp[1] !== null) this.kbd.ptr_ptp[1] = '';
+                    break;
+                }
+                const ptpprm = parms[1];
+                if (ptpprm !== 'on' && ptpprm !== 'off') {
+                    console.error('invalid parameter [on|off]'); break;
+                }
+                this.kbd.ptr_ptp[1] = (ptpprm === 'on') ? '' : null;
+                console.log(ptpprm);
+                break;
+            case 'ptr':  // low speed PTR
+                if (parms.length < 2) { console.error('missing fname'); break; }
+                await this.sendstr(await loadFile(parms[1], true), 50);
+                break;
+            case 'rf08': // download RF08 disk data
+                const rf08 = this.fds.getDsk();
+                downloadFile('rf08.img', new Uint8Array(rf08.buffer));
+                break;
+            case 'rx01': // download RX01 disk data
+                if (parms.length < 2) { console.error('missing drv'); break; }
+                const num = pi(parms[1]);
+                if (num < 0 || num > 1) { console.error(`invalid drv: ${num}`); break; }
+                const rx01 = this.dsk.getDsk(num);
+                if (rx01 === undefined) console.log('empty drive');
+                else downloadFile('rx01.img', rx01);
+                break;
             default: await super.handler(parms, cmd); break;
         } } catch (e) { console.error(e.stack); }
     }
@@ -1132,6 +1193,8 @@ async function main() {
           mon = new PDP8EMon(emu),
           kbd = new ASR33(con, mon),             // PDP8E system console
           dsk = RX01(cpu);                       // RX8E/RX01 disk
+    mon.kbd = kbd;                               // access to ASR33
+    mon.dsk = dsk;                               // access to RX01
 //    await mon.exec('tape MAINDEC-8E-D0AB-pb.bpt'); await mon.exec('x pc 200 sr 7777');      // #1
 //    await mon.exec('tape MAINDEC-8E-D0BB-pb.bpt'); await mon.exec('x pc 200');              // #2
 //    await mon.exec('tape MAINDEC-8E-D0GC-pb.bpt'); await mon.exec('x pc 200 if 0');         // DCA
@@ -1230,8 +1293,9 @@ async function main() {
     };
 /*    await mon.exec('tape pdp8/edu20c.pt');                                                  // Edu20
     await mon.exec('x if 0 df 1 pc 7645');*/
-    const clc = DK8EA(cpu),                            // system clock
-          fds = RF08(mem);                             // disk
+    const clc = DK8EA(cpu),                      // system clock
+          fds = RF08(mem);                       // RF08 disk
+    mon.fds = fds;                               // access to RF08
 //    await mon.exec('tape MAINDEC-8E-D8AC-pb.bpt'); await mon.exec('x pc 200');              // DK8EA
 //    await mon.exec('tape pdp8/maindec-x8-dirfa-a-pb'); ???                                  // RF08
 //    await mon.exec('tape pdp8/maindec-08-d5fa-pb'); await mon.exec('x pc 150');             // RF08
