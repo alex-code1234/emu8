@@ -632,6 +632,9 @@ function PDP_Device(                   // console IO device
 }
 
 class ASR33 extends Kbd {              // system console
+    static upper(val) {                          // convert val to upperCase
+        return (val >= 97/*a*/ && val <= 122/*z*/) ? val - 32 : val;
+    }
     static init(con, mon, ka, ta, int) {
         const cpu = mon.emu.CPU.cpu,
               ie = [0],                                  // shared interrupt flag
@@ -667,7 +670,7 @@ class ASR33 extends Kbd {              // system console
         this.ptr_ptp = devs.ptr_ptp;
     }
     processKey(val) {
-        super.processKey(val);
+        super.processKey(ASR33.upper(val));
         this.devkbd.setFlag(1);                  // set IRQ
     }
 }
@@ -1142,8 +1145,8 @@ class PDP8EMon extends Monitor12 {     // system monitor
                 break;
             case 'type': // automated keyboard input
                 switch (parms[1]) {
-                    case 'start': await this.sendstr('S\r12-06-84\r16:52\r\r'); break;
-                    case 'login': await this.sendstr('LOGIN 2 LXHE\r'); break;
+                    case 'start': await this.sendstr('S\r12-06-84\r16:52\r\r'); break;  // TSS8
+                    case 'login': await this.sendstr('LOGIN 2 LXHE\r', 300, 80); break; // TSS8
                     default:
                         const txt = await loadFile(parms[1], true);
                         await this.sendstr(txt.replaceAll('\n', ''));
@@ -1179,15 +1182,156 @@ class PDP8EMon extends Monitor12 {     // system monitor
                 if (rx01 === undefined) console.log('empty drive');
                 else downloadFile('rx01.img', rx01);
                 break;
+            case 'tss8copy': // TSS8 copy external file to disk
+            case 'os8copy':  // OS8 copy external file to disk
+                if (parms.length < 2) { console.error('missing fname'); break; }
+                const path = parms[1],
+                      fnam = path.match(/([^/]+?)(\.[^.]*$|$)/);
+                if (fnam === null || fnam.length < 3) {
+                    console.error(`invalid fname: ${path}`); break;
+                }
+                if (cmd === 'tss8copy') {
+                    await this.sendstr('R PIP\r', 1800);
+                    await this.sendstr(`\r${fnam[1]}\rT\r`, 300);
+                    await this.sendstr(await loadFile(path, true), 50);
+                    await this.sendstr('`C`BS\r', 50, 300);
+                } else {
+                    if (fnam[2] !== '') fnam[1] += fnam[2].substr(0, 3);
+                    await this.sendstr(`CREATE ${fnam[1]}\rA\r`, 300);
+                    await this.sendstr(await loadFile(path, true), 10, 5);
+                    await this.sendstr('`LE');
+                }
+                break;
+            case 'test': // run MAINDEC tests
+                if (parms.length < 2) { console.error('missing name'); break; }
+                this.emu.CPU.cpu.reset(); // clear all CPU flags
+                switch (parms[1]) {
+                    case 'ascii': // print ASCII example
+await this.exec('m 200 1607 6046 6041 5202 2207 5200 7402 7600');
+await this.exec('m 7600 240 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1');
+await this.exec('m 7640   1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1');
+this.exec('g 200');
+                        break;
+                    case 'ascii_int': // print ASCII example using interrupt
+await this.exec('m 0 201 2022 7410 7402 3017 7004 3020 1422 6046');
+await this.exec('m 11 7300 1020 7010 1017 6001 5400 1 0 0 7577');
+await this.exec('m 200 5010 7004 2021 5202 5201');
+await this.exec('m 7600 240 241 242 243 244 245 246 247 250 251 252 253 254 255 256 257');
+await this.exec('m 7620 260 261 262 263 264 265 266 267 270 271 272 273 274 275 276 277');
+await this.exec('m 7640 300 301 302 303 304 305 306 307 310 311 312 313 314 315 316 317');
+await this.exec('m 7660 320 321 322 323 324 325 326 327 330 331 332 333 334 335 336 337');
+this.exec('g 200');
+                        break;
+                    case 'd0ab':
+await this.exec('tape MAINDEC-8E-D0AB-pb.bpt'); await this.exec('x pc 200 sr 7777'); this.exec('g');
+                        break;
+                    case 'd0bb':
+await this.exec('tape MAINDEC-8E-D0BB-pb.bpt'); await this.exec('x pc 200'); this.exec('g');
+                        break;
+                    case 'd0gc':
+await this.exec('tape MAINDEC-8E-D0GC-pb.bpt'); await this.exec('x pc 200 if 0'); this.exec('g');
+                        break;
+                    case 'd0fc':
+await this.exec('tape MAINDEC-8E-D0FC-pb.bpt'); await this.exec('x pc 200 if 0');
+await this.exec('m 1 5001 2 3 0 0 202 547 7 0 0 7401 3607 3 2421 5116 5141 0 0');   // broken tape
+await this.exec('m 23 0 0 4 400 200 100 0 257 201 206 413 1014 600 4441 614 15 ' +  // restore
+                '7640 5426 1036 3165 7604 30');                                     // from listing
+await this.exec('m 51 7440 5055 4164 3022 7604 27 7640 5065 4164 3021 1021 4151 ' +
+                '7604 26 7640 5075 4164 3002');
+await this.exec('m 73 1002 4151 7240 1002 3011 1016 3411 1017 3411 1020 3411 1022 ' +
+                '3421 1022 3023 1023 7001');
+await this.exec('m 114 3024 5407 7604 7004 7710 5132 1421 7041 1024 7640 5433 1421 ' +
+                '7650 5433 7604 25 7650');
+await this.exec('m 135 5047 7001 1023 5111 7604 7004 7710 5047 1421 7640 5434 5047 ' +
+                '0 7510 5160 1003 7700');
+await this.exec('m 156 5551 5165 1006 7700 5165 5551 0 1014 7104 7430 1015 3014 ' +
+                '1014 5564 1000 0');
+await this.exec('m 200 5040 1340 3332 7040 3031 5210 1331 3332 1002 3011 1370 4342 ' +
+                '1021 3011 1371 4342 1022');
+await this.exec('m 221 3011 1372 4342 1023 3011 1373 4342 1421 3011 1374 4342 6002 ' +
+                '1032 3011 1411 6046 6041');
+await this.exec('m 242 5241 1013 7640 5237 6042 6001 7604 7700 7402 1031 7650 5047 ' +
+                '3031 5132 306 240 0 0 0 0');
+await this.exec('m 266 240 240 324 240 0 0 0 0 215 212 215 215 317 240 0 0 0 0'); this.exec('g');
+                        break;
+                    case 'd0cc':
+await this.exec('tape MAINDEC-8E-D0CC-pb.bpt'); await this.exec('x pc 200 if 0 sr 0400');
+await this.exec('m 1 5001 2 3');                                                    // broken tape
+await this.exec('m 21 22 7777');                                                    // restore
+await this.exec('m 41 37');                                                         // from listing
+await this.exec('m 46 1600 1652 1133 1200 756 1157 1140 1657 1000 1031 0504 523 3000 ' +
+                '3730 3017 3037 3027 3046');
+await this.exec('m 70 7775 7776 7777 3512 410 552 240 260 261 6000 102 4000 2000 ' +
+                '1000 400 200 100 40 20 10 4 2');
+await this.exec('m 116 1 0 4000 1 2004 2043 2076 2200 2232 2270 2400 2436 2472 2600 ' +
+                '2634 2667 1376 7001 5404');
+await this.exec('m 141 5402 7070 2376 2000 2410 4000 4776 4410 5403 5401 4377 2004 ' +
+                '5301 6007 7604 0106 7650');
+await this.exec('m 162 5177 7240 170 3024 5567 202 7777 0 7 70 0 0 0 7410 5156 3024 ' +
+                '3023 3035 7340 23 7421');
+await this.exec('m 207 7040 24 7501');
+await this.exec('m 364 7000'); // patch (ignore carry flag for MAINDEC addition simulator)
+this.exec('g');
+                        break;
+                    case 'd1fb': // set for 8K extended memory (2 pages)
+await this.exec('tape MAINDEC-8E-D1FB-pb.bpt'); await this.exec('x pc 200 sr 0002'); this.exec('g');
+                        break;
+                    case 'd1eb':
+await this.exec('tape MAINDEC-08-D1EB-pb.bpt'); await this.exec('x pc 200'); this.exec('g');
+                        break;
+                    case 'd0db':
+await this.exec('tape MAINDEC-8E-D0DB-pb.bpt'); await this.exec('x pc 200 if 0'); this.exec('g');
+                        break;
+                    case 'd0eb':
+await this.exec('tape MAINDEC-8E-D0EB-pb.bpt'); await this.exec('x pc 200 if 0'); this.exec('g');
+                        break;
+                    case 'd0jc':
+await this.exec('tape MAINDEC-8E-D0JC-pb.bpt'); await this.exec('x pc 200 if 0'); this.exec('g');
+                        break;
+                    case 'dhmca':
+                        if (parms.length < 3) { console.error('missing TSE [0|1]'); break; }
+await this.exec('tape MAINDEC-08-DHMCA-A-pb.bpt');
+                        if (parms[2] | 0) {
+await this.exec('tse 1'); await this.exec('x pc 200 sr 0001');
+                        } else {
+await this.exec('tse 0'); await this.exec('x pc 200 sr 4001');
+                        } this.exec('g');
+                        break;
+                    case 'dirxa': // not passing b/c of timings
+                        console.warn('RX01 2 drives set empty');
+                        this.dsk.setDsk(0, []); this.dsk.setDsk(1, []);
+await this.exec('tape MAINDEC-08-DIRXA-D-pb.bpt'); await this.exec('x pc 200'); this.exec('g');
+                        break;
+                    case 'd8ac': // not passing b/c of timings
+                        if (this.clc === undefined) {
+                            console.warn('DK8EA initialized');
+                            this.clc = DK8EA(this.emu.CPU);
+                        }
+await this.exec('tape MAINDEC-8E-D8AC-pb.bpt'); await this.exec('x pc 200'); this.exec('g');
+                        break;
+                    case 'd5fa':
+                        if (this.fds === undefined) {
+                            console.warn('RF08 initialized');
+                            this.fds = RF08(this.emu.memo);
+                        }
+                        console.warn('RF08 4 drives set empty');
+await this.exec('tape MAINDEC-08-D5FA-pb.bpt'); await this.exec('x pc 150'); this.exec('g');
+                        break;
+                    default: console.error(`unknown test: ${parms[1]}`); break;
+                }
+                break;
             default: await super.handler(parms, cmd); break;
         } } catch (e) { console.error(e.stack); }
     }
 }
 
 async function main() {
+    const os = URL_OPTS.get('os'),
+          mm = (os === 'tss8') ? 7 : undefined;  // memory size 32K for TSS8, 8K for others
+    let autorun = true;
     await loadScript('../emu/github/emu8/js/disks.js');
     const con = await createCon(amber, 'VT220'), // actual console
-          mem = KM8_E(7),                        // 8K extended memory
+          mem = KM8_E(mm),                       // extended memory
           cpu = new GenCpu12(mem),               // CPU (uses Cpu(memo) class)
           emu = new PDP8EEmu(cpu, mem),
           mon = new PDP8EMon(emu),
@@ -1195,114 +1339,57 @@ async function main() {
           dsk = RX01(cpu);                       // RX8E/RX01 disk
     mon.kbd = kbd;                               // access to ASR33
     mon.dsk = dsk;                               // access to RX01
-//    await mon.exec('tape MAINDEC-8E-D0AB-pb.bpt'); await mon.exec('x pc 200 sr 7777');      // #1
-//    await mon.exec('tape MAINDEC-8E-D0BB-pb.bpt'); await mon.exec('x pc 200');              // #2
-//    await mon.exec('tape MAINDEC-8E-D0GC-pb.bpt'); await mon.exec('x pc 200 if 0');         // DCA
-/*    await mon.exec('tape MAINDEC-8E-D0FC-pb.bpt'); await mon.exec('x pc 200 if 0');         // ISZ
-    await mon.exec('m 1 5001 2 3 0 0 202 547 7 0 0 7401 3607 3 2421 5116 5141 0 0');        // ISZ
-    await mon.exec('m 23 0 0 4 400 200 100 0 257 201 206 413 1014 600 4441 614 15 ' +       // ISZ
-                   '7640 5426 1036 3165 7604 30');                                          // ISZ
-    await mon.exec('m 51 7440 5055 4164 3022 7604 27 7640 5065 4164 3021 1021 4151 ' +      // ISZ
-                   '7604 26 7640 5075 4164 3002');                                          // ISZ
-    await mon.exec('m 73 1002 4151 7240 1002 3011 1016 3411 1017 3411 1020 3411 1022 ' +    // ISZ
-                   '3421 1022 3023 1023 7001');                                             // ISZ
-    await mon.exec('m 114 3024 5407 7604 7004 7710 5132 1421 7041 1024 7640 5433 1421 ' +   // ISZ
-                   '7650 5433 7604 25 7650');                                               // ISZ
-    await mon.exec('m 135 5047 7001 1023 5111 7604 7004 7710 5047 1421 7640 5434 5047 ' +   // ISZ
-                   '0 7510 5160 1003 7700');                                                // ISZ
-    await mon.exec('m 156 5551 5165 1006 7700 5165 5551 0 1014 7104 7430 1015 3014 ' +      // ISZ
-                   '1014 5564 1000 0');                                                     // ISZ
-    await mon.exec('m 200 5040 1340 3332 7040 3031 5210 1331 3332 1002 3011 1370 4342 ' +   // ISZ
-                   '1021 3011 1371 4342 1022');                                             // ISZ
-    await mon.exec('m 221 3011 1372 4342 1023 3011 1373 4342 1421 3011 1374 4342 6002 ' +   // ISZ
-                   '1032 3011 1411 6046 6041');                                             // ISZ
-    await mon.exec('m 242 5241 1013 7640 5237 6042 6001 7604 7700 7402 1031 7650 5047 ' +   // ISZ
-                   '3031 5132 306 240 0 0 0 0');                                            // ISZ
-    await mon.exec('m 266 240 240 324 240 0 0 0 0 215 212 215 215 317 240 0 0 0 0');        // ISZ*/
-/*    await mon.exec('tape MAINDEC-8E-D0CC-pb.bpt'); await mon.exec('x pc 200 if 0 sr 0400'); // TAD
-    await mon.exec('m 1 5001 2 3');                                                         // TAD
-    await mon.exec('m 21 22 7777');                                                         // TAD
-    await mon.exec('m 41 37');                                                              // TAD
-    await mon.exec('m 46 1600 1652 1133 1200 756 1157 1140 1657 1000 1031 0504 523 3000 ' + // TAD
-                   '3730 3017 3037 3027 3046');                                             // TAD
-    await mon.exec('m 70 7775 7776 7777 3512 410 552 240 260 261 6000 102 4000 2000 ' +     // TAD
-                   '1000 400 200 100 40 20 10 4 2');                                        // TAD
-    await mon.exec('m 116 1 0 4000 1 2004 2043 2076 2200 2232 2270 2400 2436 2472 2600 ' +  // TAD
-                   '2634 2667 1376 7001 5404');                                             // TAD
-    await mon.exec('m 141 5402 7070 2376 2000 2410 4000 4776 4410 5403 5401 4377 2004 ' +   // TAD
-                   '5301 6007 7604 0106 7650');                                             // TAD
-    await mon.exec('m 162 5177 7240 170 3024 5567 202 7777 0 7 70 0 0 0 7410 5156 3024 ' +  // TAD
-                   '3023 3035 7340 23 7421');                                               // TAD
-    await mon.exec('m 207 7040 24 7501');                                                   // TAD
-    await mon.exec('m 364 7000'); // patch (ignore carry flag for addition simulator)       // TAD*/
-//    await mon.exec('tape MAINDEC-8E-D1FB-pb.bpt'); await mon.exec('x pc 200 sr 0002');      // ExMem
-//    await mon.exec('tape MAINDEC-8E-D0DB-pb.bpt'); await mon.exec('x pc 200 if 0');         // AND
-//    await mon.exec('tape MAINDEC-8E-D0EB-pb.bpt'); await mon.exec('x pc 200 if 0');         // TAD
-//    await mon.exec('tape MAINDEC-08-D1EB-pb.bpt'); await mon.exec('x pc 200');              // ExMem
-/*    await mon.exec('tse 1');                                                                // TSE
-    await mon.exec('tape MAINDEC-08-DHMCA-A-pb.bpt'); await mon.exec('x pc 200 sr 0001');   // TSE*/
-/*    await mon.exec('tse 0');                                                                // TSE
-    await mon.exec('tape MAINDEC-08-DHMCA-A-pb.bpt'); await mon.exec('x pc 200 sr 4001');   // TSE*/
-//    await mon.exec('tape MAINDEC-8E-D0JC-pb.bpt'); await mon.exec('x pc 200 if 0');         // JMx
-//    await mon.exec('tape FOCAL-69.bpt'); await mon.exec('x pc 200');
-/*    await mon.exec('tape MAINDEC-08-DIRXA-D-pb.bpt'); await mon.exec('x pc 200');           // RX8E
-    dsk.setDsk(0, []); dsk.setDsk(1, []);*/
-/*    await mon.exec('m 200 1607 6046 6041 5202 2207 5200 7402 7600');   // print ASCII example
-    await mon.exec('m 7600 240 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1');
-    await mon.exec('m 7640   1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1');*/
-/*    await mon.exec('m 0 201 2022 7410 7402 3017 7004 3020 1422 6046'); // print ASCII interrupt
-    await mon.exec('m 11 7300 1020 7010 1017 6001 5400 1 0 0 7577');
-    await mon.exec('m 200 5010 7004 2021 5202 5201');
-    await mon.exec('m 7600 240 241 242 243 244 245 246 247 250 251 252 253 254 255 256 257');
-    await mon.exec('m 7620 260 261 262 263 264 265 266 267 270 271 272 273 274 275 276 277');
-    await mon.exec('m 7640 300 301 302 303 304 305 306 307 310 311 312 313 314 315 316 317');
-    await mon.exec('m 7660 320 321 322 323 324 325 326 327 330 331 332 333 334 335 336 337');*/
-/*    dsk.setDsk(0, (await loadFile('pdp8/os8sys', false)).slice(256));
-    await mon.exec('m 20 0000 0000 0000 0000 7126 1060 6751 7201');
-    await mon.exec('m 30 4053 4053 7104 6755 5054 6754 7450 7610');
-    await mon.exec('m 40 5046 1060 7041 1061 3060 5024 6751 4053');
-    await mon.exec('m 50 3002 2050 5047 0000 6753 5033 6752 5453');
-    await mon.exec('m 60 7024 6030 0000 0000 0000 0000 0000 0000');
-    await mon.exec('x pc 33');*/
-/*    dsk.setDsk(0, await loadFile('pdp8/os8_rx.rx01', false));
-    await mon.exec('r pdp8/os8boot3.oct 1');
-    await mon.exec('x pc 22');*/
-    const cons = addKey('&#x21c4'),                    // console switch button
-          cnv2 = document.createElement('canvas');     // second console
-    cnv2.style.display = 'none';                       // initially hidden
-    con.canvas.canvas.parentNode.insertBefore(cnv2, con.canvas.canvas);
-    const con2 = await createCon(green, 'VT220', undefined, undefined, cnv2),
-          kbd2 = ASR33.init(con2, mon, 0o40, 0o41, 1); // 1st terminal on PT08
-    cons.onclick = e => {                              // console switch button
-        if (cnv2.style.display === 'none') {
-            con.canvas.canvas.style.display = 'none';
-            cnv2.style.display = 'block';
+    if (os === 'tss8' || os === 'edu20') {       // second console for TSS8 and Edu20
+        const cons = addKey('&#x21c4'),                    // console switch button
+              cnv2 = document.createElement('canvas');     // second console
+        cnv2.style.display = 'none';                       // initially hidden
+        con.canvas.canvas.parentNode.insertBefore(cnv2, con.canvas.canvas);
+        const con2 = await createCon(green, 'VT220', undefined, undefined, cnv2),
+              kbd2 = ASR33.init(con2, mon, 0o40, 0o41, 1); // 1st terminal on PT08
+        cons.onclick = e => {                              // console switch button
+            if (cnv2.style.display === 'none') {
+                con.canvas.canvas.style.display = 'none';
+                cnv2.style.display = 'block';
+            } else {
+                cnv2.style.display = 'none';
+                con.canvas.canvas.style.display = 'block';
+            }
+        };
+        kbd.processKey = function(val) {                   // process 2 terminals
+            if (cnv2.style.display === 'none') {
+                this.con.kbd.push(ASR33.upper(val));
+                this.devkbd.setFlag(1);
+            } else {
+                con2.kbd.push(ASR33.upper(val));
+                kbd2.devkbd.setFlag(1);
+            }
+        };
+        if (os === 'tss8') {                     // additional devices for TSS8
+            const clc = DK8EA(cpu),              // system clock
+                  fds = RF08(mem);               // RF08 disk
+            mon.clc = clc;                       // access to DK8EA
+            mon.fds = fds;                       // access to RF08
+            await mon.exec('tse 1');             // prepare TSS8 start
+            await mon.exec('tape pdp8/tss8_init.bin');
+            fds.setDsk(await loadFile('pdp8/tss8_rf.dsk', false));
+            await mon.exec('x if 2 ib 2 pc 4200');
         } else {
-            cnv2.style.display = 'none';
-            con.canvas.canvas.style.display = 'block';
+            await mon.exec('tape pdp8/edu20c.pt'); // prepare Edu20 start
+            await mon.exec('x if 0 df 1 pc 7645');
         }
-    };
-    kbd.processKey = function(val) {                   // process 2 terminals
-        if (cnv2.style.display === 'none') {
-            this.con.kbd.push(val);
-            this.devkbd.setFlag(1);
-        } else {
-            con2.kbd.push(val);
-            kbd2.devkbd.setFlag(1);
-        }
-    };
-/*    await mon.exec('tape pdp8/edu20c.pt');                                                  // Edu20
-    await mon.exec('x if 0 df 1 pc 7645');*/
-    const clc = DK8EA(cpu),                      // system clock
-          fds = RF08(mem);                       // RF08 disk
-    mon.fds = fds;                               // access to RF08
-//    await mon.exec('tape MAINDEC-8E-D8AC-pb.bpt'); await mon.exec('x pc 200');              // DK8EA
-//    await mon.exec('tape pdp8/maindec-x8-dirfa-a-pb'); ???                                  // RF08
-//    await mon.exec('tape pdp8/maindec-08-d5fa-pb'); await mon.exec('x pc 150');             // RF08
-    await mon.exec('tse 1'); // set 32K!                                                    // TSS8
-    await mon.exec('tape pdp8/tss8_init.bin');
-    fds.setDsk(await loadFile('pdp8/tss8_rf.dsk', false));
-    await mon.exec('x if 2 ib 2 pc 4200');
+    }
+    else if (os === 'os8') {                     // prepare OS8 start
+        dsk.setDsk(0, await loadFile('pdp8/os8_rx.rx01', false));
+        await mon.exec('r pdp8/os8boot3.oct 1');
+        await mon.exec('x pc 22');
+    }
+    else if (os === 'focal') {                   // prepare FOCAL-69 start
+        await mon.exec('tape FOCAL-69.bpt');
+        await mon.exec('x pc 200');
+    }
+    else if (os !== null) { console.error(`unknown OS: ${os}`); autorun = false; }
+    else autorun = false;
+    if (autorun) mon.exec('g');
     term.setPrompt('> ');
     while (true) await mon.exec(await term.prompt());
 }
