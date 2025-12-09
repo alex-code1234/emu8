@@ -1102,8 +1102,8 @@ class PDP8EMon extends Monitor12 {     // system monitor
     constructor(emu) {
         super(emu);
     }
-    async sendstr(str, nlms = 100, ms = 50) {
-        let i = 0;
+    async sendstr(str, nlms = 100, ms = 50, brk = false) {
+        let i = 0, count = 0;
         while (i < str.length) {
             let ctrl = false, chr = str.charAt(i++);
             if (chr === '`') { ctrl = true; chr = str.charAt(i++); }
@@ -1111,6 +1111,11 @@ class PDP8EMon extends Monitor12 {     // system monitor
             if (ctrl) { if (cod >= 0x60) cod -= 0x60; if (cod >= 0x40) cod -= 0x40; }
             this.kbd.processKey(cod);
             await delay(chr === '\r' ? nlms : ms);
+            count++;
+            if (brk && chr === '\r' && count > 5000) {
+                await this.sendstr('`LP\rK\rA\r', nlms + 1100, nlms + 500);
+                count = 0;
+            }
         }
     }
     async handler(parms, cmd) {
@@ -1198,8 +1203,8 @@ class PDP8EMon extends Monitor12 {     // system monitor
                 } else {
                     if (fnam[2] !== '') fnam[1] += fnam[2].substr(0, 3);
                     await this.sendstr(`CREATE ${fnam[1]}\rA\r`, 300);
-                    await this.sendstr(await loadFile(path, true), 10, 5);
-                    await this.sendstr('`LE');
+                    await this.sendstr(await loadFile(path, true), 10, 5, true);
+                    await this.sendstr('`LE\r');
                 }
                 break;
             case 'test': // run MAINDEC tests
