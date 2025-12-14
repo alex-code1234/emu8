@@ -38,12 +38,12 @@ class GenCpu12 extends GenCpu {        // override for 12-bit mode
                 if (value.charAt(j) === '.' && svalue.charAt(j) !== '.')
                     svalue = svalue.substring(0, j) + '.' + svalue.substring(j + 1);
             switch (cond[2]) {
-                case '<': if (value >= svalue) return false; break;
-                case '>': if (value <= svalue) return false; break;
-                case '==': if (value !== svalue) return false; break;
-                case '!=': if (value === svalue) return false; break;
-                case '<=': if (value > svalue) return false; break;
-                case '>=': if (value < svalue) return false; break;
+                case '<': if (svalue >= value) return false; break;
+                case '>': if (svalue <= value) return false; break;
+                case '==': if (svalue !== value) return false; break;
+                case '!=': if (svalue === value) return false; break;
+                case '<=': if (svalue > value) return false; break;
+                case '>=': if (svalue < value) return false; break;
             }
         }
         return true;

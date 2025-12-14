@@ -49,12 +49,12 @@ class GenCpu {
             if (value.startsWith('..')) svalue = '..' + svalue.substring(2);
             else if (value.length < svalue.length) svalue = svalue.substr(0, value.length);
             switch (cond[2]) {
-                case '<': if (value >= svalue) return false; break;
-                case '>': if (value <= svalue) return false; break;
-                case '==': if (value !== svalue) return false; break;
-                case '!=': if (value === svalue) return false; break;
-                case '<=': if (value > svalue) return false; break;
-                case '>=': if (value < svalue) return false; break;
+                case '<': if (svalue >= value) return false; break;
+                case '>': if (svalue <= value) return false; break;
+                case '==': if (svalue !== value) return false; break;
+                case '!=': if (svalue === value) return false; break;
+                case '<=': if (svalue > value) return false; break;
+                case '>=': if (svalue < value) return false; break;
             }
         }
         return true;
