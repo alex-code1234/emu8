@@ -508,6 +508,9 @@ function Codec8080() {
             }
             return true;
         }, true);
+        // ADI  1      match, replace with INR  A
+        base.phopt('ADI  1$', cnd => '', cnd => [],
+                (lines, start, i, cnd) => lines[i] = '        INR  A');
         // type 1 optimizations
         // MOV  ?, A   begin
         //    ---
