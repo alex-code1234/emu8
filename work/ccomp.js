@@ -1,6 +1,6 @@
 'use strict';
 
-function Parser(emit) {
+function Parser(emit, setPos) {
     let text, index, look, token, pb_idx;
     const getch = () => look = text.charAt(index++),
     peekch = () => text.charAt(index),
@@ -13,6 +13,7 @@ function Parser(emit) {
     expect = s => error(`expected ${s}`),
     match = x => {
         if (look !== x) expect(x);
+        if (look === ';') setPos(index);
         getch(); spskip();
     },
     name = () => {
@@ -134,7 +135,7 @@ function Parser(emit) {
                 pushback();
                 id('var');
             }
-            if (look === '=') { match('='); expr(); match(';'); emit('asg', param); }
+            if (look === '=') { match('='); expr(); emit('asg', param); match(';'); }
             else expect('declaration or assignment');
         }
     };
@@ -142,7 +143,7 @@ function Parser(emit) {
 }
 
 function IL() {
-    let o1, o2, tripleNum, vars = {};
+    let o1, o2, tripleNum, vars = {}, txt_pos;
     const stack = [], triples = [],
     calc = id => {
         switch (id) {
@@ -185,7 +186,7 @@ function IL() {
     },
     create = (typ1, val1, oper, typ2 = null, val2 = null, push = true) => {
         const typ = (typW(typ1, val1) || typW(typ2, val2) || oper === 'adr') ? 1 : 0,
-              trp = {'adr': `:${tripleNum++}`, typ1, val1, oper, typ2, val2, typ};
+              trp = {'adr': `:${tripleNum++}`, typ1, val1, oper, typ2, val2, typ, txt_pos};
         if (oper === 'ref') trp.typ = 0; // de-reference is always byte
         if (push) triples.push(trp);
         return trp;
@@ -283,7 +284,7 @@ function IL() {
         arith();          // expressions simplification
         while (dedupe()); // duplicate code elimination
     },
-    init = () => { stack.length = 0; triples.length = 0; tripleNum = 0; vars = {}; },
+    init = () => { stack.length = 0; triples.length = 0; tripleNum = 0; vars = {}; txt_pos = 0; },
     code = () => {
         if (stack.length > 0) throw new Error('unbalanced expression');
         optim();
@@ -373,8 +374,9 @@ function IL() {
                 break;
             default: throw new Error(`unknown id: ${id}`);
         }
-    };
-    return {init, code, emit};
+    },
+    setPos = pos => txt_pos = pos;
+    return {init, code, emit, setPos};
 }
 
 function Codec8080() {
@@ -935,12 +937,21 @@ function CodeGen(codec) {
         const w = getW(regs[codec.workW.charAt(0)], regs[codec.workW.charAt(1)]);
         return w !== null && used(adr, w) > 0;
     },
-    generate = (trpls, vrs, optimize = true, showtrp = false) => {
+    generate = (trpls, vrs, optimize = true, showtrp = false, prg = null) => {
         triples = trpls; vars = vrs; code = '';
+        let prev_pos = null, prg_expr;                       // source ref generation
         for (const r in regs) regs[r] = (r === codec.savW) ? [] : null; // clear registers
         for (let i = 0, n = triples.length; i < n; i++) {
             const prevXTHL = code.endsWith('XTHL\n'),        // check if prev triplet generated XTHL
                   trp = triples[i];
+            if (prg !== null && prev_pos !== trp.txt_pos) {  // source ref generation
+                code += ';;; _____\n';                       // placeholder
+                if (prev_pos !== null) {                     // generate previous source ref
+                    prg_expr = prg.substring(prev_pos, trp.txt_pos).trim();
+                    code = code.replace('_____', prg_expr);
+                }
+                prev_pos = trp.txt_pos;
+            }
             if (!optimize && showtrp) code += `;;; ${showTrp(trp)}`;
             if (trp.typ !== 0) { generateW(trp); continue; } // type 1 generation
             switch (trp.oper) {                              // type 0 generation
@@ -1114,6 +1125,10 @@ function CodeGen(codec) {
                 default: throw new Error(`illegal operation: ${trp.oper} at ${trp.adr}`);
             }
             save(trp.adr, 2);                         // save result if used after next triplet
+            if (prg !== null && i === n - 1) {        // source ref generation (last placeholder)
+                prg_expr = prg.substring(prev_pos ?? 0, prg.length).trim();
+                code = code.replace('_____', prg_expr);
+            }
         }
         if (optimize) {
             codec.peephole({fndop, chgop, phopt});    // peephole optimization
@@ -1122,8 +1137,8 @@ function CodeGen(codec) {
         const lines = code.split('\n');               // check stack balance
         for (let i = lines.length - 1, count = 0; i >= 0; i--) {
             const line = lines[i];
-            if (line.indexOf('POP ') >= 0) count--;
-            else if (line.indexOf('PUSH ') >= 0) {
+            if (line.match(/[^;]POP  .$/)) count--;
+            else if (line.match(/[^;]PUSH .$/)) {
                 count++;
                 if (count > 0) {                      // remove last unused PUSH
                     regs[codec.savW].pop();           // remove from stack
@@ -1381,7 +1396,7 @@ function CodeGen(codec) {
 }
 
 const il = IL(),
-      parser = Parser(il.emit),
+      parser = Parser(il.emit, il.setPos),
       codec = Codec8080(),
       gen = CodeGen(codec);
 
@@ -1401,7 +1416,7 @@ function compile(prg, optimize, showtrp) {
         parser.parse(prg);
         const [code, vars] = il.code();
         for (let i = 0, n = code.length; i < n; i++) codecpy.push({...code[i]});
-        return [gen.generate(code, vars, optimize, showtrp), vars, codecpy];
+        return [gen.generate(code, vars, optimize, showtrp/*, prg*/), vars, codecpy];
     } catch(e) {
         console.log(prg);
         console.log(triplesToStr(codecpy));
@@ -2951,7 +2966,7 @@ c1 = b1 >= a1 & b1 < 4;
         ANA  B
         STA  c1
     `, [2, 3, 1]);
-    test(`
+    await test(`
 byte a, b, c; b = 19; c = 27;
 a = (4 + b + c + b) + (2 + c) + (b + c);
     `, `
@@ -2986,7 +3001,7 @@ a = (4 + b + c + b) + (2 + c) + (b + c);
         ADD  C
         STA  a
     `);
-    test(`
+    await test(`
 byte a, b, c; b = 19; c = 27;
 a = (4 + (b + c) + b) + (2 + c) + (b + c);
     `, `
@@ -3018,7 +3033,7 @@ a = (4 + (b + c) + b) + (2 + c) + (b + c);
         ADD  C
         STA  a
     `);
-    test(`
+    await test(`
 byte a, b, c; b = 19 != b; c = 27;
 a = (4 + (b + c) + b) + (2 + c) + (b + c);
     `, `
@@ -3054,7 +3069,7 @@ a = (4 + (b + c) + b) + (2 + c) + (b + c);
         ADD  C
         STA  a
     `);
-    test(`
+    await test(`
 byte a, b, c;
 a = c + b + a + b;
     `, `
@@ -3072,7 +3087,7 @@ a = c + b + a + b;
         ADD  B
         MOV  M, A
     `);
-    test(`
+    await test(`
 byte a, b, c;
 a = (c + 2) << (b + 2);
     `, `
@@ -3093,7 +3108,7 @@ a = (c + 2) << (b + 2);
         CALL @SHLF
         STA  a
     `);
-    test(`
+    await test(`
 byte a, b, c;
 a = b << (b + 2);
     `, `
@@ -3110,7 +3125,7 @@ a = b << (b + 2);
         CALL @SHLF
         STA  a
     `);
-    test(`
+    await test(`
 byte a, b, c;
 a = 7 << (b + 2);
     `, `
@@ -3126,7 +3141,7 @@ a = 7 << (b + 2);
         CALL @SHLF
         STA  a
     `);
-    test(`
+    await test(`
 byte a, b, c;
 a = (b + 1) >> (b + 1);
     `, `
@@ -3140,7 +3155,7 @@ a = (b + 1) >> (b + 1);
         CALL @SHRF
         STA  a
     `);
-    test(`
+    await test(`
 byte a, b, c;
 a = b + b;
     `, `
@@ -3151,7 +3166,7 @@ a = b + b;
         ADD  A
         STA  a
     `);
-    test(`
+    await test(`
 byte a, b, c;
 a = b << b;
     `, `
@@ -3163,7 +3178,7 @@ a = b << b;
         CALL @SHLF
         STA  a
     `);
-    test(`
+    await test(`
 byte a, b, c;
 a = b << c;
     `, `
@@ -3176,7 +3191,7 @@ a = b << c;
         CALL @SHLF
         STA  a
     `);
-    test(`
+    await test(`
 byte a, b, c;
 a = (b + 2) << b;
     `, `
@@ -3191,7 +3206,7 @@ a = (b + 2) << b;
         CALL @SHLF
         STA  a
     `);
-    test(`
+    await test(`
 byte a, b, c;
 a = (b + b) << b;
     `, `
@@ -3205,7 +3220,7 @@ a = (b + b) << b;
         CALL @SHLF
         STA  a
     `);
-    test(`
+    await test(`
 byte a, b, c;
 a = b + c << b;
     `, `
@@ -3220,7 +3235,7 @@ a = b + c << b;
         CALL @SHLF
         STA  a
     `);
-    test(`
+    await test(`
 byte a, b, c;
 a = b + 2; c = a + 1;
     `, `
@@ -3236,7 +3251,7 @@ a = b + 2; c = a + 1;
         INR  A
         STA  c
     `);
-    test(`
+    await test(`
 byte a, b, c;
 a = b + 2; c = a + 1; b = 5 << c;
     `, `
@@ -3258,7 +3273,7 @@ a = b + 2; c = a + 1; b = 5 << c;
         CALL @SHLF
         STA  b
     `);
-    test(`
+    await test(`
 byte a, b, c;
 a = b + 2; c = a + 1; b = c << 5;
     `, `
@@ -3279,7 +3294,7 @@ a = b + 2; c = a + 1; b = c << 5;
         CALL @SHLF
         STA  b
     `);
-    test(`
+    await test(`
 byte a, b, c;
 a = b; c = 7;
     `, `
@@ -3291,7 +3306,7 @@ a = b; c = 7;
         LXI  H, c
         MVI  M, 7
     `);
-    test(`
+    await test(`
 byte a, b, c;
 a = b; c = a;
     `, `
@@ -3303,7 +3318,7 @@ a = b; c = a;
         MOV  M, A
         STA  c
     `);
-    test(`
+    await test(`
 byte a, b, c;
 a = b; c = b;
     `, `
@@ -3314,7 +3329,7 @@ a = b; c = b;
         STA  a
         STA  c
     `);
-    test(`
+    await test(`
 byte a, b, c, d;
 a = b; c = a; d = a + b;
     `, `
@@ -3637,6 +3652,67 @@ async function emuRun(prg) {
 
 async function main() {
     await emuInit();
+    await test(`
+byte x := 1, y := 2;
+x = 1 - x + y;
+           `, `
+:0_ 1__ sub x__ 0 ____ ____ ____
+:1_ :0_ add y__ 0 ____ ____ ____
+:2_ x__ asg :1_ 0 ____ ____ ____
+           `, `
+        LDA  x
+        CMA
+        INR  A
+        INR  A
+        LXI  H, y
+        ADD  M
+        STA  x
+           `, [2, 2]);
+    await test(`
+byte x := 1;
+x = x + 1;
+           `, `
+:0_ x__ inc ___ 0 ____ ____ ____
+:1_ x__ asg :0_ 0 ____ ____ ____
+           `, `
+        LDA  x
+        INR  A
+        STA  x
+           `, [2]);
+    await test(`
+byte x := 0, y := 1, r;
+r = x == y - 1;
+           `, `
+:0_ y__ dec ___ 0 ____ ____ ____
+:1_ x__ eql :0_ 0 ____ ____ ____
+:2_ r__ asg :1_ 0 ____ ____ ____
+           `, `
+        LDA  y
+        DCR  A
+        LXI  H, x
+        CMP  M
+        MVI  A, 1
+        JZ   $+4
+        XRA  A
+        STA  r
+           `, [0, 1, 1]);
+    await test(`
+byte x, y := [1, 2], i := 1;
+x = y[i - 1];
+           `, `
+:0_ i__ dec ___ 0 ____ ____ ____
+:1_ y__ idx :0_ 0 ____ ____ ____
+:2_ x__ asg :1_ 0 ____ ____ ____
+           `, `
+        LDA  i
+        DCR  A
+        LXI  H, y
+        MOV  E, A
+        MVI  D, 0
+        DAD  D
+        MOV  A, M
+        STA  x
+           `, [1, 1, 2, 1]);
     await doTests();
 }
 
