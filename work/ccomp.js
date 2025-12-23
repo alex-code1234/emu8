@@ -1409,14 +1409,14 @@ function triplesToStr(code) {
     return strcode;
 }
 
-function compile(prg, optimize, showtrp) {
+function compile(prg, optimize, showtrp, showsrc = false) {
     const codecpy = [];
     try {
         il.init();
         parser.parse(prg);
         const [code, vars] = il.code();
         for (let i = 0, n = code.length; i < n; i++) codecpy.push({...code[i]});
-        return [gen.generate(code, vars, optimize, showtrp/*, prg*/), vars, codecpy];
+        return [gen.generate(code, vars, optimize, showtrp, showsrc ? prg : null), vars, codecpy];
     } catch(e) {
         console.log(prg);
         console.log(triplesToStr(codecpy));
