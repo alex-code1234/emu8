@@ -395,7 +395,8 @@ class JsShell {
 //     key - key descriptor (max 30 for left side, 6 for right side):
 //         [ [ ]spc[,lbl][ ] ] (no spaces, enclosed in [] if icon)
 //     spc - 1,2,3,4,5 or 20 key span
-//     lbl - key face, can be lbl1..lbl2
+//     lbl - key face, can be lbl1..lbl2[_s|c]
+//     _s|c - optional SHIFT or CTRL key class
 function SoftKeyboard(layout, kbdElem = document.getElementsByClassName('keyboard')[0]) {
     let tmp, s = '', i = 0;
     const data = layout.split('\n'), n = data.length,
@@ -406,9 +407,13 @@ function SoftKeyboard(layout, kbdElem = document.getElementsByClassName('keyboar
         }
         const prms = val.split(',');
         let m = prms.length;
-        if (m === 3 && prms[1].length === 0) {
-            prms[2] = ',' + prms[2]; prms.splice(1, 1); m--;                // special case <,,>
-        }
+        if (m === 3)
+            if (prms[1].length === 0) {
+                prms[2] = ',' + prms[2]; prms.splice(1, 1); m--;            // special case <,,>
+            }
+            else if (prms[2].length === 0) {
+                prms[1] += ','; prms.splice(2, 1); m--;                     // special case <..,>
+            }
         if (m < 1 || m > 2) throw new Error(`invalid key: ${val} at: ${i - 1}`);
         tmp = prms[0].trim() | 0;
         if (isNaN(tmp)) throw new Error(`expected span number in: ${val} at ${i - 1}`);
@@ -418,12 +423,19 @@ function SoftKeyboard(layout, kbdElem = document.getElementsByClassName('keyboar
             if (tmp === 1) throw new Error(`invalid span value for empty key at: ${i - 1}`);
             else s += `<div class='sp${tmp}'></div>`;
         else {
+            let sc = '', idx;
+            if ((idx = prms[1].indexOf('_s')) >= 0) {
+                sc = ' kshft'; prms[1] = prms[1].substring(0, idx);
+            }
+            else if ((idx = prms[1].indexOf('_c')) >= 0) {
+                sc = ' kctrl'; prms[1] = prms[1].substring(0, idx);
+            }
             const lbls = prms[1].split('..');
             if (lbls.length === 2 && lbls[0].length === 0 & lbls[1].charAt(0) === '.') {
                 lbls[0] = '.'; lbls[1] = lbls[1].substring(1);              // special case <...>
             }
             if (lbls.length > 2) throw new Error(`invalid label in ${val} at ${i - 1}`);
-            s += `<div class='key${(tmp > 1) ? ' sp' + tmp : ''}${icon ? ' i' : ''}'>`;
+            s += `<div class='key${(tmp > 1) ? ' sp' + tmp : ''}${icon ? ' i' : ''}${sc}'>`;
             if (lbls.length === 1) s += lbls[0];
             else s += `<span>${lbls[0]}</span><span>${lbls[1]}</span>`;
             s += '</div>';

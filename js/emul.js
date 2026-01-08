@@ -363,43 +363,46 @@ class Keyboard {
               ctrls = kbdElem.getElementsByClassName('kctrl'),
               alts = kbdElem.getElementsByClassName('kalt');
         kbdElem.onclick = e => {
-            let elem = e.target;
+            let elem = e.target, tmp;
             if (elem.tagName === 'SPAN') elem = elem.parentNode;
             const key = elem.innerText.replace('\n', '');
-            switch (key) {
-                case 'CapsLock':
+            switch (this.trnCtrls(key)) {
+                case 1:
                     this.fs_caps = !this.fs_caps; this.fs_shift = this.fs_caps;
-                    shfts[0].style.borderColor = shfts[1].style.borderColor = this.fs_caps ?
-                            'var(--keypressed)' : 'var(--onbackground)';
+                    tmp = this.fs_caps ? 'var(--keypressed)' : 'var(--onbackground)';
+                    for (let i = 0; i < shfts.length; i++) shfts[i].style.borderColor = tmp;
                     break;
-                case 'Shift':
+                case 2:
                     this.fs_shift = !this.fs_shift;
-                    shfts[0].style.borderColor = shfts[1].style.borderColor = this.fs_shift ?
-                            'var(--keypressed)' : 'var(--onbackground)';
+                    tmp = this.fs_shift ? 'var(--keypressed)' : 'var(--onbackground)';
+                    for (let i = 0; i < shfts.length; i++) shfts[i].style.borderColor = tmp;
                     if (!this.fs_shift) this.fs_caps = false;
                     break;
-                case 'Ctrl':
+                case 3:
                     this.fs_ctrl = !this.fs_ctrl;
-                    ctrls[0].style.borderColor = ctrls[1].style.borderColor = this.fs_ctrl ?
-                            'var(--keypressed)' : 'var(--onbackground)';
+                    tmp = this.fs_ctrl ? 'var(--keypressed)' : 'var(--onbackground)';
+                    for (let i = 0; i < ctrls.length; i++) ctrls[i].style.borderColor = tmp;
                     break;
-                case 'Alt':
+                case 4:
                     this.fs_alt = !this.fs_alt;
-                    alts[0].style.borderColor = alts[1].style.borderColor = this.fs_alt ?
-                            'var(--keypressed)' : 'var(--onbackground)';
+                    tmp = this.fs_alt ? 'var(--keypressed)' : 'var(--onbackground)';
+                    for (let i = 0; i < alts.length; i++) alts[i].style.borderColor = tmp;
                     break;
                 default:
                     this.kbdHandler({key}, true, false);
                     if (!this.fs_caps && this.fs_shift) {
-                        shfts[0].style.borderColor = shfts[1].style.borderColor = 'var(--onbackground)';
+                        for (let i = 0; i < shfts.length; i++)
+                            shfts[i].style.borderColor = 'var(--onbackground)';
                         this.fs_shift = false;
                     }
                     if (this.fs_ctrl) {
-                        ctrls[0].style.borderColor = ctrls[1].style.borderColor = 'var(--onbackground)';
+                        for (let i = 0; i < ctrls.length; i++)
+                            ctrls[i].style.borderColor = 'var(--onbackground)';
                         this.fs_ctrl = false;
                     }
                     if (this.fs_alt) {
-                        alts[0].style.borderColor = alts[1].style.borderColor = 'var(--onbackground)';
+                        for (let i = 0; i < alts.length; i++)
+                            alts[i].style.borderColor = 'var(--onbackground)';
                         this.fs_alt = false;
                     }
                     break;
@@ -479,6 +482,10 @@ class Keyboard {
             }
         }
         return val;
+    }
+    trnCtrls(n) {
+        return (n === 'CapsLock') ? 1 : (n === 'Shift') ? 2 : (n === 'Ctrl') ? 3 :
+                (n === 'Alt') ? 4 : 0;
     }
 }
 
