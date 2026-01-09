@@ -652,8 +652,8 @@ class MonI4004 extends Monitor {
 
 async function main() {
     const con = await VT_100('scr', {
-    	      SCR_WIDTH: 72, SCR_HEIGHT: 24, AA: true,
-    	      COLORS: ['#fff8dc', null, null, null, null, null, null, '#3d3c3a']
+              SCR_WIDTH: 72, SCR_HEIGHT: 24, AA: true,
+              COLORS: ['#fff8dc', null, null, null, null, null, null, '#3d3c3a']
           }),
           mem = new /*I4001_0009MemIO()*/ISIM4_02MemIO(con),
           cpu = new GenCpu(mem, 0),
