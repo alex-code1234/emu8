@@ -447,7 +447,7 @@ class Keyboard {
             case 'Backspace': val = 8; break;
             case 'Tab': val = 9; break;
             case 'Enter': val = 13; break;
-            case ' ':
+            case '':
             case 'Space': val = 32; break;
             case 'Insert': val = 15; break;
             case 'PageUp':
