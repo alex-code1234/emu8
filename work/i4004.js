@@ -538,10 +538,34 @@ class ISIM4_02MemIO extends I4004MemIO {
 
 class ISIM4_02Kbd extends Kbd {
     constructor(con, mon) {
+        SoftKeyboard(`sec
+4 1,!..1    1,"..2 1,#..3 1,$..4 1,%..5 1,&..6 1,'..7 1,(..8 1,)..9 1,0     1,*..: 1,=.._
+3 1,ESC     1,Q    1,W    1,E    1,R    1,T    1,Y    1,U    1,I    1,-..O  1,@..P 1,LF      1,CR
+4 1,CTRL_c  1,A    1,S    1,D    1,F    1,G    1,H    1,J    1,[..K 1,\\..L 1,+..; 1,DEL
+5 1,SHIFT_s 1,Z    1,X    1,C    1,V    1,B    1,^..N 1,]..M 1,<.., 1,>...  1,?../ 1,SHIFT_s
+5 5 3       20,\u0020
+        `);
+        document.documentElement.style.setProperty('--key_size', '39px');
+        const styles = document.styleSheets[0];
+        styles.insertRule('.key { border-radius: 20px !important; }', 39);
+        styles.insertRule('.sp20 { grid-column: span 8 !important; }', 39);
         super(con, mon);
     }
+    trnCtrls(n) {
+        return (n === 'SHIFT') ? 2 : (n === 'CTRL') ? 3 : super.trnCtrls(n);
+    }
+    translateKey(e, soft, isDown) {
+        if (isDown) return null;                    // HW keyboard on key UP only
+        switch (e.key) {
+            case 'ESC': return 27;
+            case 'LF': return 10;
+            case 'CR': return 13;
+            case 'DEL': return 127;
+            case 'F10': if (this.fs_alt) return 10; // map LF for HW keyboard
+            default: return super.translateKey(e, soft, isDown);
+        }
+    }
     processKey(val) {
-        if (val === 92) val = 10;                         // LF
         if (val >= 97/*a*/ && val <= 122/*z*/) val -= 32; // upperCase
         this.monitor.emu.memo.sendChar(val);
     }
@@ -627,7 +651,10 @@ class MonI4004 extends Monitor {
 }
 
 async function main() {
-    const con = await createCon(amber, 'VT220'),
+    const con = await VT_100('scr', {
+    	      SCR_WIDTH: 72, SCR_HEIGHT: 24, AA: true,
+    	      COLORS: ['#fff8dc', null, null, null, null, null, null, '#3d3c3a']
+          }),
           mem = new /*I4001_0009MemIO()*/ISIM4_02MemIO(con),
           cpu = new GenCpu(mem, 0),
           emu = new Emulator(cpu, mem, 0),
