@@ -381,8 +381,9 @@ function Cpu(memo) {
     setPC = v => rSP[sp] = v & 0x0fff,
     pTest = v => (v === undefined) ? test : test = v & 0x01;
     reset();
-    return {reset, step, disassembleInstruction, setRegisters, cpuStatus, getPC, setPC, pTest
-, rRR, 'cycls': () => cycles
+    return {
+        reset, step, disassembleInstruction, setRegisters, cpuStatus, getPC, setPC, pTest,
+        'cycls': () => cycles
     };
 }
 
@@ -571,6 +572,289 @@ class ISIM4_02Kbd extends Kbd {
     }
 }
 
+class IBusicomMemIO extends I4004MemIO {
+    constructor(con) {
+        super(5, 2, 0, 0);
+        this.con = con;
+        this.init_data();
+        this.columns = [
+            '000000000000000 \x01#',    '111111111111111 +*',    '222222222222222 -I',
+            '333333333333333 X\x02',    '444444444444444 /\x03', '555555555555555 \x04\x04',
+            '666666666666666 \x05\x05', '777777777777777 ^T',    '888888888888888 =K',
+            '999999999999999 \x06E',    '............... %\x07', '............... CC',
+            '--------------- RM'
+        ];
+        this.specsym = ['<>', 'II', 'I3', 'M+', 'M-', 'SQ', 'Ex'];
+    }
+    init_data() {
+        this.count1 = 0; this.count2 = 0; this.count3 = 0; this.kbd_cnt = 0;
+        this.kbd_ptr = 0; this.kbd_buf = [0, 0, 0, 0, 0, 0];
+        this.kbd_key = 0; this.kbd_shift = 0; this.kbd_mask = 0;
+        this.prt_shift = 0;
+        this.dg_point_switch = 0; this.round_switch = 0;
+        this.lcolor = 0;
+        this.line = [
+            ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ',
+            ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '
+        ];
+    }
+    init_signals() {
+        this.CPU.cpu.pTest(1); // printer drum sector signal
+        this.rom_ports[2] = 0; // printer drum index signal (bit 0), paper advance btn (bit 3)
+    }
+    init(lights) {
+        const step = this.CPU.cpu.step;
+        this.CPU.cpu.step = () => {
+            const res = step();
+            this.count1++;                  // sector signal
+            if (this.count1 > 785) {        // ~ 28ms
+                this.count1 = 0;
+                const test = ~this.CPU.cpu.pTest() & 0x01;
+                this.CPU.cpu.pTest(test);
+                if (test === 1) {
+                    this.count2++;          // index signal
+                    if (this.count2 > 12) { // ~ 364ms
+                        this.count2 = 0;
+                        this.rom_ports[2] |= 0x01;
+                    }
+                }
+                else if (this.rom_ports[2] & 0x01) this.rom_ports[2] &= 0x0e;
+                if (this.count3 > 0) {      // paper advance btn signal active
+                    this.count3--;          // 3 cycles
+                    if (this.count3 === 0) this.rom_ports[2] &= 0x07;
+                }
+            }
+            return res;
+        };
+        this.init_signals();
+        if (lights.length === 3) {
+            lights[0].style.backgroundColor = '#ff000000';
+            lights[1].style.backgroundColor = '#00ff0000';
+            lights[2].style.backgroundColor = '#fffdd000';
+            this.lights = lights; this.lbits = [2, 4, 1];
+        }
+    }
+    reset(full) {
+        super.reset(full);
+        this.init_data();
+        this.init_signals();
+    }
+    rd(a) {
+        return this.rom[a & (((a & 0x700) > 0x400) ? 0xff : 0x7ff)];
+    }
+    wr(a, v) {
+        this.rom[a & (((a & 0x700) > 0x400) ? 0xff : 0x7ff)] = v;
+    }
+    output(p, v) {
+        if (p === 0) { // 4003 shifters
+            const old = this.rom_ports[0];
+            if ((old & 0x01) === 0 && v & 0x01) { // keyboard matrix column shifter clock
+                this.kbd_shift = (this.kbd_shift << 1 | (v & 0x02) >> 1) & 0x3ff;
+                if (this.kbd_shift === 0x3fe && this.kbd_ptr > 0 && this.kbd_cnt === 0) {
+                    const kcode = this.kbd_buf[0];
+                    this.kbd_ptr--;
+                    for (let i = 0; i < this.kbd_ptr; i++) this.kbd_buf[i] = this.kbd_buf[i + 1];
+                    this.kbd_mask = kcode & 0x3ff; this.kbd_key = kcode >> 12 & 0x0f;
+                }
+                if (this.kbd_cnt > 0) this.kbd_cnt--;
+                if (this.kbd_shift === 0x1ff) this.rom_ports[1] = this.round_switch;
+                else if (this.kbd_shift === 0x2ff) this.rom_ports[1] = this.dg_point_switch;
+                else if (this.kbd_mask === this.kbd_shift) {
+                    this.rom_ports[1] = this.kbd_key;
+                    this.kbd_mask = this.kbd_key = 0;
+                    this.kbd_cnt = 20;
+                }
+                else if (this.rom_ports[1] !== 0) this.rom_ports[1] = 0;
+            }
+            if ((old & 0x04) === 0 && v & 0x04)   // printer shifter clock (2 cascaded 4003)
+                this.prt_shift = (this.prt_shift << 1 | (v & 0x02) >> 1) & 0xfffff;
+        }
+        super.output(p, v);
+    }
+    wram_port(c, v) {
+        if (c === 1) {
+            const old = this.dram_ports[1];
+            if (old !== (v & 0x0f) && this.lights)
+                for (let i = 0; i < 3; i++) {
+                    const l = this.lights[i], bg = l.style.backgroundColor,
+                          b = v & this.lbits[i];
+                    if ((b && bg.endsWith('0)')) || (!b && bg.endsWith('5)')))
+                        l.style.backgroundColor = bg.replace(/[^,]+(?=\))/,
+                                (v & this.lbits[i]) ? '0.95' : '0');
+                }
+        }
+        super.wram_port(c, v);
+        if (c === 0) {
+            const prtstr = s => {
+                const c = this.con;
+                for (let i = 0, n = s.length; i < n; i++) c.display(s.charCodeAt(i) & 0x7f);
+            };
+            if (v & 0x08) {      // printer paper advanced
+                if (this.lcolor === 1) prtstr('\x1b[34m');
+                prtstr(this.line.join('') + '\r\n');
+                if (this.lcolor === 1) prtstr('\x1b[37m');
+                this.line = [
+                    ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ',
+                    ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '
+                ];
+                this.lcolor = 0;
+            }
+            else if (v & 0x02) { // printer hammers fired
+                let mask = 0x00001;
+                for (let i = 16, j = 16; i < 18; i++, j += 2) {
+                    if (this.prt_shift & mask) {
+                        const chr = this.columns[this.count2].charAt(i),
+                              chrc = chr.charCodeAt(0);
+                        if (chrc > 7) this.line[j] = chr;
+                        else {
+                            const rch = this.specsym[chrc - 1];
+                            this.line[j] = rch.charAt(0);
+                            this.line[j + 1] = rch.charAt(1);
+                        }
+                    }
+                    mask <<= 1;
+                }
+                mask = 0x20000;
+                for (let i = 14; i >= 0; i--) {
+                    if (this.prt_shift & mask)
+                        this.line[i] = this.columns[this.count2].charAt(i);
+                    mask >>= 1;
+                }
+            }
+            else if (v & 0x01)   // printer tape color
+                this.lcolor = 1;
+        }
+    }
+    key_pressed(v) {
+        let val;
+        if (this.kbd_ptr >= 6) return;
+        switch (v) {
+            //   1111111110     3FE                   bit0   bit1   bit2   bit3
+            case 0x81: val = 0x13fe; break; // KBC0   CM
+            case 0x82: val = 0x23fe; break; // KBC0          RM
+            case 0x83: val = 0x43fe; break; // KBC0                 M-
+            case 0x84: val = 0x83fe; break; // KBC0                        M+
+            case 0x85: val = 0x13fd; break; // KBC1   SQRT
+            case 0x86: val = 0x23fd; break; // KBC1          %
+            case 0x87: val = 0x43fd; break; // KBC1                 M=-
+            case 0x88: val = 0x83fd; break; // KBC1                        M=+
+            case 0x89: val = 0x13fb; break; // KBC2   <>
+            case 0x8a: val = 0x23fb; break; // KBC2          /
+            case 0x8b: val = 0x43fb; break; // KBC2                 *
+            case 0x8c: val = 0x83fb; break; // KBC2                        =
+            case 0x8d: val = 0x13f7; break; // KBC3   -
+            case 0x8e: val = 0x23f7; break; // KBC3          +
+            case 0x91: val = 0x13ef; break; // KBC4   9
+            case 0x92: val = 0x23ef; break; // KBC4          6
+            case 0x93: val = 0x43ef; break; // KBC4                 3
+            case 0x94: val = 0x83ef; break; // KBC4                        .
+            case 0x95: val = 0x13df; break; // KBC5   8
+            case 0x96: val = 0x23df; break; // KBC5          5
+            case 0x97: val = 0x43df; break; // KBC5                 2
+            case 0x98: val = 0x83df; break; // KBC5                        00
+            case 0x99: val = 0x13bf; break; // KBC6   7
+            case 0x9a: val = 0x23bf; break; // KBC6          4
+            case 0x9b: val = 0x43bf; break; // KBC6                 1
+            case 0x9c: val = 0x83bf; break; // KBC6                        0
+            case 0x9d: val = 0x137f; break; // KBC7   Sign
+            case 0x9e: val = 0x237f; break; // KBC7          EX
+            case 0x9f: val = 0x437f; break; // KBC7                 CE
+            case 0xa0: val = 0x837f; break; // KBC7                        C
+            case 0: case 1: case 2: case 3:
+            case 4: case 5: case 6: case 8: this.dg_point_switch = v; return;
+            case 10: this.round_switch = 1; return;
+            case 11: this.round_switch = 0; return;
+            case 12: this.round_switch = 8; return;
+            default: return;
+        }
+        this.kbd_buf[this.kbd_ptr++] = val;
+    }
+}
+
+class IBusicomKbd extends Kbd {
+    constructor(con, mon) {
+        SoftKeyboard(`sec
+5 2         1,OVR 1,NEG 1,M      1,Sign 1,7 1,8  1,9 1,- 1,<> 1,SQRT 1,CM
+5 2         1,-R- 1,-F- 1,-T-   1,EX   1,4 1,5  1,6 4,+      1,%    1,RM
+5     1,-0- 1,-1- 1,-2- 1,-3-   1,CE   1,1 1,2  1,3 1,/ 1,*  1,M+   1,M-
+5     1,-4- 1,-5- 1,-6- 1,-8-   1,C    1,0 1,00 1,. 4,=      1,M+=  1,M-=
+        `);
+        document.documentElement.style.setProperty('--key_size', '42px');
+        const keys = document.getElementsByClassName('key'),
+              btns = new Map(), lights = [];
+        let sel1 = null, sel2 = null;
+        for (let e of keys) {
+            const txt = e.innerText;
+            if (txt === 'OVR' || txt === 'NEG' || txt === 'M') lights.push(e);
+            else if (txt.charAt(0) === '-' && txt.length > 1) {
+                const chr = txt.charAt(1);
+                let clr = '#cccccc80';
+                if (chr === '0' || chr === 'F') {
+                    clr = '#cccccc20';
+                    if (chr === '0') sel1 = e;
+                    else sel2 = e;
+                }
+                e.style.backgroundColor = clr;
+                btns.set(chr, e);
+            }
+        }
+        super(con, mon);
+        this.monitor.emu.memo.init(lights); // everything set up, initialize memo
+        this.btns = btns; this.sel1 = sel1; this.sel2 = sel2;
+    }
+    translateKey(e, soft, isDown) {
+        if (isDown) return null; // HW keyboard on key UP only
+        switch (e.key) {
+            case '0': return 0x9c;
+            case '1': return 0x9b;
+            case '2': return 0x97;
+            case '3': return 0x93;
+            case '4': return 0x9a;
+            case '5': return 0x96;
+            case '6': return 0x92;
+            case '7': return 0x99;
+            case '8': return 0x95;
+            case '9': return 0x91;
+            case '.': return 0x94;
+            case '+': return 0x8e;
+            case '-': return 0x8d;
+            case '*': return 0x8b;
+            case '/': return 0x8a;
+            case '=': return 0x8c;
+            case 'SQRT': return 0x85;
+            case '%': return 0x86;
+            case 'C': return 0xa0;
+            case 'EX': return 0x9e;
+            case 'CE': return 0x9f;
+            case 'Sign': return 0x9d;
+            case '00': return 0x98;
+            case '<>': return 0x89;
+            case 'M+': return 0x84;
+            case 'M+=': return 0x88;
+            case 'CM': return 0x81;
+            case 'RM': return 0x82;
+            case 'M-': return 0x83;
+            case 'M-=': return 0x87;
+            case '-0-': case '-1-': case '-2-': case '-3-':
+            case '-4-': case '-5-': case '-6-': case '-8-':
+                if (this.sel1 !== null) this.sel1.style.backgroundColor = '#cccccc80';
+                this.sel1 = this.btns.get(e.key.charAt(1));
+                if (this.sel1 !== null) this.sel1.style.backgroundColor = '#cccccc20';
+                return e.key.charCodeAt(1) - 48;
+            case '-R-': case '-F-': case '-T-':
+                const chr = e.key.charAt(1);
+                if (this.sel2 !== null) this.sel2.style.backgroundColor = '#cccccc80';
+                this.sel2 = this.btns.get(chr);
+                if (this.sel2 !== null) this.sel2.style.backgroundColor = '#cccccc20';
+                return (chr === 'R') ? 10 : (chr === 'F') ? 11 : 12;
+            default: return null;
+        }
+    }
+    processKey(val) {
+        this.monitor.emu.memo.key_pressed(val);
+    }
+}
+
 class MonI4004 extends Monitor {
     constructor(emu) {
         super(emu);
@@ -653,17 +937,18 @@ class MonI4004 extends Monitor {
 async function main() {
     const con = await VT_100('scr', {
               SCR_WIDTH: 72, SCR_HEIGHT: 24, AA: true,
-              COLORS: ['#fff8dc', null, null, null, null, null, null, '#3d3c3a']
+              COLORS: ['#fff8dc', null, null, null, '#d0312d', null, null, '#3d3c3a']
           }),
-          mem = new /*I4001_0009MemIO()*/ISIM4_02MemIO(con),
+          mem = new /*I4001_0009MemIO()*//*ISIM4_02MemIO(con)*/IBusicomMemIO(con),
           cpu = new GenCpu(mem, 0),
           emu = new Emulator(cpu, mem, 0),
           mon = new MonI4004(emu),
-          kbd = new ISIM4_02Kbd(con, mon);
+          kbd = new /*ISIM4_02Kbd(con, mon)*/IBusicomKbd(con, mon);
     emu.D_AMS = 0xfff; // mem mask
     /*await mon.exec('r 0 4001_0009.hex 1');*/
-    await mon.exec('r 0 4004_mon.hex 1');
-    mem.active = 1; await mon.exec('r 0 4004_asm.hex 1'); mem.active = 0;
+    /*await mon.exec('r 0 4004_mon.hex 1');
+    mem.active = 1; await mon.exec('r 0 4004_asm.hex 1'); mem.active = 0;*/
+    await mon.exec('r 0 4004_bus.hex 1');
     term.setPrompt('> ');
     while (true) await mon.exec(await term.prompt());
 }
