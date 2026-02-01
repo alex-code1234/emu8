@@ -137,6 +137,10 @@ async function Speaker(volume = 0.03, filter = [15000, 50, 0.1], canvas = null) 
             buff.push(cycles);                          // save data
             if (bckg !== null) clearTimeout(bckg);      // re-schedule timeout
             bckg = setTimeout(timer, 1);                // send in 1ms (~2.6ms audio cycle)
+//if (buff.length === 1) queueMicrotask(() => {
+//    proc.port.postMessage(buff);
+//    buff.length = 0;
+//});
         }
         prevBit = bit;                                  // remember bit
     },

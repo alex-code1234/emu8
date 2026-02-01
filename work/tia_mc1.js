@@ -137,14 +137,139 @@ function TIA_MC1Screen(screen, scr_w, scr_h, tile_w, tile_h, AA) {
     return {load, rupdate, pupdate, render};
 }
 
+// Speaker interface
+async function Speaker(volume = 0.03, filter = [15000, 50, 0.1], canvas = null) {
+    function constructor() {                            // AudioWorkletProcessor constructor
+        _super();                                       // super call, fixed during class generation
+        this.ticks = [];                                // data buffer
+        this.value = 0.5;                               // sample value 50%
+        this.sample = 48000.0 / 2000000.0;              // sampling ratio (48kHz - audio, 2MHz - CPU)
+        this.prevCycle = 0;
+        this.port.onmessage = e => {                    // message handler
+            const data = e.data;
+            for (let i = 0, length = data.length; i < length; i++) { // preprocess data
+                const cycle = data[i];                               // calc audio half wave length
+                let hwlen = Math.round((cycle - this.prevCycle) * this.sample) | 0;
+                if (hwlen < 1) hwlen = 1; else if (hwlen > 1024) hwlen = 1024;
+                this.ticks.push(hwlen);                              // save in buffer
+                this.prevCycle = cycle;                              // remember cycle
+            }
+        };
+    }
+    function process(inps, outs, parms) {               // AudioWorkletProcessor process method
+        const out = outs[0][0];                         // mono output
+        let i = 0;
+        while (i < out.length) {                        // fill in outputs
+            if (this.ticks.length === 0) {                           // no data in buffer
+                out[i++] = 0;                                        // no signal
+                continue;
+            }
+            let cnt = this.ticks[0];                    // number of samples
+            while (cnt-- > 0) {
+                out[i++] = this.value;                               // output signal
+                if (i >= out.length) break;                          // finished samples buffer
+            }
+            if (cnt > 0) {                              // samples batch not done
+                this.ticks[0] = cnt;                    // remember rest
+                break;
+            }
+            this.ticks.shift();                         // remove processed data
+            this.value = -this.value;                   // switch value sign for second half
+        }
+        return true;
+    }
+    if (!(await navigator.mediaDevices.getUserMedia({'audio': true})))
+        return null;                                    // audio disabled, no speaker
+    const p1 = ('' + constructor).substring(9).replace('_super', 'super'),
+          p2 = ('' + process).substring(9),
+          p3 = 'registerProcessor("audio-speaker", AP);',
+          blob = new Blob([
+              `class AP extends AudioWorkletProcessor {${p1}${p2}} ${p3}`
+          ], {type: 'text/javascript'}),                // AudioWorkletProcessor code
+          url = URL.createObjectURL(blob),
+          cntx = new AudioContext();                    // audio context
+    await cntx.audioWorklet.addModule(url);             // register AudioWorkletProcessor
+    let graph = null, points, ctx2,                     // audio visualization
+        prevBit = 0, buff = [];
+    const proc = new AudioWorkletNode(cntx, 'audio-speaker'), // AudioWorkletProcessor node
+          gain = cntx.createGain(),                     // speaker volume node
+    start = async () => {                               // start audio
+        await cntx.resume(); if (graph) draw();
+    },
+    stop = async () => {                                // stop audio
+        await cntx.suspend();
+    },
+    destroy = async () => {                             // free resources
+        await cntx.close(); URL.revokeObjectURL(url);
+    },
+    tick = (bit, cycles) => {                           // speaker interface, prepare audio
+        if (bit ^ prevBit) {                            // bit changed, process
+            buff.push(cycles);                          // save data
+            if (buff.length === 1) queueMicrotask(() => {
+                proc.port.postMessage(buff);
+                buff.length = 0;
+            });
+        }
+        prevBit = bit;                                  // remember bit
+    },
+    setPointAttrs = (wdt, bgd, fgd) => {                // set canvas attributes
+        ctx2.lineWidth = wdt; ctx2.fillStyle = bgd; ctx2.strokeStyle = fgd;
+    },
+    drawPoints = (pts, clear) => {                      // update canvas
+        const length = pts.length,
+              width = ctx2.canvas.width, height = ctx2.canvas.height,
+              height2 = (height / 2) | 0, width2 = width / length;
+        if (clear) ctx2.fillRect(0, 0, width, height);  // clear view
+        let x = 0;
+        ctx2.beginPath();                               // draw points
+        for (let i = 0; i < length; i++) {
+            const y = ((pts[i] / 128.0) * height2) | 0;
+            if (i === 0) ctx2.moveTo(x, y); else ctx2.lineTo(x, y);
+            x += width2;
+        }
+        ctx2.lineTo(width, height2);
+        ctx2.stroke();
+    },
+    draw = () => {                                      // update audio visualization
+        if (cntx.state !== 'running') return;           // audio not active, no update
+        graph.getByteTimeDomainData(points);            // get data from analyser node
+        drawPoints(points, true);
+        requestAnimationFrame(draw);                    // schedule next update
+    };
+    stop();                                             // initially suspended
+    gain.connect(cntx.destination);                     // connect audio nodes
+    let middle = gain;
+    if (canvas) {                                       // visualization requested
+        graph = cntx.createAnalyser();                  // create analyser node
+        points = new Uint8Array(graph.frequencyBinCount); // and data buffer
+        graph.connect(middle); middle = graph;          // include into node chain
+        if (typeof canvas === 'string') canvas = document.getElementById(canvas);
+        ctx2 = canvas.getContext('2d');
+        setPointAttrs(2, '#000000', '#008000');         // set draw parameters
+    }
+    if (filter) {                                       // create hi-lo-q filter
+        const flt = cntx.createBiquadFilter();
+        flt.frequency.value = filter[0]; flt.type = 'lowpass'; flt.Q.value = filter[2];
+        flt.connect(middle);
+        const flt2 = cntx.createBiquadFilter();
+        flt2.frequency.value = filter[1]; flt2.type = 'highpass'; flt2.Q.value = filter[2];
+        flt2.connect(flt); middle = flt2;
+    }
+    proc.connect(middle);
+    gain.gain.value = volume;                           // set audio volume
+    return {start, stop, destroy, tick, setPointAttrs, drawPoints};
+}
+
 class TIA_MC1MemIO {
-    constructor(con) {
+    constructor(con, spk) {
         this.con = con;
         this.type = 0;
         this.CPU = null;
         this.rom = new Uint8Array(0x2000 * 7);
         this.ram = new Uint8Array(0x2000);
         this.vsync = 0x80; this.cycles = 0;
+        this.spk = spk;
+        this.pit = Intel8253(this.pitOut.bind(this));
     }
     rd(a) {
         return (a < 0xe000) ? this.rom[a] : this.ram[a - 0xe000];
@@ -162,7 +287,11 @@ class TIA_MC1MemIO {
         return 0;
     }
     output(p, v) {
-        this.con.pupdate(p, v);
+        if (p >= 0xc0 && p <= 0xc3) this.pit.write(p - 0xc0, v);
+        else this.con.pupdate(p, v);
+    }
+    pitOut(num) {
+        
     }
     load(planes, code) {
         this.con.load(planes);
@@ -178,15 +307,40 @@ class TIA_MC1MemIO {
     }
 }
 
+class TIA_MC1Cpu extends GenCpu {
+    constructor(memo) {
+        super(memo, 0);
+        this.CPU_INSTR_CNT = 2348;
+        const oldstep = this.cpu.step.bind(this.cpu),
+              pitCntrs = memo.pit.counters;
+        this.cpu.step = function() {
+            const res = oldstep();
+            memo.sync(this.cycles);
+            
+            return res;
+        };
+        this.spk = memo.spk;
+    }
+    async run() {
+        if (this.spk) await this.spk.start();
+        await super.run();
+        if (this.spk) await this.spk.stop();
+    }
+}
+
 class TIA_MC1Kbd extends Kbd {
     constructor(con, mon) {
         SoftKeyboard(`sec
-4 4 4                        [1,&#8593;]                    4 4 4 4
-4       1,A 1,B 2   [1,&#8592;]   2   [1,&#8594;]   2   1,T   2 4 4
-4 4 4                        [1,&#8595;]            4   1,C
+4 4                    [1,&#8593;]                4 2
+1,A 1,B   2   [1,&#8592;]   2   [1,&#8594;]   2   1,T
+4 4                    [1,&#8595;]            4   1,C
         `);
         document.documentElement.style.setProperty('--key_size', '52px');
         super(con, mon, undefined, true);
+        const sect = this.kbdElem.childNodes[0].style;
+        sect.setProperty('grid-template-columns', 'repeat(16, 26px)');
+        sect.setProperty('grid-template-rows', 'repeat(3, 38.235px)');
+        this.kbdElem.style.setProperty('width', '488.8px');
         this.d = [0, 0, 0];
         this.monitor.emu.memo.kbd = this.d; // expose keyboard data
     }
@@ -238,19 +392,14 @@ class TIA_MC1Monitor extends Monitor {
 
 async function main() {
     await loadScript('../emu/github/emu8/js/js8080.js');
-    const con = TIA_MC1Screen('scr', 640, 640, 256, 256, false),
-          mem = new TIA_MC1MemIO(con),
-          cpu = new GenCpu(mem, 0),
+    await loadScript('../emu/github/emu8/js/hrdwr8.js');
+    const con = TIA_MC1Screen('scr', 640, 640, 256, 256, true),
+          spk = await Speaker(undefined, undefined, undefined),
+          mem = new TIA_MC1MemIO(con, spk),
+          cpu = new TIA_MC1Cpu(mem),
           emu = new Emulator(cpu, mem, 0),
           mon = new TIA_MC1Monitor(emu),
-          kbd = new TIA_MC1Kbd(con, mon),
-          oldstep = cpu.cpu.step.bind(cpu.cpu);
-    cpu.cpu.step = function() {
-        const res = oldstep();
-        mem.sync(this.cycles);
-        return res;
-    };
-    cpu.CPU_INSTR_CNT = 2348;
+          kbd = new TIA_MC1Kbd(con, mon);
 await mon.exec('load tiamc1/esp32/data/konek_');
     term.setPrompt('> ');
     while (true) await mon.exec(await term.prompt());

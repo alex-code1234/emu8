@@ -1,0 +1,444 @@
+      0010         *10
+
+00010 0000 TYPEI,  0              / TYPE INDEX
+00011 0205 PCI,    TEST-1         / PC REGISTER
+
+      0020         *20
+
+00020 7777 C7777,  -1
+00021 7501 RSP,    7501           / RETURN STACK POINTER (7400 - 7500)
+00022 0400 CORSP,  -7400          / RSP STACK OVERFLOW CHECK
+00023 0277 CURSP,  -7501          / RSP STACK UNDERFLOW CHECK
+00024 7400 PSP,    7400           / PARAMETER STACK POINTER (7277 - 7377)
+00025 0501 COPSP,  -7277          / PSP STACK OVERFLOW CHECK
+00026 0400 CUPSP,  -7400          / PSP STACK UNDERFLOW CHECK
+
+00027 0000 TEMP1,  0              / TEMP STORAGE
+
+00030 0000 GETCH0, 0              / GET CHARACTER
+00031 6031         KSF            / KEYBOARD FLAG SET?
+00032 5031         JMP .-1        / NO, CHECK AGAIN
+00033 6036         KRB            / YES, READ CHARACTER
+00034 5430         JMP I GETCH0   / RETURN
+
+00035 0000 PUTCH0, 0              / PRINT CHARACTER IN AC
+00036 6041         TSF            / PRINTER FLAG SET?
+00037 5036         JMP .-1        / NO, CHECK AGAIN
+00040 6046         TLS            / YES, PRINT CHARACTER
+00041 7300         CLA CLL        / CLEAR AC AND LINK
+00042 5435         JMP I PUTCH0   / RETURN
+
+00043 0000 TYPE0,  0              / PRINT MESSAGE IN AC
+00044 1020         TAD C7777      / MSG-1
+00045 3010         DCA TYPEI      / SETUP LOOP
+00046 1410 TYPE1,  TAD I TYPEI    / GET CHAR
+00047 7450         SNA            / <>0?
+00050 5443         JMP I TYPE0    / NO, RETURN
+00051 4035         JMS PUTCH0     / YES, PRINT CHAR
+00052 5046         JMP TYPE1      / LOOP
+
+00053 0000 ERROR0, 0              / PRINT MESSAGE AND STOP
+00054 1053         TAD ERROR0     / GET MSG (AC = 0 ON ENTRY)
+00055 4043         JMS TYPE0      / PRINT IT
+00056 7402         HLT
+
+00057 0000 RPUSH0, 0              / PUSH AC TO RETURN STACK
+00060 3027         DCA TEMP1      / SAVE AC
+00061 1021         TAD RSP        / GET SP
+00062 1022         TAD CORSP      / STACK FULL?
+00063 7640         SZA CLA
+00064 5072         JMP RPUSH1     / NO, PUSH
+00065 4053         JMS ERROR0     / YES, PRINT MESSAGE AND STOP
+00066 0322         "R;"S;"F;0     / RETURN STACK FULL
+00067 0323
+00070 0306
+00071 0000
+00072 7040 RPUSH1, CMA            / -1
+00073 1021         TAD RSP        / DEC SP
+00074 3021         DCA RSP        / SAVE SP
+00075 1027         TAD TEMP1      / RESTORE AC
+00076 3421         DCA I RSP      / PUSH IT
+00077 5457         JMP I RPUSH0   / RETURN
+
+00100 0000 RPOP0,  0              / POP AC FROM RETURN STACK
+00101 1021         TAD RSP        / GET SP (AC = 0 ON ENTRY)
+00102 1023         TAD CURSP      / STACK EMPTY?
+00103 7640         SZA CLA
+00104 5112         JMP RPOP1      / NO, POP
+00105 4053         JMS ERROR0     / YES, PRINT MESSAGE AND STOP
+00106 0322         "R;"S;"E;0     / RETURN STACK EMPTY
+00107 0323
+00110 0305
+00111 0000
+00112 1421 RPOP1,  TAD I RSP      / POP IT
+00113 2021         ISZ RSP        / INC SP (NEVER 0)
+00114 5500         JMP I RPOP0    / RETURN
+
+00115 0000 PPUSH0, 0              / PUSH AC TO PARAMETER STACK
+00116 3027         DCA TEMP1      / SAVE AC
+00117 1024         TAD PSP        / GET SP
+00120 1025         TAD COPSP      / STACK FULL?
+00121 7640         SZA CLA
+00122 5130         JMP PPUSH1     / NO, PUSH
+00123 4053         JMS ERROR0     / YES, PRINT MESSAGE AND STOP
+00124 0320         "P;"S;"F;0     / PARAMETER STACK FULL
+00125 0323
+00126 0306
+00127 0000
+00130 7040 PPUSH1, CMA            / -1
+00131 1024         TAD PSP        / DEC SP
+00132 3024         DCA PSP        / SAVE SP
+00133 1027         TAD TEMP1      / RESTORE AC
+00134 3424         DCA I PSP      / PUSH IT
+00135 5515         JMP I PPUSH0   / RETURN
+
+00136 0000 PPOP0,  0              / POP AC FROM PARAMETER STACK
+00137 1024         TAD PSP        / GET SP (AC = 0 ON ENTRY)
+00140 1026         TAD CUPSP      / STACK EMPTY?
+00141 7640         SZA CLA
+00142 5150         JMP PPOP1      / NO, POP
+00143 4053         JMS ERROR0     / YES, PRINT MESSAGE AND STOP
+00144 0320         "P;"S;"E;0     / PARAMETER STACK EMPTY
+00145 0323
+00146 0305
+00147 0000
+00150 1424 PPOP1,  TAD I PSP      / POP IT
+00151 2024         ISZ PSP        / INC SP (NEVER 0)
+00152 5536         JMP I PPOP0    / RETURN
+
+00153 1411 NEXT,   TAD I PCI      / GET NEXT WORD
+00154 3027 NEXT1,  DCA TEMP1
+00155 5427         JMP I TEMP1    / EXECUTE
+
+00156 0000 DOCOL,  0              / EXECUTE USER-DEFINED WORD
+00157 1011         TAD PCI        / GET PC
+00160 4057         JMS RPUSH0     / PUSH TO RETURN STACK
+00161 1156         TAD DOCOL      / GET ADDRESS AFTER THIS JMS DOCOL
+00162 1020         TAD C7777      / ADDRESS-1
+00163 3011         DCA PCI        / SET PC
+00164 5153         JMP NEXT
+
+00165 0000 DOCON,  0              / CONSTANT WORD
+00166 1565         TAD I DOCON    / GET VALUE AFTER THIS JMS DOCON
+00167 4115         JMS PPUSH0     / PUSH TO PARAMETER STACK
+00170 5153         JMP NEXT
+
+00171 0000 DOVAR,  0              / VARIABLE WORD
+00172 1171         TAD DOVAR      / GET ADDRESS AFTER THIS JMS DOVAR
+00173 4115         JMS PPUSH0     / PUSH TO PARAMETER STACK
+00174 5153         JMP NEXT
+
+      0200         *200
+
+00200 6046 START,  TLS
+00201 7300         CLA CLL
+00202 5153         JMP NEXT
+
+00203 7600 RESET,  7600
+00204 5603 OS8,    JMP I RESET
+00205 7402 STOP,   HLT
+
+00206 0235 TEST,   SPFTC1; STOP;
+00207 0205
+
+/ DICTIONARY: PREV LINK, NAME LENGTH, NAME, CODE
+00210 0000 FETCH,  0; 1; "@;                / @ (ADDR -- X) FETCH MEM AT ADDR
+00211 0001
+00212 0300
+00213 1424 FETCH1, TAD I PSP      / GET ADDRESS AT TOS (AC = 0 ON ENTRY )
+00214 3027         DCA TEMP1      / SAVE IT
+00215 1427         TAD I TEMP1    / GET VALUE
+00216 3424         DCA I PSP      / REPLACE TOS WITH VALUE
+00217 5153         JMP NEXT
+
+00220 0210 STORE,  FETCH; 1; "!;            / ! (X ADDR --) STORE X AT ADDR
+00221 0001
+00222 0241
+00223 4136 STORE1, JMS PPOP0      / GET ADDR
+00224 3027         DCA TEMP1      / SAVE IT
+00225 4136         JMS PPOP0      / GET X
+00226 3427         DCA I TEMP1    / SAVE X AT ADDR
+00227 5153         JMP NEXT
+
+00230 0220 SPFTC,  STORE; 3; "S;"P;"@;      / SP@ (-- SP) GET SP OF PARAMETER STACK
+00231 0003
+00232 0323
+00233 0320
+00234 0300
+00235 1024 SPFTC1, TAD PSP        / GET SP
+00236 4115         JMS PPUSH0     / SAVE IT
+00237 5153         JMP NEXT
+
+00240 0230 RPFTC,  SPFTC; 3; "R;"P;"@;      / RP@ (-- RP) GET SP OF RETURN STACK
+00241 0003
+00242 0322
+00243 0320
+00244 0300
+00245 1021 RPFTC1, TAD RSP        / GET SP
+00246 4115         JMS PPUSH0     / SAVE IT
+00247 5153         JMP NEXT
+
+00250 0240 ZEQ,    RPFTC; 2; "0;"=;         / 0= (X -- FLAG) -1 IF X IS 0, 0 OTHERWISE
+00251 0002
+00252 0260
+00253 0275
+00254 1424 ZEQ1,   TAD I PSP      / GET X AT TOS
+00255 7650         SNA CLA        / <>0?
+00256 1020         TAD C7777      / YES, SET -1
+00257 3424         DCA I PSP      / REPLACE TOS WITH VALUE
+00260 5153         JMP NEXT
+
+00261 0250 PLUS,   ZEQ; 1; "+;              / + (X Y -- Z) SET Z = X + Y
+00262 0001
+00263 0253
+00264 4136 PLUS1,  JMS PPOP0      / GET Y
+00265 1424         TAD I PSP      / GET X AT TOS AND SUM
+00266 3424         DCA I PSP      / REPLACE TOS WITH VALUE
+00267 5153         JMP NEXT
+
+00270 0261 NAND,   PLUS; 4; "N;"A;"N;"D;    / NAND (X Y -- Z) SET Z = !( X & Y)
+00271 0004
+00272 0316
+00273 0301
+00274 0316
+00275 0304
+00276 4136 NAND1,  JMS PPOP0      / GET Y
+00277 0424         AND I PSP      / GET X AT TOS AND & WITH Y
+00300 7040         CMA            / !AC
+00301 3424         DCA I PSP      / REPLACE TOS WITH VALUE
+00302 5153         JMP NEXT
+
+00303 0270 EXIT,   NAND; 4; "E;"X;"I;"T;    / EXIT (R:ADDR --) RESUME EXECUTION AT RET ADDR
+00304 0004
+00305 0305
+00306 0330
+00307 0311
+00310 0324
+00311 4100 EXIT1,  JMS RPOP0      / GET R:ADDR
+00312 3011         DCA PCI        / SET PC
+00313 5153         JMP NEXT
+
+00314 0303 KEY,    EXIT; 3; "K;"E;"Y;       / KEY (-- X) READ CHAR
+00315 0003
+00316 0313
+00317 0305
+00320 0331
+00321 4030 KEY1,   JMS GETCH0     / GET CHAR
+00322 4115         JMS PPUSH0     / SAVE IT
+00323 5153         JMP NEXT
+
+00324 0314 EMIT,   KEY; 4; "E;"M;"I;"T;     / EMIT (X --) PRINT CHAR
+00325 0004
+00326 0305
+00327 0315
+00330 0311
+00331 0324
+00332 4136 EMIT1,  JMS PPOP0      / GET X
+00333 4035         JMS PUTCH0     / PRINT IT
+00334 5153         JMP NEXT
+
+00335 0324 LIT,    EMIT; 3; "L;"I;"T;       / LIT (-- X) GET NEXT CELL VALUE
+00336 0003
+00337 0314
+00340 0311
+00341 0324
+00342 1411 LIT1,   TAD I PCI      / GET NEXT WORD
+00343 4115         JMS PPUSH0     / SAVE IT
+00344 5153         JMP NEXT
+
+00345 0335 HERE,   LIT; 4; "H;"E;"R;"E;     / HERE VARIABLE
+00346 0004
+00347 0310
+00350 0305
+00351 0322
+00352 0305
+00353 4171 HERE1,  JMS DOVAR; FREE;
+00354 0366
+
+00355 0345 EXEC, HERE; 4; "E;"X;"E;"C;      / EXEC (SFA -- ) EXECUTE WORD
+00356 0004
+00357 0305
+00360 0330
+00361 0305
+00362 0303
+00363 4136 EXEC1,  JMS PPOP0      / GET SFA
+00364 5154         JMP NEXT1      / EXECUTE
+
+00365 0355         EXEC           / LAST WORD IN DICTIONARY
+00366 0366 FREE,   .              / PTR TO FREE AREA
+
+           $
+
+COPSP  0025        TYPE0  0043
+CORSP  0022        TYPE1  0046
+CUPSP  0026        ZEQ    0250
+CURSP  0023        ZEQ1   0254
+C7777  0020
+DOCOL  0156
+DOCON  0165
+DOVAR  0171
+EMIT   0324
+EMIT1  0332
+ERROR0 0053
+EXEC   0355
+EXEC1  0363
+EXIT   0303
+EXIT1  0311
+FETCH  0210
+FETCH1 0213
+FREE   0366
+GETCH0 0030
+HERE   0345
+HERE1  0353
+KEY    0314
+KEY1   0321
+LIT    0335
+LIT1   0342
+NAND   0270
+NAND1  0276
+NEXT   0153
+OS8    0204
+PCI    0011
+PLUS   0261
+PLUS1  0264
+PPOP0  0136
+PPOP1  0150
+PPUSH0 0115
+PPUSH1 0130
+PSP    0024
+PUTCH0 0035
+RESET  0203
+RPFTC  0240
+RPFTC1 0245
+RPOP0  0100
+RPOP1  0112
+RPUSH0 0057
+RPUSH1 0072
+RSP    0021
+SPFTC  0230
+SPFTC1 0235
+START  0200
+STOP   0205
+STORE  0220
+STORE1 0223
+TEMP1  0027
+TEST   0206
+TYPEI  0010
+
+ERRORS DETECTED: 0
+LINKS GENERATED: 0
+
+~~~
+
+^ word  4156            \                    0 1   2->
+^ var   4171            \ word lit 5 lit 3 jmp 2 exit - jmp -3 (7775)
+^ const 4165            \                      3->  2 1   0
+^ test  0206
+^ exec  0363
+^ exit  0311
+^ 0=    0254
+^ emit  0332
+^ ;     0311
+^ @     0213
+^ here  0353
+^ key   0321
+^ lit   0342
+^ nand  0276
+^ +     0264
+^ rp@   0245
+^ sp@   0235
+^ !     0223
+
+: dup  word sp@ @ ;
+: inv  word dup nand ;
+: and  word nand inv ;
+: neg  word inv lit 1 + ;
+: -    word neg + ;
+: =    word - 0= ;
+: <>   word = inv ;
+: drop word dup - + ;
+: over word sp@ lit 1 + @ ;
+: swap word over over sp@ lit 3 + ! sp@ lit 1 + ! ;
+: nip  word swap drop ;
+: jmp  word rp@ @ dup lit 1 + @ + rp@ ! ;
+: zjmp word 0= rp@ @ lit 1 + @ lit 1 - and rp@ @ lit 1 + + rp@ ! ;
+
+: tib  const 7156 ;                         \ text buffer start (7156 - 7276)
+: tib< const 0501 ;                         \ text buffer overflow (-7277)
+: cr   const 0215 ;
+: lf   const 0212 ;
+: bl   const 0240 ;
+: in<  var   0 ;                            \ end of text ptr
+: >in  var   0 ;                            \ text ptr
+: type word dup zjmp 16                     \ addr count --
+            lit 1 - swap lit 1 + dup @ emit swap jmp 7761
+            drop drop ;
+: crlf word cr emit lf emit ;               \ --
+: 2bl  word bl emit bl emit ;               \ --
+: words word here @ lit 1 - @               \ --
+             2bl dup lit 1 + dup @ type
+             @ dup zjmp 3
+             jmp 7763
+             drop ;
+: accept word lit 0 tib ! tib lit 1 + in< ! \ --
+              key dup cr - zjmp 34 dup emit in< @ !
+              tib @ lit 1 + tib ! in< @ lit 1 + in< !
+              in< @ tib< + zjmp 4
+              jmp 7740
+              drop ;
+: cmp   word over @ over @ = ;              \ a1 a2 -- a1   a2   flag
+: nxt   word lit 1 + swap lit 1 + ;         \ a1 a2 -- a2+  a1+
+: tmp   var  0 ;
+: match word over @ lit 1 + tmp !           \ a1 a2 -- flag
+             cmp zjmp 16
+             tmp @ lit 1 - dup zjmp 14
+             tmp ! nxt jmp 7761
+             drop drop lit 0 jmp 6
+             drop drop drop lit 7777 ;
+: lookup word here @ lit 1 - @              \ str -- sfa | 0
+              over over lit 1 +             \ str entry1 str entry1_name
+              match zjmp 14                 \ str entry1
+              lit 1 + dup @ + lit 1 + jmp 7 \ str sfa    / match
+              dup zjmp 4 @ jmp 7750         \ str entryN / no match, next entry if not 0
+              nip ;                         \ sfa | 0
+: token word here @ lit 1 + dup tmp ! swap  \ addr -- addrN (init addr tib + 1)
+             dup in< @ - zjmp 30            \ a0 addr        / check end of buffer
+             dup @ dup bl - zjmp 20         \ a0 addr chr    / check delimiter
+             tmp @ ! tmp @ lit 1 + tmp !    \ a0 addr        / copy chr to here area
+             lit 1 + jmp 7745               \ a0 addrN       / next chr
+             drop                           \ a0 addrN       / remove chr from stack
+             swap tmp @ swap - here @ ! ;   \ addrN          / set str length
+: >number word lit 0 tmp !                  \ str -- num     / acc = 0
+               dup @                        \ str  len
+               dup zjmp 51                  \ str  len       / check empty str       m4: jmp m1
+               lit 1 - swap lit 1 +         \ len- str+
+               over over @ lit 260 -        \ len- str+ len- dig
+               over zjmp 20                 \ len- str+ len- dig  / check rank       m3: jmp m2
+               dup + dup dup + dup + +      \ len- str+ len- dig*
+               swap lit 1 - swap jmp 7757   \ len- str+ len- dig*                    jmp m3
+               tmp @ + tmp ! drop           \ len- str+      / acc += dig*           m2:
+               swap jmp 7726                \ str+ len-                              jmp m4
+               drop drop tmp @ ;            \ num                                    m1:
+: tm1   var  0 ;
+: div10 word lit 260 tmp !                  \ n 10 -- n-10 c / tmp = char_0
+             over over - dup lit 4000 nand  \ num 10 num-10 ~((num-10)&4000)         m2:
+             lit 7777 = zjmp 20             \ num 10 num-10  / 0 if num <= 10        jmp m1
+             tmp @ lit 1 + tmp !            \ num 10 num-10  / tmp += 1
+             swap tm1 ! nip tm1 @ jmp 7746  \ num-10 10                              jmp m2
+             drop drop                      \ num                                    m1:
+             tmp @ ;                        \ num chr
+: . word lit 1750 div10 emit                \ num --         / print bin->dec num 1000
+         lit 144 div10 emit                 \                / print 100
+         lit 12 div10 emit                  \                / print 10
+         lit 1 div10 emit drop ;            \                / print 1
+: interp word crlf lit 276 emit accept 2bl  \ --             / outer interpreter     m5:
+              tib                           \ addr           / start address
+              lit 1 + token >in ! here @    \ str            / get token             m3:
+              dup @ zjmp 25                 \ str            / end of line?          jmp m4
+              dup lookup dup zjmp 6         \ str sfa?       / try to find word, 0?  jmp m1
+              swap drop exec jmp 3          \ --             / execute word, cont.   jmp m2
+              drop >number                  \ -- num         / convert to number     m1:
+              >in @ dup in< @ = zjmp 7741   \ addr           / end of buff?          m2: jmp m3
+              drop jmp 7727 ;               \ --             / continue              m4: jmp m5
+
+~0206 interp

@@ -587,7 +587,7 @@ function KM8_E(count = 1) {            // extension
         for (let i = 0; i <= count; i++) RAM[i].clear();
     };
     for (let i = 0; i < count; i++) RAM.push(MM8_E());
-    return {rd, wr, setTSE, setField, CPU, setCpu, clear};
+    return {rd, wr, setTSE, setField, CPU, setCpu, clear, RAM};
 }
 
 function PDP_Device(                   // console IO device
@@ -1325,6 +1325,91 @@ await this.exec('tape MAINDEC-08-D5FA-pb.bpt'); await this.exec('x pc 150'); thi
                     default: console.error(`unknown test: ${parms[1]}`); break;
                 }
                 break;
+
+case 'stk':   // show parameter stack (tos at the right)
+case 'rstk':  // show return stack
+let badr = this.emu.memo.rd((cmd === 'stk') ? 0o0024 : 0o0021),
+    adr = (cmd === 'stk') ? 0o7377 : 0o7500,
+    lcnt = 0;
+while (adr >= badr) {
+    console.log(`${fmt(this.emu.memo.rd(adr--))} `, console.NB);
+    lcnt++;
+    if (lcnt > 7) { lcnt = 0; console.log(); }
+}
+console.log();
+break;
+case 'lde':   // load development environment
+await this.exec(`core ${parms[1]}.cor`);
+let dict = {}, prgt = (await loadFile(`${parms[1]}.lst`, true)),
+    spt = prgt.indexOf('~~~');
+if (spt >= 0) prgt = prgt.substring(spt + 3);
+const prg = prgt.split('\n');
+let addr = 0o0600;
+for (let i = 0, n = prg.length; i < n; i++) {
+    let stm = prg[i].trim();
+    const cpos = stm.indexOf('\\');
+    if (cpos >= 0) stm = stm.substring(0, cpos).trim();
+    if (stm.length === 0) continue;
+    const wrds = stm.split(/\s+/);
+    if (wrds[0] === '^') dict[wrds[1]] = pi(wrds[2]);
+    else {
+        let j = 0, m = wrds.length;
+        while (j < m) {
+            let tok = wrds[j++], wrd = dict[tok];
+            if (wrd === undefined)
+                if (tok.charAt(0) === '~') {
+                    addr = pi(tok.substring(1)); continue;
+                }
+                else if (tok === ':') {
+                    addr = this.emu.memo.rd(dict['here'] + 1);
+                    let name = wrds[j++], nml = name.length;
+                    dict[name] = addr + nml + 1; // SFA
+                    this.emu.memo.wr(addr++, nml);
+                    name = name.toUpperCase();
+                    for (let k = 0; k < nml; k++)
+                        this.emu.memo.wr(addr++, name.charCodeAt(k) | 0o200);
+                    continue;
+                } else {
+                    let neg = false;
+                    if (tok.charAt(0) === '-') {
+                        tok = tok.substring(1); neg = true;
+                    }
+                    wrd = pi(tok);
+                    if (neg) wrd = (~wrd & 0o7777) + 1;
+                }
+            this.emu.memo.wr(addr++, wrd);
+            if (tok === ';') {
+                const here = dict['here'] + 1, alen = this.emu.memo.rd(here),
+                      dlen = this.emu.memo.rd(alen);
+                if (this.emu.memo.rd(alen + dlen + 1) !== 0o4156)
+                    addr--; // ignore EXIT for VAR and CONST words
+                this.emu.memo.wr(addr++, this.emu.memo.rd(here) - 1);
+                this.emu.memo.wr(here, addr);
+            }
+        }
+    }
+}
+console.log(dict);
+break;
+case 'untrace':
+if (this.mem_hnd) { this.emu.memo.RAM[0].wr = this.mem_hnd; this.mem_hnd = undefined; }
+break;
+case 'trace':
+if (parms.length < 3) { console.error('missing lo_addr hi_addr'); break; }
+this.mem_lo = pi(parms[1]) - 1; // mem 11 is counter
+this.mem_hi = pi(parms[2]) - 1;
+if (this.mem_hnd === undefined) {
+    this.mem_hnd = this.emu.memo.RAM[0].wr;
+    this.emu.memo.RAM[0].wr = (a, v) => {
+        this.mem_hnd(a, v);
+        if (a === 0o11 && v >= this.mem_lo && v <= this.mem_hi) {
+            console.log(fmt(v + 1 & 0o7777), '    ', console.NB);
+            this.exec('stk');
+        }
+    };
+}
+break;
+
             default: await super.handler(parms, cmd); break;
         } } catch (e) { console.error(e.stack); }
     }
