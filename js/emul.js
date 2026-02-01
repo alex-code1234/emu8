@@ -26,8 +26,9 @@ class GenCpu {
                 this.cpu.peripherals.push(new Intel8272(this.dma, this.pic));
                 this.crtc = new Motorola6845();
                 if (type === 4) {
-                    this.crtc = new EGA(this.crtc, memo.add, memo.ram);
-                    this.cpu.peripherals.push(new EMS(memo.add));
+                    const madd = memo.add.bind(memo);
+                    this.crtc = new EGA(this.crtc, madd, memo.ram);
+                    this.cpu.peripherals.push(new EMS(madd));
                     MACHINE = 1;
                     CPU_186 = 1;
                 }

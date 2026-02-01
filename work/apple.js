@@ -10,6 +10,7 @@ class ExtMemIO extends MemIO {
         this.con.display(v &= 0xff);
         if (this.ccopy) this.sconsole += String.fromCharCode(v);
     }
+    add(strt_a, end_a, wr, rd) {}              // 8086 stub
     int(num) {}                                // 8086 stub
     setChipset(crt, kbd) {}                    // 8086 stub
 }
