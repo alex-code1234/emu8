@@ -487,6 +487,7 @@ class Kbd extends Keyboard {
         if (val !== null) this.processKey(val);
     }
     translateKey(e, soft, isDown) {
+if (!soft && isDown) return null;
         return super.kbdHandler(e, soft, isDown);
     }
     processKey(val) {
