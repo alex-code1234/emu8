@@ -98,13 +98,13 @@ class DiskMonitor extends CPMMonitor {
 async function main() {
     const cputyp = pi(URL_OPTS.get('cpu') ?? '0', false), // CPU type
           ostyp = pi(URL_OPTS.get('os') ?? '0', false);   // OS type
-    await loadScript('../emu/github/emu8/js/disks.js');
+    await loadScript('../js/disks.js');
     switch (cputyp) {
         case 0:
-            await loadScript('../emu/github/emu8/js/js8080.js');
+            await loadScript('../js/js8080.js');
             break;
         case 1:
-            await loadScript('../emu/github/emu8/js/jsZ80.js');
+            await loadScript('../js/jsZ80.js');
             break;
         default:
             console.error(`invalid cpu value: ${cputyp}`);
@@ -118,13 +118,13 @@ async function main() {
           kbd = new Kbd(con, mon);
     switch (ostyp) {
         case 0:
-            mem.CPM_DRIVES[0] = await CPMDisk('../emu/github/emu8/cpm/cpma.cpm');
+            mem.CPM_DRIVES[0] = await CPMDisk('../cpm/cpma.cpm');
             break;
         case 1:
-            mem.CPM_DRIVES[0] = await CPMDisk('../emu/github/emu8/cpm/cpm3a.cpm');
+            mem.CPM_DRIVES[0] = await CPMDisk('../cpm/cpm3a.cpm');
             break;
         case 2:
-            mem.CPM_DRIVES[0] = await CPMDisk('../emu/github/emu8/cpm/mpma.cpm');
+            mem.CPM_DRIVES[0] = await CPMDisk('../cpm/mpma.cpm');
             break;
         default:
             console.error(`invalid os value: ${ostyp}`);
