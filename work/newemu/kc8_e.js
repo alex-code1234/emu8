@@ -26,7 +26,7 @@ async function KC8_E(cpu, memo, tnum) {
                 if (lock) {
                     cpu.CPU_INSTR_CNT = 10240; // default speed
                     clearInterval(tmo);
-                    for (let i = 0; i < 27; i++) // dim lights, except RUN light
+                    for (let i = 0; i < 28; i++) // dim lights, except RUN light
                         if (i !== 15) leds[i].style.backgroundColor = '#26282a';
                 } else {
                     cpu.CPU_INSTR_CNT = 4000; // ~original speed
