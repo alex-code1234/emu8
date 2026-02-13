@@ -176,7 +176,7 @@ async function KC8_E(cpu, memo, tnum) {
     btn(549, 328, 17, 'up2.bmp');        // CLEAR
     btn(572, 328, 18, 'up1.bmp');        // CONT
     btn(595, 328, 19, 'up2.bmp');        // EXAM
-    btn(618, 328, 20, '/up1.bmp');        // HALT
+    btn(618, 328, 20, '/work/newemu/up1.bmp');        // HALT
     btn(641, 328, 21, 'up2.bmp');        // STEP
     btn(685, 328, 22, 'down1.bmp');      // DEP
     for (let i = 0, left = 126; i < 15; i++, left += 23) {
