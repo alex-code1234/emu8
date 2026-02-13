@@ -43,8 +43,8 @@
 [data-theme='light'] .surface {
     box-shadow: 0 1px 4px 0 rgba(0, 0, 0, 0.05);
 }
-@font-face { font-family: 'CP437'; src: url('../../emu/github/emu8/cp437.ttf'); }
-@font-face { font-family: 'VT220'; src: url('../../emu/github/emu8/Glass_TTY_VT220.ttf'); }
+@font-face { font-family: 'CP437'; src: url('../../cp437.ttf'); }
+@font-face { font-family: 'VT220'; src: url('../../Glass_TTY_VT220.ttf'); }
 body {                                  /* base */
     font-family: Ubuntu Mono, Monaco, Courier, monospace; /* font */
     font-size: 14px;                                      /* font size */
@@ -131,9 +131,9 @@ window.onerror = function(event, source, line, col, error) {
     document.write(`<span style="color: red;">${text}</span><br/>`);
 };
     </script>
-    <script src='../../emu/github/emu8/js/utils.js'></script>
-    <script src='../../emu/github/emu8/js/monitor.js'></script>
-    <script src='../../emu/github/emu8/js/emul.js'></script>
+    <script src='../../js/utils.js'></script>
+    <script src='../../js/monitor.js'></script>
+    <script src='../../js/emul.js'></script>
 </head>
 <body>
     <div class='tabbed'>
