@@ -44,7 +44,7 @@ async function KC8_E(cpu, memo, tnum) {
                 const mask = 0o4000 >> (+btn.id - 3), bit = (regs[SR] & mask) ? 0 : 1;
                 if (bit) regs[SR] |= mask; else regs[SR] = (regs[SR] & ~mask) & 0o7777;
                         stl.background = stl.background.replace(
-                        bit ? 'down' : 'up', bit ? 'up' : 'down');
+                        bit ? 'Down' : 'Up', bit ? 'Up' : 'Down');
                 break;
             case '15': // ADDR
                 if (lock || cpu.RUN) break;
