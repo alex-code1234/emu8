@@ -1,13 +1,89 @@
 'use strict';
 
+function Term_Device(                  // console IO device
+        cpu,                           // cpu reference
+        ready,                         // function(), returns device ready flag
+        transfer,                      // function([AC]), outputs AC or returns value if input
+        ie,                            // [ie], shared interrupt enabled flag
+        clear_ac,                      // true for input device, false for output device
+        mask_ac = 0o7777,              // input value mask
+        int_bit = 1) {                 // interrupt request bit
+    let flag = 0, kbuf = 0;            // ready flag and keyboard buffer
+    const regs = cpu.regs,
+    setFlag = value => {
+        flag = value;
+        if (ie[0]) cpu.setInterrupt(flag ? int_bit : ~int_bit);
+    },
+    status = () => [ie[0], flag],
+    reset = () => { ie[0] = 1; setFlag(0); },
+    process = num => {
+        if (num === 0) setFlag(clear_ac ? 0 : 1);
+        else if (num === 0o5) {
+            if (clear_ac) ie[0] = regs[AC] & 0o1;
+            else if (ie[0] && flag) regs[PC] = regs[PC] + 1 & 0o7777;
+        } else {
+            if (num & 1) {
+                if (clear_ac && ready()) setFlag(1);
+                if (flag) regs[PC] = regs[PC] + 1 & 0o7777;
+            }
+            if (num & 2) { setFlag(0); if (clear_ac) regs[AC] &= 0o10000; }
+            if (num & 4)
+                if (clear_ac) {
+                    if (kbuf === 0) kbuf = transfer(); // fill keyboard buffer
+                    regs[AC] |= kbuf & mask_ac;
+                } else {
+                    transfer(regs[AC]); setFlag(1);
+                }
+            if (clear_ac && num & 2) kbuf = 0;         // clear keyboard buffer
+        }
+    };
+    ie[0] = 1;
+    return {status, reset, process, setFlag};
+}
+
 class ASR33 extends SoftKbd {
-    constructor(kbd_elem, con, con_elem) {
+    constructor(cpu, ka, kbd_elem, con, con_elem) {
         super(kbd_elem, con, con_elem);
+        const ta = ka + 1,             // terminal and keyboard device address
+              ie = [0],                // shared interrupt flag
+              ptr_ptp = [0o200, null], // PTR mask and PTP output
+        devkbd = Term_Device(cpu,
+            () => con.kbd.length > 0,                    // kbd ready
+            () => (con.kbd.shift() & 0xff) | ptr_ptp[0], // kbd get
+            ie, true, 0o377, 1                           // 8bit
+        ),
+        devcon = Term_Device(cpu,
+            () => true,                                  // con ready
+            ac => {                                      // con put
+                con.display(ac & 0x7f);
+                if (ptr_ptp[1] !== null) ptr_ptp[1] += String.fromCharCode(ac & 0x7f);
+            },
+            ie, false, undefined, 1
+        );
+        cpu.devices.set(ka, devkbd);   // set input device
+        cpu.devices.set(ta, devcon);   // set output device
+        cpu.asm.set(0b110000000000 | ka << 3, 'KCF'); cpu.asm.set(0b110000000001 | ka << 3, 'KSF');
+        cpu.asm.set(0b110000000010 | ka << 3, 'KCC'); cpu.asm.set(0b110000000100 | ka << 3, 'KRS');
+        cpu.asm.set(0b110000000101 | ka << 3, 'KIE'); cpu.asm.set(0b110000000110 | ka << 3, 'KRB');
+        cpu.asm.set(0b110000000000 | ta << 3, 'SPF'); cpu.asm.set(0b110000000001 | ta << 3, 'TSF');
+        cpu.asm.set(0b110000000010 | ta << 3, 'TCF'); cpu.asm.set(0b110000000100 | ta << 3, 'TPC');
+        cpu.asm.set(0b110000000101 | ta << 3, 'SPI'); cpu.asm.set(0b110000000110 | ta << 3, 'TLS');
+        this.ptr_ptp = ptr_ptp;        // ASR-33 paper tape reader and puncher
+        this.devkbd = devkbd;
+        this.devcon = devcon;
     }
     trnCtrls(txt) {
         let res = super.trnCtrls(txt);
         if (res === 0) res = (txt === 'CTRL') ? 3 : (txt === 'SHIFT') ? 2 : 0;
         return res;
+    }
+    translateKey(e, soft) {
+        let val = super.translateKey(e, soft);
+        return (val !== null && val >= 97 && val <= 122) ? val - 32 : val; // convert to uppercase
+    }
+    processKey(val) {
+        super.processKey(val);
+        this.devkbd.setFlag(1);        // set IRQ
     }
 }
 
@@ -69,7 +145,7 @@ async function ASR_33(cpu, memo, tnum, addr = 0o03) {
     <div class='key key_asr'><span>?</span><span>/</span></div>
     <div class='key key_asr smkey kshft'>SHIFT</div><div class='sp'></div>
     <div class='sp5'></div><div class='sp4'></div><div class='key key_asr sp_asr'>&nbsp;</div>
-</div>`);
-    
-    return new ASR33(kbd_elem, await createCon(scr_elem, '#3d3c3a', undefined, 72, 40, '#fff8dc'), con_elem);
+</div>`),
+    con = await createCon(scr_elem, '#3d3c3a', undefined, 72, 40, '#fff8dc');
+    return new ASR33(cpu.cpu, addr, kbd_elem, con, con_elem);
 }

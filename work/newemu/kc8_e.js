@@ -47,33 +47,34 @@ async function KC8_E(cpu, memo, tnum) {
                         bit ? 'down' : 'up', bit ? 'up' : 'down');
                 break;
             case '15': // ADDR
-                if (lock) break;
+                if (lock || cpu.RUN) break;
                 regs[PC] = regs[SR];
                 stl.background = 'url(down2.bmp)';
                 setTimeout(() => stl.background = 'url(up2.bmp)', 200);
                 break;
             case '16': // EXT ADDR
-                if (lock) break;
+                if (lock || cpu.RUN) break;
                 const srr = regs[SR];
                 regs[IF] = (srr & 0o70) >> 3; regs[DF] = srr & 0o7;
                 stl.background = 'url(down1.bmp)';
                 setTimeout(() => stl.background = 'url(up1.bmp)', 200);
                 break;
             case '17': // CLEAR
-                if (lock) break;
-                cpu.reset(false); // ??????
+                if (lock || cpu.RUN) break;
+                cpu.cpu.reset(false);
+                cpu.cpu.devices.forEach(dev => { if (dev !== null) dev.reset(); });
                 stl.background = 'url(down2.bmp)';
                 setTimeout(() => stl.background = 'url(up2.bmp)', 200);
                 break;
             case '18': // CONT
-                if (lock) break;
+                if (lock || cpu.RUN) break;
                 if (halt || sstep) cpu.cpu.step();
                 else cpu.run();
                 stl.background = 'url(down1.bmp)';
                 setTimeout(() => stl.background = 'url(up1.bmp)', 200);
                 break;
             case '19': // EXAM
-                if (lock) break;
+                if (lock || cpu.RUN) break;
                 memo.rd(regs[PC]); regs[PC] = regs[PC] + 1 & 0o7777;
                 stl.background = 'url(down2.bmp)';
                 setTimeout(() => stl.background = 'url(up2.bmp)', 200);
@@ -91,7 +92,7 @@ async function KC8_E(cpu, memo, tnum) {
                 stl.background = sstep ? 'url(down2.bmp)' : 'url(up2.bmp)';
                 break;
             case '22': // DEP
-                if (lock) break;
+                if (lock || cpu.RUN) break;
                 memo.wr(regs[PC], regs[SR]); regs[PC] = regs[PC] + 1 & 0o7777;
                 stl.background = 'url(up1.bmp)';
                 setTimeout(() => stl.background = 'url(down1.bmp)', 200);
