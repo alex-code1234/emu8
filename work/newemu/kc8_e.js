@@ -19,7 +19,7 @@ async function KC8_E(cpu, memo, tnum) {
         switch (btn.id) {
             case '0':  // STATE selector
                 state = (state + 1) % 6;
-                stl.background = `url(pos${state + 1}.bmp)`;
+                stl.background = `url(Pos${state + 1}.bmp)`;
                 break;
             case '1':  // ON/LOCK selector
                 lock = !lock;
@@ -36,7 +36,7 @@ async function KC8_E(cpu, memo, tnum) {
                 break;
             case '2':  // SW
                 sw_reg = sw_reg ? 0 : 1;
-                stl.background = sw_reg ? 'url(up1.bmp)' : 'url(down1.bmp)';
+                stl.background = sw_reg ? 'url(Up1.bmp)' : 'url(Down1.bmp)';
                 break;
             case '3':  // 0..11
             case '4': case '5': case '6': case '7': case '8': case '9':
@@ -49,53 +49,53 @@ async function KC8_E(cpu, memo, tnum) {
             case '15': // ADDR
                 if (lock || cpu.RUN) break;
                 regs[PC] = regs[SR];
-                stl.background = 'url(down2.bmp)';
-                setTimeout(() => stl.background = 'url(up2.bmp)', 200);
+                stl.background = 'url(Down2.bmp)';
+                setTimeout(() => stl.background = 'url(Up2.bmp)', 200);
                 break;
             case '16': // EXT ADDR
                 if (lock || cpu.RUN) break;
                 const srr = regs[SR];
                 regs[IF] = (srr & 0o70) >> 3; regs[DF] = srr & 0o7;
-                stl.background = 'url(down1.bmp)';
-                setTimeout(() => stl.background = 'url(up1.bmp)', 200);
+                stl.background = 'url(Down1.bmp)';
+                setTimeout(() => stl.background = 'url(Up1.bmp)', 200);
                 break;
             case '17': // CLEAR
                 if (lock || cpu.RUN) break;
                 cpu.cpu.reset(false);
                 cpu.cpu.devices.forEach(dev => { if (dev !== null) dev.reset(); });
-                stl.background = 'url(down2.bmp)';
-                setTimeout(() => stl.background = 'url(up2.bmp)', 200);
+                stl.background = 'url(Down2.bmp)';
+                setTimeout(() => stl.background = 'url(Up2.bmp)', 200);
                 break;
             case '18': // CONT
                 if (lock || cpu.RUN) break;
                 if (halt || sstep) cpu.cpu.step();
                 else cpu.run();
-                stl.background = 'url(down1.bmp)';
-                setTimeout(() => stl.background = 'url(up1.bmp)', 200);
+                stl.background = 'url(Down1.bmp)';
+                setTimeout(() => stl.background = 'url(Up1.bmp)', 200);
                 break;
             case '19': // EXAM
                 if (lock || cpu.RUN) break;
                 memo.rd(regs[PC]); regs[PC] = regs[PC] + 1 & 0o7777;
-                stl.background = 'url(down2.bmp)';
-                setTimeout(() => stl.background = 'url(up2.bmp)', 200);
+                stl.background = 'url(Down2.bmp)';
+                setTimeout(() => stl.background = 'url(Up2.bmp)', 200);
                 break;
             case '20': // HALT
                 if (lock) break;
                 halt = halt ? 0 : 1;
                 if (halt) cpu.RUN = false;
-                stl.background = halt ? 'url(down1.bmp)' : 'url(up1.bmp)';
+                stl.background = halt ? 'url(Down1.bmp)' : 'url(Up1.bmp)';
                 break;
             case '21': // STEP
                 if (lock) break;
                 sstep = sstep ? 0 : 1;
                 if (sstep) cpu.RUN = false;
-                stl.background = sstep ? 'url(down2.bmp)' : 'url(up2.bmp)';
+                stl.background = sstep ? 'url(Down2.bmp)' : 'url(Up2.bmp)';
                 break;
             case '22': // DEP
                 if (lock || cpu.RUN) break;
                 memo.wr(regs[PC], regs[SR]); regs[PC] = regs[PC] + 1 & 0o7777;
-                stl.background = 'url(up1.bmp)';
-                setTimeout(() => stl.background = 'url(down1.bmp)', 200);
+                stl.background = 'url(Up1.bmp)';
+                setTimeout(() => stl.background = 'url(Down1.bmp)', 200);
                 break;
         }
     },
@@ -162,23 +162,23 @@ async function KC8_E(cpu, memo, tnum) {
         tab.appendChild(res);
         return res;
     };
-    btn(507, 231, 0, 'pos1.bmp', 34);    // STATE/STATUS/ETC
+    btn(507, 231, 0, 'Pos1.bmp', 34);    // STATE/STATUS/ETC
     btn(72, 328, 1, null, 24, '\u2501'); // ON/LOCK
-    btn(143, 328, 2, 'down1.bmp');       // SW
-    btn(187, 328, 3, 'down2.bmp');  btn(210, 328, 4, 'down2.bmp');  // 0 1
-    btn(233, 328, 5, 'down2.bmp');  btn(256, 328, 6, 'down1.bmp');  // 2 3
-    btn(279, 328, 7, 'down1.bmp');  btn(302, 328, 8, 'down1.bmp');  // 4 5
-    btn(324, 328, 9, 'down2.bmp');  btn(347, 328, 10, 'down2.bmp'); // 6 7
-    btn(369, 328, 11, 'down2.bmp'); btn(392, 328, 12, 'down1.bmp'); // 8 9
-    btn(415, 328, 13, 'down1.bmp'); btn(437, 328, 14, 'down1.bmp'); // 10 11
-    btn(484, 328, 15, 'up2.bmp');        // ADDR
-    btn(507, 328, 16, 'up1.bmp');        // EXT ADDR
-    btn(549, 328, 17, 'up2.bmp');        // CLEAR
-    btn(572, 328, 18, 'up1.bmp');        // CONT
-    btn(595, 328, 19, 'up2.bmp');        // EXAM
+    btn(143, 328, 2, 'Down1.bmp');       // SW
+    btn(187, 328, 3, 'Down2.bmp');  btn(210, 328, 4, 'Down2.bmp');  // 0 1
+    btn(233, 328, 5, 'Down2.bmp');  btn(256, 328, 6, 'Down1.bmp');  // 2 3
+    btn(279, 328, 7, 'Down1.bmp');  btn(302, 328, 8, 'Down1.bmp');  // 4 5
+    btn(324, 328, 9, 'Down2.bmp');  btn(347, 328, 10, 'Down2.bmp'); // 6 7
+    btn(369, 328, 11, 'Down2.bmp'); btn(392, 328, 12, 'Down1.bmp'); // 8 9
+    btn(415, 328, 13, 'Down1.bmp'); btn(437, 328, 14, 'Down1.bmp'); // 10 11
+    btn(484, 328, 15, 'Up2.bmp');        // ADDR
+    btn(507, 328, 16, 'Up1.bmp');        // EXT ADDR
+    btn(549, 328, 17, 'Up2.bmp');        // CLEAR
+    btn(572, 328, 18, 'Up1.bmp');        // CONT
+    btn(595, 328, 19, 'Up2.bmp');        // EXAM
     btn(618, 328, 20, 'Up1.bmp');        // HALT
-    btn(641, 328, 21, 'up2.bmp');        // STEP
-    btn(685, 328, 22, 'down1.bmp');      // DEP
+    btn(641, 328, 21, 'Up2.bmp');        // STEP
+    btn(685, 328, 22, 'Down1.bmp');      // DEP
     for (let i = 0, left = 126; i < 15; i++, left += 23) {
         const led = btn(left, 180); leds.push(led); // 1 row
     }
