@@ -76,7 +76,7 @@ If added block\(s) requested oscillograph, the monitor supports additional comma
 - **spts** \- set graphs max points: spts num, where num is max number of points to store for graphs
 
 [Generic emulator online](https://alex-code1234.github.io/emu8/)
-[Test emulator](https://alex-code1234.github.io/emu8/work/emulator.html?js=cpm.js)
+[Test emulator](https://alex-code1234.github.io/emu8/work/newemu/emu.html)
 
 ## KIM-1 emulator
 

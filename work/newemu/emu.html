@@ -508,7 +508,9 @@ ${con}
     con_elem['data-kbd'] = kbd_elem;
     con_elem.onclick = conElm_click;
     updateElm(con_elem, true);
-    screen.orientation.onchange = e => { setTimeout(() => updateElm(con_elem, true), 100); };
+    screen.orientation.addEventListener('change', e => {
+        setTimeout(() => updateElm(con_elem, true), 100);
+    });
     return [scr_elem, kbd_elem, con_elem];
 },
 updateElm = (elem, top) => {

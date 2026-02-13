@@ -90,7 +90,7 @@ class ASR33 extends SoftKbd {
 async function ASR_33(cpu, memo, tnum, addr = 0o03) {
     const [scr_elem, kbd_elem, con_elem] = createUI(
             addTab(`asr33${addr}`, `ASR-33[${fmt(addr, 2)}]`, tnum),
-            'asr', `asr${tnum}`, '45px', 26, 5, '20px', '648px', '640px', `
+            'asr', `asr${tnum}`, '45px', 26, 5, '20px', '648px', '480px', `
 .smkey { font-size: 10px; }
 .sp_asr { grid-column: span 8; }
 `, `
@@ -146,6 +146,6 @@ async function ASR_33(cpu, memo, tnum, addr = 0o03) {
     <div class='key key_asr smkey kshft'>SHIFT</div><div class='sp'></div>
     <div class='sp5'></div><div class='sp4'></div><div class='key key_asr sp_asr'>&nbsp;</div>
 </div>`),
-    con = await createCon(scr_elem, '#3d3c3a', undefined, 72, 40, '#fff8dc');
+    con = await createCon(scr_elem, '#3d3c3a', undefined, 72, 30, '#fff8dc');
     return new ASR33(cpu.cpu, addr, kbd_elem, con, con_elem);
 }
