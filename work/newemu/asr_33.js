@@ -60,8 +60,8 @@ class ASR33 extends SoftKbd {
             },
             ie, false, undefined, 1
         );
-        cpu.devices.set(ka, devkbd);   // set input device
-        cpu.devices.set(ta, devcon);   // set output device
+        cpu.devices.set(ka, devkbd);   // register input device
+        cpu.devices.set(ta, devcon);   // register output device
         cpu.asm.set(0b110000000000 | ka << 3, 'KCF'); cpu.asm.set(0b110000000001 | ka << 3, 'KSF');
         cpu.asm.set(0b110000000010 | ka << 3, 'KCC'); cpu.asm.set(0b110000000100 | ka << 3, 'KRS');
         cpu.asm.set(0b110000000101 | ka << 3, 'KIE'); cpu.asm.set(0b110000000110 | ka << 3, 'KRB');
@@ -78,7 +78,17 @@ class ASR33 extends SoftKbd {
         return res;
     }
     translateKey(e, soft) {
-        let val = super.translateKey(e, soft);
+        if (e.key.length > 2) switch (e.key) {
+            case 'ESC': return 27;
+            case 'LINEFEED': return 10;
+            case 'RE-TURN': return 13;
+            case 'RUBOUT': return 128;
+            case 'X-ONQ': return this.fs_ctrl ? 17 : this.fs_shift ? null : 81;
+            case 'X-OFFS': return this.fs_ctrl ? 19 : this.fs_shift ? null : 83;
+            case 'BELLG': return this.fs_ctrl ? 7 : this.fs_shift ? null : 71;
+            default: console.warn(`unknown key: ${e.key}`); break;
+        }
+        const val = super.translateKey(e, soft);
         return (val !== null && val >= 97 && val <= 122) ? val - 32 : val; // convert to uppercase
     }
     processKey(val) {
@@ -87,12 +97,69 @@ class ASR33 extends SoftKbd {
     }
 }
 
+function TxtMonitor(scr_elem, color, bckg, width, bellclr = null, buf = 10000, cursor = '■') {
+    scr_elem.style.color = color; scr_elem.style.background = bckg;
+    let saved = null, savedp,  // saved char and pos under cursor
+        cur_pos = 0,           // current position in HTML
+        line_len = 0,          // current line length
+        html;                  // inner HTML buffer
+    const str_len = width - 1, // max line length
+          kbd = [],            // keyboard buffer
+    bell = () => {
+        if (bellclr === null) return;
+        scr_elem.style.background = bellclr;
+        setTimeout(() => scr_elem.style.background = bckg, 200);
+    },
+    newLine = force => {
+        if (force) { html[cur_pos++] = '\n'; line_len = 0; }
+        else {
+            const n = cur_pos + width; // insert line preserving existing chars
+            while (cur_pos <= n) outChar((html[cur_pos] ?? ' ').charCodeAt(0));
+        }
+    },
+    carRetn = () => {
+        while (cur_pos > 0 && html[cur_pos - 1] !== '\n') cur_pos--; // to line start
+        line_len = 0;
+    },
+    outChar = ccode => {
+        html[cur_pos++] = String.fromCharCode(ccode);
+        if (line_len++ >= str_len) newLine(true);
+    },
+    display = ccode => {
+        if (ccode === 0) return;
+        if (ccode === 0x07) { bell(); return; }
+        html = scr_elem.innerHTML
+                .replaceAll('&amp;', '&').replaceAll('&lt;', '<').replaceAll('&gt;', '>')
+                .split('');
+        if (cur_pos === html.length - 1) html.length--; // remove cursor
+        if (saved !== null) html[savedp] = saved;       // restore char under cursor
+        switch (ccode) {
+            case 0x0a: newLine(false); break;
+            case 0x0d: carRetn(); break;
+            case 0x7f: ccode = 0x5c;                    // replase DEL with \
+            default: outChar(ccode); break;
+        }
+        if (cur_pos < html.length) {                    // save char under cursor
+            saved = html[cur_pos]; savedp = cur_pos;
+        }
+        else saved = null;
+        html[cur_pos] = cursor;                         // set cursor
+        if (html.length > buf) html = html.slice(width);
+        scr_elem.innerHTML = html.join('')
+                .replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
+        scr_elem.scrollTop = scr_elem.scrollHeight;     // auto scroll
+    };
+    scr_elem.innerHTML = cursor;
+    return {kbd, display};
+}
+
 async function ASR_33(cpu, memo, tnum, addr = 0o03) {
-    const [scr_elem, kbd_elem, con_elem] = createUI(
+    let [scr_elem, kbd_elem, con_elem] = createUI(
             addTab(`asr33${addr}`, `ASR-33[${fmt(addr, 2)}]`, tnum),
-            'asr', `asr${tnum}`, '45px', 26, 5, '20px', '648px', '480px', `
+            'asr', `asr${tnum}`, '45px', 26, 5, '20px', '704px', '480px', `
 .smkey { font-size: 10px; }
 .sp_asr { grid-column: span 8; }
+.scr_asr { overflow: auto; font: bold 16px Courier; }
 `, `
 <div class='section sec_asr'>
     <div class='sp'></div><div class='key key_asr'><span>!</span><span>1</span></div>
@@ -145,7 +212,9 @@ async function ASR_33(cpu, memo, tnum, addr = 0o03) {
     <div class='key key_asr'><span>?</span><span>/</span></div>
     <div class='key key_asr smkey kshft'>SHIFT</div><div class='sp'></div>
     <div class='sp5'></div><div class='sp4'></div><div class='key key_asr sp_asr'>&nbsp;</div>
-</div>`),
-    con = await createCon(scr_elem, '#3d3c3a', undefined, 72, 30, '#fff8dc');
+</div>`);
+    const elem = document.createElement('pre'); elem.id = scr_elem.id; elem.className = 'scr_asr';
+    scr_elem.replaceWith(elem);
+    const con = TxtMonitor(elem, '#3d3c3a', '#fffade', 72, '#ddfade');
     return new ASR33(cpu.cpu, addr, kbd_elem, con, con_elem);
 }

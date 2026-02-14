@@ -402,16 +402,16 @@ await this.exec('m 7660 320 321 322 323 324 325 326 327 330 331 332 333 334 335 
 this.exec('g 200');
                         break;
                     case 'd0ab':
-await this.exec('tape MAINDEC-8E-D0AB-pb.bpt'); await this.exec('x pc 200 sr 7777'); this.exec('g');
+await this.exec('tape ../MAINDEC-8E-D0AB-pb.bpt'); await this.exec('x pc 200 sr 7777'); this.exec('g');
                         break;
                     case 'd0bb':
-await this.exec('tape MAINDEC-8E-D0BB-pb.bpt'); await this.exec('x pc 200'); this.exec('g');
+await this.exec('tape ../MAINDEC-8E-D0BB-pb.bpt'); await this.exec('x pc 200'); this.exec('g');
                         break;
                     case 'd0gc':
-await this.exec('tape MAINDEC-8E-D0GC-pb.bpt'); await this.exec('x pc 200 if 0'); this.exec('g');
+await this.exec('tape ../MAINDEC-8E-D0GC-pb.bpt'); await this.exec('x pc 200 if 0'); this.exec('g');
                         break;
                     case 'd0fc':
-await this.exec('tape MAINDEC-8E-D0FC-pb.bpt'); await this.exec('x pc 200 if 0');
+await this.exec('tape ../MAINDEC-8E-D0FC-pb.bpt'); await this.exec('x pc 200 if 0');
 await this.exec('m 1 5001 2 3 0 0 202 547 7 0 0 7401 3607 3 2421 5116 5141 0 0');   // broken tape
 await this.exec('m 23 0 0 4 400 200 100 0 257 201 206 413 1014 600 4441 614 15 ' +  // restore
                 '7640 5426 1036 3165 7604 30');                                     // from listing
@@ -434,7 +434,7 @@ await this.exec('m 242 5241 1013 7640 5237 6042 6001 7604 7700 7402 1031 7650 50
 await this.exec('m 266 240 240 324 240 0 0 0 0 215 212 215 215 317 240 0 0 0 0'); this.exec('g');
                         break;
                     case 'd0cc':
-await this.exec('tape MAINDEC-8E-D0CC-pb.bpt'); await this.exec('x pc 200 if 0 sr 0400');
+await this.exec('tape ../MAINDEC-8E-D0CC-pb.bpt'); await this.exec('x pc 200 if 0 sr 0400');
 await this.exec('m 1 5001 2 3');                                                    // broken tape
 await this.exec('m 21 22 7777');                                                    // restore
 await this.exec('m 41 37');                                                         // from listing
@@ -453,23 +453,23 @@ await this.exec('m 364 7000'); // patch (ignore carry flag for MAINDEC addition 
 this.exec('g');
                         break;
                     case 'd1fb': // set for 8K extended memory (2 pages)
-await this.exec('tape MAINDEC-8E-D1FB-pb.bpt'); await this.exec('x pc 200 sr 0002'); this.exec('g');
+await this.exec('tape ../MAINDEC-8E-D1FB-pb.bpt'); await this.exec('x pc 200 sr 0002'); this.exec('g');
                         break;
                     case 'd1eb':
-await this.exec('tape MAINDEC-08-D1EB-pb.bpt'); await this.exec('x pc 200'); this.exec('g');
+await this.exec('tape ../MAINDEC-08-D1EB-pb.bpt'); await this.exec('x pc 200'); this.exec('g');
                         break;
                     case 'd0db':
-await this.exec('tape MAINDEC-8E-D0DB-pb.bpt'); await this.exec('x pc 200 if 0'); this.exec('g');
+await this.exec('tape ../MAINDEC-8E-D0DB-pb.bpt'); await this.exec('x pc 200 if 0'); this.exec('g');
                         break;
                     case 'd0eb':
-await this.exec('tape MAINDEC-8E-D0EB-pb.bpt'); await this.exec('x pc 200 if 0'); this.exec('g');
+await this.exec('tape ../MAINDEC-8E-D0EB-pb.bpt'); await this.exec('x pc 200 if 0'); this.exec('g');
                         break;
                     case 'd0jc':
-await this.exec('tape MAINDEC-8E-D0JC-pb.bpt'); await this.exec('x pc 200 if 0'); this.exec('g');
+await this.exec('tape ../MAINDEC-8E-D0JC-pb.bpt'); await this.exec('x pc 200 if 0'); this.exec('g');
                         break;
                     case 'dhmca':
                         if (parms.length < 3) { console.error('missing TSE [0|1]'); break; }
-await this.exec('tape MAINDEC-08-DHMCA-A-pb.bpt');
+await this.exec('tape ../MAINDEC-08-DHMCA-A-pb.bpt');
                         if (parms[2] | 0) {
 await this.exec('tse 1'); await this.exec('x pc 200 sr 0001');
                         } else {
