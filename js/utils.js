@@ -64,7 +64,7 @@ const console = {
             for (let i = 0; i < len; i++) {
                 let data = args[i];
                 if (data === console.CLEAR) {
-                    prms._log.innerHTML = '';
+                    prms._log.innerHTML = ''; lf = false;
                     continue;
                 }
                 data = (Array.isArray(data) || ArrayBuffer.isView(data)) ?
