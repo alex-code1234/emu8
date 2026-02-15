@@ -38,7 +38,7 @@ async function VT_52(cpu, memo, tnum, addr = 0o03) {
             addTab(`vt52t${addr}`, `VT-52[${fmt(addr, 2)}]`, tnum, true),
             'vt52', `vt52${tnum}`, '36px', 40, 5, 'calc(36px / 10)', '800px', '480px', `
 .sec_vt52_right { grid-template-columns: repeat(8, calc(36px / 2)); }
-.key_red { background-color: #ff0000; }
+.key_red { background-color: #ff0000; color: #ffffff; }
 .key_blue { background-color: #0000ff; color: #ffffff; }
 .key_gold { background-color: #fff44f; color: #fff44f; }
 .smkey2 { font-size: 9px; }
