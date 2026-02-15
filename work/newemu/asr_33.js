@@ -166,7 +166,7 @@ async function ASR_33(cpu, memo, tnum, addr = 0o03) {
 .sp_asr { grid-column: span 8; }
 .scr_asr { overflow: auto; font: bold 16px Courier; }
 `, `
-<div class='section sec_asr'>
+<div class='section sec_asr sec_asr_left'>
     <div class='sp'></div><div class='key key_asr'><span>!</span><span>1</span></div>
     <div class='key key_asr'><span>"</span><span>2</span></div>
     <div class='key key_asr'><span>#</span><span>3</span></div>

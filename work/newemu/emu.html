@@ -461,13 +461,14 @@ createUI = (
 	pf,      // css rule unique prefix
 	pi,      // element id unique prefix
 	ks,      // key size (string with units)
-	nk,      // max keys in 1 row
+	nk,      // max keys in 1 row (all sections)
 	rs,      // keyboard rows
 	br,      // key border radius (string with units)
 	sw,      // screen width (string with units)
 	sh,      // screen height (string with units)
 	css,     // additional css fragment
 	kbd,     // keyboard section(s) html fragment
+	sk = nk, // max keys in first (left) section
 	crs = 3, // system menu rows
 	con = '' // system menu additional keys html fragment
 ) => {
@@ -475,8 +476,8 @@ createUI = (
         addStyle(`
 .kbd_${pf} { width: calc(${nk} * ${ks} / 2 + (${nk} - 2) * ${ks} / 10 + ${ks} / 2);
              grid-gap: calc(${ks} / 2); }
-.sec_${pf} { grid-template-rows: repeat(${rs}, calc(${ks} / 1.36)); grid-gap: calc(${ks} / 10);
-             grid-template-columns: repeat(${nk}, calc(${ks} / 2)); }
+.sec_${pf} { grid-template-rows: repeat(${rs}, calc(${ks} / 1.36)); grid-gap: calc(${ks} / 10); }
+.sec_${pf}_left { grid-template-columns: repeat(${sk}, calc(${ks} / 2)); }
 .key_${pf} { border: calc(${ks} / 30) solid var(--onbackground); border-radius: ${br};
              font-size: calc(${ks} / 3.5); }
 .sec_${pf}_vert { grid-template-rows: repeat(${crs}, calc(${ks} / 1.36)); grid-gap: calc(${ks} / 10);
