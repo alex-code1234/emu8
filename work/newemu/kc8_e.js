@@ -136,7 +136,7 @@ async function KC8_E(cpu, memo, tnum) {
     };
     memo.rd = (a, d) => { md_reg = mrd(a, d); md_dir = 1; return md_reg; };
     memo.wr = (a, v, d) => { mwr(a, v, d); md_reg = v; md_dir = 0; };
-    const tab = addTab('sysfp', 'KC8-E', tnum, true),
+    const tab = addTab('sysfp', 'KC8-E', tnum),
           img = await loadImage('panel.png');
     addStyle(`
 .fpimg { max-width: 725px; height: auto; }
