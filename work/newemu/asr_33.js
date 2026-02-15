@@ -41,34 +41,39 @@ function Term_Device(                  // console IO device
     return {status, reset, process, setFlag};
 }
 
+function initTerm(cpu, ka, con) {
+    const ta = ka + 1,             // terminal and keyboard device address
+          ie = [0],                // shared interrupt flag
+          ptr_ptp = [0o200, null], // PTR mask for paper tape reader and PTP output for puncher
+    devkbd = Term_Device(cpu,      // keyboard device
+        () => con.kbd.length > 0,                    // kbd ready
+        () => (con.kbd.shift() & 0xff) | ptr_ptp[0], // kbd get
+        ie, true, 0o377, 1                           // 8bit
+    ),
+    devcon = Term_Device(cpu,      // terminal device
+        () => true,                                  // con ready
+        ac => {                                      // con put
+            con.display(ac & 0x7f);
+            if (ptr_ptp[1] !== null) ptr_ptp[1] += String.fromCharCode(ac & 0x7f);
+        },
+        ie, false, undefined, 1
+    );
+    cpu.devices.set(ka, devkbd);   // register input device
+    cpu.devices.set(ta, devcon);   // register output device
+    cpu.asm.set(0b110000000000 | ka << 3, 'KCF'); cpu.asm.set(0b110000000001 | ka << 3, 'KSF');
+    cpu.asm.set(0b110000000010 | ka << 3, 'KCC'); cpu.asm.set(0b110000000100 | ka << 3, 'KRS');
+    cpu.asm.set(0b110000000101 | ka << 3, 'KIE'); cpu.asm.set(0b110000000110 | ka << 3, 'KRB');
+    cpu.asm.set(0b110000000000 | ta << 3, 'SPF'); cpu.asm.set(0b110000000001 | ta << 3, 'TSF');
+    cpu.asm.set(0b110000000010 | ta << 3, 'TCF'); cpu.asm.set(0b110000000100 | ta << 3, 'TPC');
+    cpu.asm.set(0b110000000101 | ta << 3, 'SPI'); cpu.asm.set(0b110000000110 | ta << 3, 'TLS');
+    return [ptr_ptp, devkbd, devcon];
+}
+
 class ASR33 extends SoftKbd {
     constructor(cpu, ka, kbd_elem, con, con_elem) {
         super(kbd_elem, con, con_elem);
-        const ta = ka + 1,             // terminal and keyboard device address
-              ie = [0],                // shared interrupt flag
-              ptr_ptp = [0o200, null], // PTR mask and PTP output
-        devkbd = Term_Device(cpu,
-            () => con.kbd.length > 0,                    // kbd ready
-            () => (con.kbd.shift() & 0xff) | ptr_ptp[0], // kbd get
-            ie, true, 0o377, 1                           // 8bit
-        ),
-        devcon = Term_Device(cpu,
-            () => true,                                  // con ready
-            ac => {                                      // con put
-                con.display(ac & 0x7f);
-                if (ptr_ptp[1] !== null) ptr_ptp[1] += String.fromCharCode(ac & 0x7f);
-            },
-            ie, false, undefined, 1
-        );
-        cpu.devices.set(ka, devkbd);   // register input device
-        cpu.devices.set(ta, devcon);   // register output device
-        cpu.asm.set(0b110000000000 | ka << 3, 'KCF'); cpu.asm.set(0b110000000001 | ka << 3, 'KSF');
-        cpu.asm.set(0b110000000010 | ka << 3, 'KCC'); cpu.asm.set(0b110000000100 | ka << 3, 'KRS');
-        cpu.asm.set(0b110000000101 | ka << 3, 'KIE'); cpu.asm.set(0b110000000110 | ka << 3, 'KRB');
-        cpu.asm.set(0b110000000000 | ta << 3, 'SPF'); cpu.asm.set(0b110000000001 | ta << 3, 'TSF');
-        cpu.asm.set(0b110000000010 | ta << 3, 'TCF'); cpu.asm.set(0b110000000100 | ta << 3, 'TPC');
-        cpu.asm.set(0b110000000101 | ta << 3, 'SPI'); cpu.asm.set(0b110000000110 | ta << 3, 'TLS');
-        this.ptr_ptp = ptr_ptp;        // ASR-33 paper tape reader and puncher
+        const [ptr_ptp, devkbd, devcon] = initTerm(cpu, ka, con);
+        this.ptr_ptp = ptr_ptp; // ASR-33 paper tape reader and puncher
         this.devkbd = devkbd;
         this.devcon = devcon;
     }
