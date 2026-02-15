@@ -67,9 +67,11 @@ input[type='checkbox'] {                /* check box */
 .tabs {
     padding: 0px 0px;                                     /* tab bar height (first number) */
     display: flex; align-items: stretch; list-style: none; background-color: var(--surface);
+    overflow-x: auto;
 }
 .tab > label {
     display: block; margin-bottom: -1px; cursor: pointer; opacity: var(--textnormal);
+    text-wrap: nowrap; white-space: nowrap;
 }
 .tab-content {
     padding: 10px;                                        /* tab content padding */
