@@ -488,11 +488,13 @@ async function main() {
     await loadScript('pdp_8e.js');
     await loadScript('kc8_e.js');
     await loadScript('asr_33.js');
+    await loadScript('vt_52.js');
     const cores = +URL_OPTS.get('fields') ?? 0,
           mem = cores ? KM8_E(cores) : MM8_E(),  // memory
           cpu = new GenCpu12(mem),               // CPU (uses Cpu(memo) class)
           fp = await KC8_E(cpu, mem, 1),         // front panel
           kbd = await ASR_33(cpu, mem, 2),       // system console
+          kbd2 = await VT_52(cpu, mem, 3, 0o40), // 1st terminal on PT08
           emu = new PDP8EEmu(cpu, mem),
           mon = new PDP8EMon(emu);
     console.info(`KK8-E processor with MM8-E[${cores + 1}] memory${cores ? ' and KM8-E extension' : ''}`);

@@ -124,6 +124,9 @@ input[type='checkbox'] {                /* check box */
 .sp4 { grid-column: span 4; }
 .sp3 { grid-column: span 3; }
 .sp2 { grid-column: span 2; }
+.emulator {                             /* emulator area */
+    padding: 0px; overflow: auto;
+}
     </style>
     <script type='text/javascript'>
 window.onerror = function(event, source, line, col, error) {
@@ -378,10 +381,10 @@ class SoftKbd {
             case 'Delete': val = 127; break;
             case 'Home': case 'End': val = 2; break;
             case 'PageDown': val = 3; break;
-            case 'ArrowLeft': val = 19; break;
-            case 'ArrowUp': val = 5; break;
-            case 'ArrowRight': val = 4; break;
-            case 'ArrowDown': val = 24; break;
+            case '\u2190': case 'ArrowLeft': val = 19; break;
+            case '\u2191': case 'ArrowUp': val = 5; break;
+            case '\u2192': case 'ArrowRight': val = 4; break;
+            case '\u2193': case 'ArrowDown': val = 24; break;
             default:
                 if (e.key.length > 1) val = e.key.charCodeAt(this.fs_shift ? 0 : 1);
                 else {
@@ -436,7 +439,7 @@ gSVar = str => {
     }
     return str;
 },
-addTab = (id, name, num = 1) => {
+addTab = (id, name, num = 1, emulator = false) => {
     let elem = document.createElement('input');
     elem.setAttribute('type', 'radio');
     elem.setAttribute('id', id);
@@ -447,7 +450,7 @@ addTab = (id, name, num = 1) => {
     elem.innerHTML = `<label class='command' for='${id}'>${name}</label>`;
     document.querySelector(`div.tabbed ul li:nth-of-type(${num})`).after(elem);
     const res = document.createElement('div');
-    res.className = 'tab-content surface';
+    res.className = `tab-content surface${emulator ? ' emulator' : ''}`;
     document.querySelector(`div.tabbed div:nth-of-type(${num})`).after(res);
     return res;
 },

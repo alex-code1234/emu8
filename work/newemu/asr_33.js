@@ -83,7 +83,7 @@ class ASR33 extends SoftKbd {
         return res;
     }
     translateKey(e, soft) {
-        if (e.key.length > 2) switch (e.key) {
+        if (soft && e.key.length > 2) switch (e.key) {
             case 'ESC': return 27;
             case 'LINEFEED': return 10;
             case 'RE-TURN': return 13;
@@ -160,7 +160,7 @@ function TxtMonitor(scr_elem, color, bckg, width, bellclr = null, buf = 10000, c
 
 async function ASR_33(cpu, memo, tnum, addr = 0o03) {
     let [scr_elem, kbd_elem, con_elem] = createUI(
-            addTab(`asr33${addr}`, `ASR-33[${fmt(addr, 2)}]`, tnum),
+            addTab(`asr33${addr}`, `ASR-33[${fmt(addr, 2)}]`, tnum, true),
             'asr', `asr${tnum}`, '45px', 26, 5, '20px', '704px', '480px', `
 .smkey { font-size: 10px; }
 .sp_asr { grid-column: span 8; }
