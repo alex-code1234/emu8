@@ -142,7 +142,8 @@ async function KC8_E(cpu, memo, tnum) {
 .fpimg { max-width: 725px; height: auto; }
 .fpbtn { position: absolute; width: 18px; height:29px; background-color: transparent;
          border: none; font-weight: 1000; }
-.fpled { position: absolute; width: 6px; height: 6px; background-color: #26282a; }
+.fpled { position: absolute; width: 6px; height: 6px; background-color: #26282a;
+         border-radius: 3px; }
     `);
     img.className = 'fpimg';
     tab.appendChild(img);
