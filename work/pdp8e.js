@@ -597,7 +597,7 @@ function PDP_Device(                   // console IO device
         ie,                            // [ie], shared interrupt enabled flag
         clear_ac,                      // true for input device, false for output device
         mask_ac = 0o7777,              // input value mask
-        int_bit = 1) {                 // iterrupt request bit
+        int_bit = 1) {                 // interrupt request bit
     let flag = 0, kbuf = 0;            // ready flag and keyboard buffer
     const regs = cpu.regs,
     setFlag = value => {
@@ -1151,6 +1151,7 @@ class PDP8EMon extends Monitor12 {     // system monitor
             case 'type': // automated keyboard input
                 switch (parms[1]) {
                     case 'start': await this.sendstr('S\r12-06-84\r16:52\r\r'); break;  // TSS8
+//                    case 'login': await this.sendstr('LOGIN 1 VH3M\r', 300, 80); break; // TSS8
                     case 'login': await this.sendstr('LOGIN 2 LXHE\r', 300, 80); break; // TSS8
                     default:
                         const txt = await loadFile(parms[1], true);
@@ -1417,7 +1418,7 @@ break;
 
 async function main() {
     const os = URL_OPTS.get('os'),
-          mm = (os === 'tss8') ? 7 : undefined;  // memory size 32K for TSS8, 8K for others
+          mm = (os === 'tss8') ? 3 : undefined;  // memory size 20K for TSS8, 8K for others
     let autorun = true;
     await loadScript('../emu/github/emu8/js/disks.js');
     const con = await createCon(amber, 'VT220'), // actual console
