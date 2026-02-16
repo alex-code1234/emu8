@@ -27,5 +27,5 @@ async function RS08(cpu, memo) {
     for (let i = 0, x = 292; i < 12; i++, x += 17) { if (i === 4) x += 2; led(x, 932); } // 2nd row
     for (let i = 0, x = 291; i < 12; i++, x += 17) { if (i === 4) x += 3; led(x, 965); } // 3rd row
     sysfp = document.getElementById('sysfp');
-    return {};
+    return {'setDsk': data => console.log(data.length)};
 }

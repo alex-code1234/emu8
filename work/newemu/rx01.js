@@ -8,9 +8,11 @@ function RX01dev(CPU) { // RX8E/RX01 disk drive
         part = 0, count = 0;                     // transfer part and count
     const DSK = [null, null], BUF = new Uint8Array(128), mmm = ArrMemo(BUF),
           cpu = CPU.cpu, regs = cpu.regs,
+          busy = [null],                         // UI busy flag updater fnc(drv, busy)
     status = () => [ie, flags],
     reset = () => process(7),
     process = num => {
+        if (busy[0] !== null) busy[0](drv, 1);   // set busy flag
         switch (num) {
             case 0: // SEL
                 console.warn('drive select not implemented');
@@ -143,6 +145,7 @@ function RX01dev(CPU) { // RX8E/RX01 disk drive
                 done();
                 break;
         }
+        if (busy[0] !== null) busy[0](drv, 0);   // clear busy flag
     },
     done = () => {
         flags |= 1; intf = errst; if (ie) cpu.setInterrupt(2);
@@ -163,7 +166,7 @@ function RX01dev(CPU) { // RX8E/RX01 disk drive
         }
     },
     res = {
-        status, reset, process,
+        status, reset, process, busy,
         'setDsk': (drv, img) => {                // set drive image
             if (img === null) DSK[drv] = null;
             else {
@@ -186,16 +189,43 @@ function RX01dev(CPU) { // RX8E/RX01 disk drive
 }
 
 async function RX01(cpu, memo) {
-    let sysfp;       // this tab reference
-    const leds = []; // panel LEDs
+    await loadScript('../../js/disks.js');
     const tabs = document.getElementsByClassName('tab-content');
     if (tabs.length < 2) { console.warn('system is not initialized'); return null; }
+    let tmo = null;                                 // timeout updater id
+    const dev = RX01dev(cpu),                       // monitored device
+          sysfp = document.getElementById('sysfp'), // this tab ref
+          leds = [],                                // device LEDs
+    busy = (drv, flag) => {         // monitor drive activity
+        if (!sysfp.checked) return; // no update for inactive tab
+        if (flag) {
+            clearTimeout(tmo);
+            const stl = leds[drv].style;
+            if (stl.backgroundColor !== '#90ee90') stl.backgroundColor = '#90ee90';
+            tmo = setTimeout(() => stl.backgroundColor = '', 100);
+        }
+    },
+    update = () => {                // monitor drive loading
+        setTimeout(update, 500);
+        if (!sysfp.checked) return; // no update for inactive tab
+        for (let i = 0; i < 2; i++) {
+            const stl = leds[i].style;
+            if (!dev.getDsk(i)) stl.backgroundColor = '#ff160c';
+            else if (stl.backgroundColor === '#ff160c') stl.backgroundColor = '';
+        }
+    };
     const tab = tabs[1],
-          img = await loadImage('rx01_img.jpg');
-    addStyle(`.rxled { position: absolute; width: 8px; height: 8px; background-color: #ff7f50; }`);
+          img = await loadImage('rx01_img.jpg'),
+    led = (left, top) => {
+        const res = document.createElement('span');
+        res.className = 'rxled'; res.style.left = `${left}px`; res.style.top = `${top}px`;
+        tab.appendChild(res);
+        leds.push(res);
+    };
+    addStyle(`.rxled { position: absolute; width: 12px; height: 8px; }`);
     img.className = 'fpimg'; img.style.marginTop = '5px';
     tab.appendChild(img);
-    
-    sysfp = document.getElementById('sysfp');
-    return RX01dev(cpu);
+    led(352, 715); led(669, 717);
+    dev.busy[0] = busy; update();                   // start monitoring
+    return dev;
 }

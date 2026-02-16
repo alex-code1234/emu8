@@ -479,13 +479,32 @@ await this.exec('tse 0'); await this.exec('x pc 200 sr 4001');
                     default: console.error(`unknown test: ${parms[1]}`); break;
                 }
                 break;
+            case 'rx01': // upload/download RX01 disk data
+                if (parms.length < 2) { console.error('missing drv'); break; }
+                const num = pi(parms[1]);
+                if (num < 0 || num > 1) { console.error(`invalid drv: ${num}`); break; }
+                if (parms.length > 2) // upload
+                    this.fdd.setDsk(num, await loadFile(parms[2], false));
+                else {                // download
+                    const rx01 = this.fdd.getDsk(num);
+                    if (rx01 === undefined) console.log('empty drive');
+                    else downloadFile('rx01.img', rx01);
+                }
+                break;
+            case 'rs08': // download RS08 disk data
+                const rs08 = this.hdd.getDsk();
+                downloadFile('rs08.img', new Uint8Array(rs08.buffer));
+                break;
             default: await super.handler(parms, cmd); break;
         } } catch (e) { console.error(e.stack); }
     }
 }
 
 async function main() {
+    const hdimg_name = URL_OPTS.get('hdimg');    // requested hdd image
+    let hdimg;                                   // hdd image data
     await Promise.all([
+        (hdimg = hdimg_name ? loadFile(hdimg_name, false) : Promise.resolve(null)),
         loadScript('pdp_8e.js'), loadScript('kc8_e.js'), loadScript('asr_33.js'),
         loadScript('vt_52.js'), loadScript('rx01.js'), loadScript('rs08.js')
     ]);
@@ -512,8 +531,11 @@ async function main() {
                     await VT_52(cpu, mem, 3, 0o40);
     mon.clc = clc;                               // access to DK8EA
     mon.kbd = kbd;                               // access to console
+    mon.kb2 = kb2;                               // access to second console
     mon.fdd = fdd;                               // access to RX01
     mon.hdd = hdd;                               // access to RS08
+    hdimg = await hdimg;                         // hdd image fetched, get pending data
+    if (hdimg !== null) hdd.setDsk(hdimg);       // loaded hdd image
     term.setPrompt('> ');
     while (true) await mon.exec(await term.prompt());
 }
