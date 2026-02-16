@@ -485,19 +485,35 @@ await this.exec('tse 0'); await this.exec('x pc 200 sr 4001');
 }
 
 async function main() {
-    await loadScript('pdp_8e.js');
-    await loadScript('kc8_e.js');
-    await loadScript('asr_33.js');
-    await loadScript('vt_52.js');
+    await Promise.all([
+        loadScript('pdp_8e.js'), loadScript('kc8_e.js'), loadScript('asr_33.js'),
+        loadScript('vt_52.js'), loadScript('rx01.js'), loadScript('rs08.js')
+    ]);
     const cores = +URL_OPTS.get('fields') ?? 0,
           mem = cores ? KM8_E(cores) : MM8_E(),  // memory
           cpu = new GenCpu12(mem),               // CPU (uses Cpu(memo) class)
           fp = await KC8_E(cpu, mem, 1),         // front panel
-          kbd = await ASR_33(cpu, mem, 2),       // system console
-          kbd2 = await VT_52(cpu, mem, 3, 0o40), // 1st terminal on PT08
+          clc = DK8EA(cpu),                      // system clock
+          fdd = await RX01(cpu, mem),            // RX8E/RX01 disk drive
+          hdd = await RS08(cpu, mem),            // RF08/RS08 fixed head disk
           emu = new PDP8EEmu(cpu, mem),
           mon = new PDP8EMon(emu);
-    console.info(`KK8-E processor with MM8-E[${cores + 1}] memory${cores ? ' and KM8-E extension' : ''}`);
+    const txtext = cores ? ' and KM8-E extension' : '';
+    console.info(`KK8-E processor with MM8-E[${cores + 1} unit(s)] memory${txtext}`);
+    console.info(`connected devices: DK8-EA, RX01[2 disks] and RS08[4 disks]`);
+    const cons = URL_OPTS.get('cons') ?? 'asr',
+          con2 = URL_OPTS.get('cons2'),
+          kbd = (cons.toUpperCase() === 'ASR') ? // system console
+                  await ASR_33(cpu, mem, 2) :
+                  await VT_52(cpu, mem, 2),
+          kb2 = (con2 === null) ? null :         // 1st terminal on PT08
+                (con2.toUpperCase() === 'ASR') ?
+                    await ASR_33(cpu, mem, 3, 0o40) :
+                    await VT_52(cpu, mem, 3, 0o40);
+    mon.clc = clc;                               // access to DK8EA
+    mon.kbd = kbd;                               // access to console
+    mon.fdd = fdd;                               // access to RX01
+    mon.hdd = hdd;                               // access to RS08
     term.setPrompt('> ');
     while (true) await mon.exec(await term.prompt());
 }

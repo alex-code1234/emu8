@@ -381,3 +381,58 @@ function KM8_E(count = 1) {            // extension
     for (let i = 0; i < count; i++) RAM.push(MM8_E());
     return {rd, wr, setTSE, setField, CPU, setCpu, clear, RAM};
 }
+
+function DK8EA(CPU) {                  // DK8EA line frequency clock (100 ticks/sec)
+    let ie = 0,                                  // IE bit
+        tick_flag = 0,                           // set by clock tick, reset by user
+        irq_count = 0;                           // interrupt issued
+    const cpu = CPU.cpu, regs = cpu.regs,
+    status = () => [ie, tick_flag << 1 | irq_count],
+    reset = () => {
+        if (irq_count > 0) { irq_count = 0; cpu.setInterrupt(~4); }
+        ie = 0; tick_flag = 0;
+    },
+    process = num => {
+        switch (num) {
+            case 1: // CLEI
+                if (ie === 0) {
+                    if (tick_flag && irq_count === 0) {
+                        irq_count = 1; cpu.setInterrupt(4);
+                    }
+                    ie = 1;
+                }
+                break;
+            case 2: // CLDI
+                if (ie) {
+                    if (irq_count) {
+                        irq_count = 0; cpu.setInterrupt(~4);
+                    }
+                    ie = 0;
+                }
+                break;
+            case 3: // CLSK
+                if (tick_flag) {
+                    regs[PC] = regs[PC] + 1 & 0o7777;
+                    if (irq_count) {
+                        irq_count = 0; cpu.setInterrupt(~4);
+                    }
+                    tick_flag = 0;
+                }
+                break;
+        }
+    },
+    timer = () => {
+        if (tick_flag === 0) {
+            tick_flag = 1;
+            if (ie && irq_count === 0) {
+                irq_count = 1; cpu.setInterrupt(4);
+            }
+        }
+        setTimeout(timer, 100);
+    },
+    res = {status, reset, process};
+    timer();
+    cpu.devices.set(0o13, res);
+    cpu.asm.set(0o6131, 'CLEI'); cpu.asm.set(0o6132, 'CLDI'); cpu.asm.set(0o6133, 'CLSK');
+    return res;
+}
