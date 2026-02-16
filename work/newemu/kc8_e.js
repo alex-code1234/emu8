@@ -55,7 +55,7 @@ async function KC8_E(cpu, memo, tnum) {
             case '16': // EXT ADDR
                 if (lock || cpu.RUN) break;
                 const srr = regs[SR];
-                regs[IF] = (srr & 0o70) >> 3; regs[DF] = srr & 0o7;
+                regs[IF] = regs[IB] = (srr & 0o70) >> 3; regs[DF] = srr & 0o7;
                 stl.background = 'url(Down1.bmp)';
                 setTimeout(() => stl.background = 'url(Up1.bmp)', 200);
                 break;
@@ -107,8 +107,8 @@ async function KC8_E(cpu, memo, tnum) {
         if (!sysfp.checked) return; // no update for inactive tab
         setLEDs(15, 1, cpu.RUN);                              // RUN
         if (lock) return;
-        setLEDs(0, 0o4, regs[IF]); setLEDs(3, 0o4000, regs[PC]); // 1st row
-        switch (state) {                                         // 2nd row
+        setLEDs(0, 0o4, regs[(state === 1) ? IF : DF]); setLEDs(3, 0o4000, regs[PC]); // 1st row
+        switch (state) {                                                              // 2nd row
             case 0:                                       // STATE
                 setLEDs(16, 0o40, 0);              // no fetch and instr lights
                 setLEDs(22, 1, md_dir);                       // DIR
