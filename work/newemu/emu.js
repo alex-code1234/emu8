@@ -1,7 +1,7 @@
+'use strict';
+
 // https://deramp.com/downloads/mfe_archive/011-Digital%20Equipment%20Corporation/
 // https://raymii.org/s/articles/Running_TSS_8_on_the_DEC_PiDP-8_i_and_SIMH.html
-
-'use strict';
 
 function pi(s8, oct = true) {          // override for 12-bit mode
     const num = oct ? `0o${s8}` : s8;
@@ -278,31 +278,12 @@ class PDP8EEmu extends Emulator12 {    // emulator
         regs[IF] = sif;
         return count * 8;
     }
-    loadPAL(str) {                     // load PAL listing
-        const mem = this.memo, regs = mem.CPU.cpu.regs, MAXMEM = 32768, sif = regs[IF],
-              data = str.split('\n'),
-        wm = (a, v) => { regs[IF] = a >> 12; mem.wr(a & 0o7777, v); };
-        let count = 0, ma, vv;
-        for (let i = 0, n = data.length; i < n; i++) {
-            const s = data[i];
-            if (s.length < 11) continue;
-            try {
-                ma = pi(s.substring(0, 5));
-                vv = pi(s.substring(7, 11));
-            } catch {
-                continue;
-            }
-            wm(ma, vv);
-            count++;
-        }
-        regs[IF] = sif;
-        return count;
-    }
 }
 
 class PDP8EMon extends Monitor12 {     // system monitor
     constructor(emu) {
         super(emu);
+        this.terms = new Map(); // connected terminals
     }
     async sendstr(str, nlms = 100, ms = 50, brk = false) {
         let i = 0, count = 0;
@@ -323,18 +304,18 @@ class PDP8EMon extends Monitor12 {     // system monitor
     async handler(parms, cmd) {
         let tmp;
         try { switch (cmd) {
-            case 'tape': // load binary tape
+            case 'tape':     // load binary tape
                 if (parms.length < 2) { console.error('missing fname'); break; }
                 console.log(this.emu.loadTape(await loadFile(parms[1], false)));
                 break;
-            case 'tse':  // set TSE (time sharing enabled) flag
+            case 'tse':      // set TSE (time sharing enabled) flag
                 if (parms.length < 2) { console.error('missing flag [1|0]'); break; }
                 tmp = pi(parms[1], false) ? 1 : 0;
                 if (this.emu.memo.setTSE) this.emu.memo.setTSE(tmp);
                 else tmp = 0;
                 console.log(tmp);
                 break;
-            case 'core': // octal core dump save/load
+            case 'core':     // octal core dump save/load
                 if (parms.length < 2) {
                     tmp = this.emu.saveCore();
                     downloadFile('core.txt', new Uint8Array(
@@ -345,16 +326,11 @@ class PDP8EMon extends Monitor12 {     // system monitor
                     console.log(this.emu.loadCore(tmp));
                 }
                 break;
-            case 'pal':  // load PAL listing
-                if (parms.length < 2) { console.error('missing fname'); break; }
-                tmp = await loadFile(parms[1], true);
-                console.log(this.emu.loadPAL(tmp));
-                break;
-            case 'type': // automated keyboard input
+            case 'type':     // automated keyboard input
                 switch (parms[1]) {
-                    case 'start': await this.sendstr('S\r12-06-84\r16:52\r\r'); break;  // TSS8
-//                    case 'login': await this.sendstr('LOGIN 1 VH3M\r', 300, 80); break; // TSS8
-                    case 'login': await this.sendstr('LOGIN 2 LXHE\r', 300, 80); break; // TSS8
+                    case 'start': await this.sendstr('S\r12-06-84\r16:52\r\r'); break;   // TSS8 init
+                    case 'alogin': await this.sendstr('LOGIN 1 VH3M\r', 300, 80); break; // TSS8 adm login
+                    case 'login': await this.sendstr('LOGIN 2 LXHE\r', 300, 80); break;  // TSS8 login
                     default:
                         const txt = await loadFile(parms[1], true);
                         await this.sendstr(txt.replaceAll('\n', ''));
@@ -381,7 +357,7 @@ class PDP8EMon extends Monitor12 {     // system monitor
                     await this.sendstr('`LE\r');
                 }
                 break;
-            case 'test': // run MAINDEC tests
+            case 'test':     // run MAINDEC tests
                 if (parms.length < 2) { console.error('missing name'); break; }
                 this.emu.CPU.cpu.reset(); // clear all CPU flags
                 switch (parms[1]) {
@@ -479,7 +455,8 @@ await this.exec('tse 0'); await this.exec('x pc 200 sr 4001');
                     default: console.error(`unknown test: ${parms[1]}`); break;
                 }
                 break;
-            case 'rx01': // upload/download RX01 disk data
+            case 'rx01':     // upload/download RX01 disk data
+                if (!this.fdd) { console.error('RX01 not connected'); break; }
                 if (parms.length < 2) { console.error('missing drv'); break; }
                 const num = pi(parms[1]);
                 if (num < 0 || num > 1) { console.error(`invalid drv: ${num}`); break; }
@@ -491,9 +468,58 @@ await this.exec('tse 0'); await this.exec('x pc 200 sr 4001');
                     else downloadFile('rx01.img', rx01);
                 }
                 break;
-            case 'rs08': // download RS08 disk data
-                const rs08 = this.hdd.getDsk();
-                downloadFile('rs08.img', new Uint8Array(rs08.buffer));
+            case 'rs08':     // upload/download RS08 disk data
+                if (!this.hdd) { console.error('RS08 not connected'); break; }
+                if (parms.length > 1) // upload
+                    this.hdd.setDsk(await loadFile(parms[1], false));
+                else {                // download
+                    const rs08 = this.hdd.getDsk();
+                    downloadFile('rs08.img', new Uint8Array(rs08.buffer));
+                }
+                break;
+            case 'conn':     // connect device
+                if (parms.length < 2) { console.error('missing dev'); break; }
+                const sys_tab = document.getElementById('sys_tab'),
+                      sys = document.getElementById('system');
+                switch (parms[1].toLowerCase()) {
+                    case 'rx01': // RX8E/RX01 disk drive
+                        if (this.fdd) { console.error('RX01 already connected'); break; }
+                        await loadScript('rx01.js');
+                        this.fdd = await RX01(this.emu.CPU, this.emu.memo, sys_tab, sys);
+                        break;
+                    case 'rs08': // RF08/RS08 fixed head disk
+                        if (this.hdd) { console.error('RS08 already connected'); break; }
+                        await loadScript('rs08.js');
+                        this.hdd = await RS08(this.emu.CPU, this.emu.memo, sys_tab, sys);
+                        break;
+                    case 'kc8e': // KC8-E front panel
+                        if (this.fpn) { console.error('KC8E already connected'); break; }
+                        await loadScript('kc8_e.js');
+                        this.fpn = await KC8_E(this.emu.CPU, this.emu.memo, sys_tab, sys);
+                        break;
+                    case 'asr':  // ASR-33 paper tape reader and puncher
+                    case 'vt':   // VT-52 CRT terminal
+                        if (parms.length < 3) { console.error('missing addr'); break; }
+                        const adr = pi(parms[2]);
+                        if (adr < 1 || adr > 0o77) {
+                            console.error(`invalid addr: ${fmt(adr, 2)}`); break;
+                        }
+                        if (this.terms.get(adr)) {
+                            console.error(`terminal already connected: ${fmt(adr, 2)}`); break;
+                        }
+                        const tnum = document.getElementsByClassName('tab-content').length;
+                        let trmn;
+                        if (parms[1].toLowerCase() === 'asr') {
+                            await loadScript('asr_33.js');
+                            trmn = await ASR_33(this.emu.CPU, this.emu.memo, tnum, adr);
+                        } else {
+                            await loadScript('vt_52.js');
+                            trmn = await VT_52(this.emu.CPU, this.emu.memo, tnum, adr);
+                        }
+                        this.terms.set(adr, trmn);
+                        break;
+                    default: console.error(`unknown device: ${parms[1]}`); break;
+                }
                 break;
             default: await super.handler(parms, cmd); break;
         } } catch (e) { console.error(e.stack); }
@@ -501,41 +527,15 @@ await this.exec('tse 0'); await this.exec('x pc 200 sr 4001');
 }
 
 async function main() {
-    const hdimg_name = URL_OPTS.get('hdimg');    // requested hdd image
-    let hdimg;                                   // hdd image data
-    await Promise.all([
-        (hdimg = hdimg_name ? loadFile(hdimg_name, false) : Promise.resolve(null)),
-        loadScript('pdp_8e.js'), loadScript('kc8_e.js'), loadScript('asr_33.js'),
-        loadScript('vt_52.js'), loadScript('rx01.js'), loadScript('rs08.js')
-    ]);
+    await loadScript('pdp_8e.js');
     const cores = +URL_OPTS.get('fields') ?? 0,
           mem = cores ? KM8_E(cores) : MM8_E(),  // memory
           cpu = new GenCpu12(mem),               // CPU (uses Cpu(memo) class)
-          fp = await KC8_E(cpu, mem, 1),         // front panel
           clc = DK8EA(cpu),                      // system clock
-          fdd = await RX01(cpu, mem),            // RX8E/RX01 disk drive
-          hdd = await RS08(cpu, mem),            // RF08/RS08 fixed head disk
           emu = new PDP8EEmu(cpu, mem),
           mon = new PDP8EMon(emu);
     const txtext = cores ? ' and KM8-E extension' : '';
     console.info(`KK8-E processor with MM8-E[${cores + 1} unit(s)] memory${txtext}`);
-    console.info(`connected devices: DK8-EA, RX01[2 disks] and RS08[4 disks]`);
-    const cons = URL_OPTS.get('cons') ?? 'asr',
-          con2 = URL_OPTS.get('cons2'),
-          kbd = (cons.toUpperCase() === 'ASR') ? // system console
-                  await ASR_33(cpu, mem, 2) :
-                  await VT_52(cpu, mem, 2),
-          kb2 = (con2 === null) ? null :         // 1st terminal on PT08
-                (con2.toUpperCase() === 'ASR') ?
-                    await ASR_33(cpu, mem, 3, 0o40) :
-                    await VT_52(cpu, mem, 3, 0o40);
-    mon.clc = clc;                               // access to DK8EA
-    mon.kbd = kbd;                               // access to console
-    mon.kb2 = kb2;                               // access to second console
-    mon.fdd = fdd;                               // access to RX01
-    mon.hdd = hdd;                               // access to RS08
-    hdimg = await hdimg;                         // hdd image fetched, get pending data
-    if (hdimg !== null) hdd.setDsk(hdimg);       // loaded hdd image
     term.setPrompt('> ');
     while (true) await mon.exec(await term.prompt());
 }

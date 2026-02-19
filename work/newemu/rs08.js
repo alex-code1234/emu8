@@ -105,25 +105,22 @@ function RF08dev(mem) {                // RF08/RS08 fixed head disk
     return res;
 }
 
-async function RS08(cpu, memo) {
-    const tabs = document.getElementsByClassName('tab-content');
-    if (tabs.length < 2) { console.warn('system is not initialized'); return null; }
-    let tmo = null, cont = 0;                       // timeout updater id and continue flag
-    const dev = RF08dev(memo),                      // monitored device
-          sysfp = document.getElementById('sysfp'), // this tab ref
-          leds = [],                                // device LEDs
-          dregs = dev.dregs,                        // device state
+async function RS08(cpu, memo, tab_ref, tab) {
+    let tmo = null, cont = 0;              // timeout updater id and continue flag
+    const dev = RF08dev(memo),             // monitored device
+          leds = [],                       // device LEDs
+          dregs = dev.dregs,               // device state
     setLEDs = (idx, initmsk, value) => {
         for (let mask = initmsk; mask > 0; mask >>= 1)
             leds[idx++].style.display = (value & mask) ? 'block' : 'none';
     },
-    busy = flag => {                                // monitor drive activity
-        if (!sysfp.checked) return; // no update for inactive tab
+    busy = flag => {                       // monitor drive activity
+        if (!tab_ref.checked) return;      // no update for inactive tab
         cont = flag;
         if (flag && tmo === null) update();
     },
-    update = () => {                                // monitor drive data
-        if (!sysfp.checked) {              // no update for inactive tab
+    update = () => {                       // monitor drive data
+        if (!tab_ref.checked) {            // no update for inactive tab
             tmo = null; return;
         }
         setLEDs(0, 0o4, dregs[2]);         // 1st row (field)
@@ -132,26 +129,24 @@ async function RS08(cpu, memo) {
         setLEDs(24, 0o4000, dregs[1]);     // 3rd row
         tmo = cont ? setTimeout(update, 10) : null;
     };
-    const tab = tabs[1],
-          [img, img2] = await Promise.all([loadImage('rs08_img.jpg'), loadImage('rs08_img2.jpg')]),
-    led = (left, top) => {
-        const res = document.createElement('span');
-        res.className = 'rsled'; res.style.left = `${left}px`; res.style.top = `${top}px`;
-        tab.appendChild(res);
-        leds.push(res);
-    };
     addStyle(`
-.rs08_2 { position: absolute; width: 220px; height:138px; left: 280px; background-color: transparent; }
-.rsled { position: absolute; width: 8px; height: 8px; border-radius: 4px;
+.rs08_2 { position: absolute; width: 30.45%; height: 38%; left: 36%; top: 16%; }
+.rsled { position: absolute; width: 1.15%; height: 2%; border-radius: 20px;
          background-color: #ff7f50; display: none; }
     `);
-    img.className = 'fpimg'; img.style.marginTop = '5px';
-    tab.appendChild(img);
-    img2.className = 'rs08_2'; img2.style.top = '875px'
-    tab.appendChild(img2);
-    for (let i = 0, x = 293; i < 12; i++, x += 17) { if (i === 4) x++; led(x, 899); }    // 1st row
-    for (let i = 0, x = 292; i < 12; i++, x += 17) { if (i === 4) x += 2; led(x, 932); } // 2nd row
-    for (let i = 0, x = 291; i < 12; i++, x += 17) { if (i === 4) x += 3; led(x, 965); } // 3rd row
-    dev.busy[0] = busy;                             // start monitoring
+    const [img, img2] = await Promise.all([loadImage('rs08_img.jpg'), loadImage('rs08_img2.jpg')]),
+          cntr = getImageCont(img),
+    led = (left, top) => {
+        const res = document.createElement('span');
+        res.className = 'rsled'; res.style.left = `${left}%`; res.style.top = `${top}%`;
+        cntr.appendChild(res);
+        leds.push(res);
+    };
+    img2.className = 'rs08_2'; cntr.appendChild(img2);
+    for (let i = 0, x = 37.62; i < 12; i++, x += 2.4) led(x, 22.8); // 1st row
+    for (let i = 0, x = 37.60; i < 12; i++, x += 2.4) led(x, 31.8); // 2nd row
+    for (let i = 0, x = 37.58; i < 12; i++, x += 2.4) led(x, 40.8); // 3rd row
+    tab.appendChild(cntr);
+    dev.busy[0] = busy;                    // start monitoring
     return dev;
 }

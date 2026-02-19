@@ -188,16 +188,13 @@ function RX01dev(CPU) { // RX8E/RX01 disk drive
     return res;
 }
 
-async function RX01(cpu, memo) {
+async function RX01(cpu, memo, tab_ref, tab) {
     await loadScript('../../js/disks.js');
-    const tabs = document.getElementsByClassName('tab-content');
-    if (tabs.length < 2) { console.warn('system is not initialized'); return null; }
-    let tmo = null;                                 // timeout updater id
-    const dev = RX01dev(cpu),                       // monitored device
-          sysfp = document.getElementById('sysfp'), // this tab ref
-          leds = [],                                // device LEDs
-    busy = (drv, flag) => {         // monitor drive activity
-        if (!sysfp.checked) return; // no update for inactive tab
+    let tmo = null;                   // timeout updater id
+    const dev = RX01dev(cpu),         // monitored device
+          leds = [],                  // device LEDs
+    busy = (drv, flag) => {           // monitor drive activity
+        if (!tab_ref.checked) return; // no update for inactive tab
         if (flag) {
             clearTimeout(tmo);
             const stl = leds[drv].style;
@@ -205,27 +202,25 @@ async function RX01(cpu, memo) {
             tmo = setTimeout(() => stl.backgroundColor = '', 100);
         }
     },
-    update = () => {                // monitor drive loading
+    update = () => {                  // monitor drive loading
         setTimeout(update, 500);
-        if (!sysfp.checked) return; // no update for inactive tab
+        if (!tab_ref.checked) return; // no update for inactive tab
         for (let i = 0; i < 2; i++) {
             const stl = leds[i].style;
             if (!dev.getDsk(i)) stl.backgroundColor = '#ff160c';
             else if (stl.backgroundColor === '#ff160c') stl.backgroundColor = '';
         }
     };
-    const tab = tabs[1],
-          img = await loadImage('rx01_img.jpg'),
+    addStyle(`.rxled { position: absolute; width: 1.75%; height: 2%; }`);
+    const cont = getImageCont(await loadImage('rx01_img.jpg')),
     led = (left, top) => {
         const res = document.createElement('span');
-        res.className = 'rxled'; res.style.left = `${left}px`; res.style.top = `${top}px`;
-        tab.appendChild(res);
+        res.className = 'rxled'; res.style.left = `${left}%`; res.style.top = `${top}%`;
+        cont.appendChild(res);
         leds.push(res);
     };
-    addStyle(`.rxled { position: absolute; width: 12px; height: 8px; }`);
-    img.className = 'fpimg'; img.style.marginTop = '5px';
-    tab.appendChild(img);
-    led(352, 715); led(669, 717);
-    dev.busy[0] = busy; update();                   // start monitoring
+    led(45.5, 76); led(89.4, 76.5);
+    tab.appendChild(cont);
+    dev.busy[0] = busy; update();     // start monitoring
     return dev;
 }

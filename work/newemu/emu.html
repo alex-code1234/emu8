@@ -129,6 +129,10 @@ input[type='checkbox'] {                /* check box */
 .emulator {                             /* emulator area */
     padding: 0px; overflow: auto;
 }
+.img_cont {                             /* image container for absolute positioned overlay */
+    position: relative; margin: 0 0 5px; padding: 0;
+}
+.fp_img { max-width: 100%; width: 100%; height: auto; }
     </style>
     <script type='text/javascript'>
 window.onerror = function(event, source, line, col, error) {
@@ -143,11 +147,14 @@ window.onerror = function(event, source, line, col, error) {
 <body>
     <div class='tabbed'>
         <input type='radio' id='tab1' name='css-tabs' checked/>
+        <input type='radio' id='sys_tab' name='css-tabs'/>
         <ul class='tabs surface'>
             <li class='tab'><label class='command' for='tab1'>Terminal</label></li>
+            <li class='tab'><label class='command' for='sys_tab'>System</label></li>
             <li class='theme'><button id='theme'>&#9770;</button></li>
         </ul>
         <div class='tab-content surface' id='terminal'></div>
+        <div class='tab-content surface' id='system'></div>
     </div>
     <script type='text/javascript'>
 'use strict';
@@ -460,6 +467,12 @@ addStyle = txt => {
     const stl = document.createElement('style');
     stl.type = 'text/css'; stl.innerHTML = txt;
     document.head.appendChild(stl);
+},
+getImageCont = img => {
+    img.className = 'fp_img';
+    const div = document.createElement('div');
+    div.className = 'img_cont'; div.appendChild(img);
+    return div;
 },
 createUI = (
     tab,     // tab element to populate
