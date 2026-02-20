@@ -449,6 +449,8 @@ gSVar = str => {
     return str;
 },
 addTab = (id, name, num = 1, emulator = false) => {
+    if (document.querySelectorAll('div.tabbed input').length === 5)
+        throw new Error('too many tabs');
     let elem = document.createElement('input');
     elem.setAttribute('type', 'radio');
     elem.setAttribute('id', id);
@@ -460,7 +462,7 @@ addTab = (id, name, num = 1, emulator = false) => {
     document.querySelector(`div.tabbed ul li:nth-of-type(${num})`).after(elem);
     const res = document.createElement('div');
     res.className = `tab-content surface${emulator ? ' emulator' : ''}`;
-    document.querySelector(`div.tabbed div:nth-of-type(${num})`).after(res);
+    document.querySelector(`div.tabbed div.tab-content:nth-of-type(${num})`).after(res);
     return res;
 },
 addStyle = txt => {
@@ -500,13 +502,15 @@ createUI = (
              font-size: calc(${ks} / 3.5); }
 .sec_${pf}_vert { grid-template-rows: repeat(${crs}, calc(${ks} / 1.36)); grid-gap: calc(${ks} / 10);
                   grid-template-columns: repeat(2, calc(${ks} / 2)); }
-#scr_${pi} { width: ${sw}; height: ${sh}; margin: auto; display: block; }
-#con_${pi} { position: absolute; opacity: 0.12; z-index: 100; width: 0px; }
-#kbd_${pi} { opacity: 1.0; z-index: 50; }
 ${css}
         `);
         CREATED_STYLES[pf] = true;
     }
+    addStyle(`
+#scr_${pi} { width: ${sw}; height: ${sh}; margin: auto; display: block; }
+#con_${pi} { position: absolute; opacity: 0.12; z-index: 100; width: 0px; }
+#kbd_${pi} { opacity: 1.0; z-index: 50; }
+    `);
     tab.style.backgroundColor = 'var(--background)';
     tab.innerHTML = `
 <canvas id='scr_${pi}'></canvas>
