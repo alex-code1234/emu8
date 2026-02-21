@@ -285,14 +285,20 @@ class PDP8EMon extends Monitor12 {     // system monitor
         super(emu);
         this.terms = new Map(); // connected terminals
     }
-    async sendstr(str, nlms = 100, ms = 50, brk = false) {
+    getTerm(str) {
+        const addr = pi(str),
+              term = this.terms.get(addr);
+        if (!term) throw new Error(`invalid addr: ${fmt(str, 2)}`);
+        return term;
+    }
+    async sendstr(kbd, str, nlms = 100, ms = 50, brk = false) {
         let i = 0, count = 0;
         while (i < str.length) {
             let ctrl = false, chr = str.charAt(i++);
             if (chr === '`') { ctrl = true; chr = str.charAt(i++); }
             let cod = chr.charCodeAt(0);
             if (ctrl) { if (cod >= 0x60) cod -= 0x60; if (cod >= 0x40) cod -= 0x40; }
-            this.kbd.processKey(cod);
+            kbd.processKey(cod);
             await delay(chr === '\r' ? nlms : ms);
             count++;
             if (brk && chr === '\r' && count > 5000) {
@@ -327,34 +333,40 @@ class PDP8EMon extends Monitor12 {     // system monitor
                 }
                 break;
             case 'type':     // automated keyboard input
-                switch (parms[1]) {
-                    case 'start': await this.sendstr('S\r12-06-84\r16:52\r\r'); break;   // TSS8 init
-                    case 'alogin': await this.sendstr('LOGIN 1 VH3M\r', 300, 80); break; // TSS8 adm login
-                    case 'login': await this.sendstr('LOGIN 2 LXHE\r', 300, 80); break;  // TSS8 login
+                if (parms.length < 3) { console.error('missing addr name|fname'); break; }
+                const kbd = this.getTerm(parms[1]);
+                switch (parms[2]) {
+                    case 'start':  // TSS8 init
+                        await this.sendstr(kbd, 'S\r12-06-84\r16:52\r\r'); break;
+                    case 'alogin': // TSS8 admin login
+                        await this.sendstr(kbd, 'LOGIN 1 VH3M\r', 300, 80); break;
+                    case 'login':  // TSS8 library login
+                        await this.sendstr(kbd, 'LOGIN 2 LXHE\r', 300, 80); break;
                     default:
-                        const txt = await loadFile(parms[1], true);
-                        await this.sendstr(txt.replaceAll('\n', ''));
+                        const txt = await loadFile(parms[2], true);
+                        await this.sendstr(kbd, txt.replaceAll('\n', ''));
                         break;
                 }
                 break;
             case 'tss8copy': // TSS8 copy external file to disk
             case 'os8copy':  // OS8 copy external file to disk
-                if (parms.length < 2) { console.error('missing fname'); break; }
+                if (parms.length < 3) { console.error('missing addr fname'); break; }
+                const trm = this.getTerm(parms[1]);
                 const path = parms[1],
                       fnam = path.match(/([^/]+?)(\.[^.]*$|$)/);
                 if (fnam === null || fnam.length < 3) {
                     console.error(`invalid fname: ${path}`); break;
                 }
                 if (cmd === 'tss8copy') {
-                    await this.sendstr('R PIP\r', 1800);
-                    await this.sendstr(`\r${fnam[1]}\rT\r`, 300);
-                    await this.sendstr(await loadFile(path, true), 50);
-                    await this.sendstr('`C`BS\r', 50, 300);
+                    await this.sendstr(trm, 'R PIP\r', 1800);
+                    await this.sendstr(trm, `\r${fnam[1]}\rT\r`, 300);
+                    await this.sendstr(trm, await loadFile(path, true), 50);
+                    await this.sendstr(trm, '`C`BS\r', 50, 300);
                 } else {
                     if (fnam[2] !== '') fnam[1] += fnam[2].substr(0, 3);
-                    await this.sendstr(`CREATE ${fnam[1]}\rA\r`, 300);
-                    await this.sendstr(await loadFile(path, true), 10, 5, true);
-                    await this.sendstr('`LE\r');
+                    await this.sendstr(trm, `CREATE ${fnam[1]}\rA\r`, 300);
+                    await this.sendstr(trm, await loadFile(path, true), 10, 5, true);
+                    await this.sendstr(trm, '`LE\r');
                 }
                 break;
             case 'test':     // run MAINDEC tests
@@ -528,7 +540,12 @@ await this.exec('tse 0'); await this.exec('x pc 200 sr 4001');
 
 async function main() {
     await loadScript('pdp_8e.js');
-    const cores = +URL_OPTS.get('fields') ?? 0,
+    const getNum = (p, e) => {
+        const res = +(URL_OPTS.get(p) ?? 0);
+        if (isNaN(res)) throw new Error(`invalid parameter: ${p}; ${e}`);
+        return res;
+    };
+    const cores = getNum('fields', 'expected: ext fields count 0..7'),
           mem = cores ? KM8_E(cores) : MM8_E(),  // memory
           cpu = new GenCpu12(mem),               // CPU (uses Cpu(memo) class)
           clc = DK8EA(cpu),                      // system clock
@@ -536,6 +553,43 @@ async function main() {
           mon = new PDP8EMon(emu);
     const txtext = cores ? ' and KM8-E extension' : '';
     console.info(`KK8-E processor with MM8-E[${cores + 1} unit(s)] memory${txtext}`);
+    const os = URL_OPTS.get('os'),
+          terms = getNum('terms', 'expected: 0 - ASR+ASR, 1 - ASR+VT, 2 - VT+ASR, 3 - VT+VT'),
+          fp = getNum('fpanel', 'expected: 0 - hidden, 1 - last, 2 - first');
+    if (os !== null) {                           // pre-defined configs
+        let autorun = getNum('run', 'expected: 0 - load only, 1 - run');
+        if (fp & 2) await mon.exec('conn kc8e');
+        await mon.exec(`conn ${(terms & 2) ? 'vt' : 'asr'} 03`);     // main terminal
+        if (os === 'tss8' || os === 'edu20') {
+            await mon.exec(`conn ${(terms & 1) ? 'vt' : 'asr'} 40`); // second terminal
+            if (os === 'tss8') {
+                if (cores < 3) throw new Error('expected: min 3 ext fields (20Kb total)');
+                await mon.exec('conn rs08');                         // add device for TSS/8
+                await mon.exec('tse 1');                             // enable time sharing
+                await mon.exec('tape tss8_init.bin');                // prepare TSS/8 start
+                await mon.exec('rs08 tss8_rf.dsk');
+                await mon.exec('x if 2 ib 2 pc 4200');
+            } else {
+                if (cores < 1) throw new Error('expected: min 1 ext field (8Kb total)');
+                await mon.exec('tape edu20c.pt');                    // prepare Edu-20 start
+                await mon.exec('x if 0 df 1 pc 7645');
+            }
+        }
+        else if (os === 'os8') {
+            if (cores < 1) throw new Error('expected: min 1 ext field (8Kb total)');
+            await mon.exec('conn rx01');                             // add device for OS/8
+            await mon.exec('r os8boot3.oct 1');                      // prepare OS/8 start
+            await mon.exec('rx01 0 os8_rx.rx01');
+            await mon.exec('x pc 22');
+        }
+        else if (os === 'focal') {
+            await mon.exec('tape FOCAL-69.bpt');                     // prepare FOCAL-69 start
+            await mon.exec('x pc 200');
+        }
+        else { console.error(`unknown OS: ${os}`); autorun = 0; }
+        if (fp & 1) await mon.exec('conn kc8e');
+        if (autorun & 1) mon.exec('g');
+    }
     term.setPrompt('> ');
     while (true) await mon.exec(await term.prompt());
 }
