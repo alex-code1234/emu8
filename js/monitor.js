@@ -344,9 +344,11 @@ async function VT_100(screen, {
 // rate          - screen refresh rate frames/sec
 function GMonitor(canvas, width, height, draw, rate = 24) {
     const elem = canvas.canvas;
-    elem.style.width = elem.width + 'px';   // requested view size
-    elem.style.height = elem.height + 'px'; // specified for canvas element
-    elem.width = width;                     // actual resolution
+    if (elem.width) {
+        elem.style.width = elem.width + 'px';   // requested view size
+        elem.style.height = elem.height + 'px'; // specified for canvas element
+    }
+    elem.width = width;                         // actual resolution
     elem.height = height;
     const idata = canvas.getImageData(0, 0, width, height),
           pixs = new Uint32Array(idata.data.buffer),
