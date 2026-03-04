@@ -352,7 +352,7 @@ class PDP8EMon extends Monitor12 {     // system monitor
             case 'os8copy':  // OS8 copy external file to disk
                 if (parms.length < 3) { console.error('missing addr fname'); break; }
                 const trm = this.getTerm(parms[1]);
-                const path = parms[1],
+                const path = parms[2],
                       fnam = path.match(/([^/]+?)(\.[^.]*$|$)/);
                 if (fnam === null || fnam.length < 3) {
                     console.error(`invalid fname: ${path}`); break;
@@ -563,7 +563,7 @@ async function main() {
         if (os === 'tss8' || os === 'edu20') {
             await mon.exec(`conn ${(terms & 1) ? 'vt' : 'asr'} 40`); // second terminal
             if (os === 'tss8') {
-                if (cores < 3) throw new Error('expected: min 3 ext fields (20Kb total)');
+                if (cores < 4) throw new Error('expected: min 4 ext fields (20Kb total)');
                 await mon.exec('conn rs08');                         // add device for TSS/8
                 await mon.exec('tse 1');                             // enable time sharing
                 await mon.exec('tape tss8_init.bin');                // prepare TSS/8 start

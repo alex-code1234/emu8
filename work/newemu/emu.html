@@ -567,7 +567,8 @@ conElm_click = async e => {
                 kbd_elem.style.display = 'grid';
                 updateElm(elem, true);
             } else {
-                saved_wdx = scr_elem.style.width; saved_hgh = scr_elem.style.height;
+                const scs = getComputedStyle(scr_elem);
+                saved_wdx = scs.width; saved_hgh = scs.height;
                 await elem.parentNode.requestFullscreen();
                 scr_elem.style.width = '100%';
                 const ratio = parseInt(saved_wdx) / parseInt(saved_hgh);
