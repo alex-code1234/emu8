@@ -464,6 +464,13 @@ await this.exec('tse 1'); await this.exec('x pc 200 sr 0001');
 await this.exec('tse 0'); await this.exec('x pc 200 sr 4001');
                         } this.exec('g');
                         break;
+                    case 'vc8e': // point plotter test, sr = 0..7
+                        await this.exec('m 200 ' +
+'1220 4221 7040 1217 3217 1217 6053 4221 1220 6054 6052 5212 6055 3220 5200 3777 0006 ' +
+'0000 3236 7404 7041 3237 1236 7100 7510 7020 7010 2237 5227 5621 0000 0000');
+                        await this.exec('x pc 200 sr 0003');
+                        this.exec('g');
+                        break;
                     default: console.error(`unknown test: ${parms[1]}`); break;
                 }
                 break;
@@ -529,6 +536,16 @@ await this.exec('tse 0'); await this.exec('x pc 200 sr 4001');
                             trmn = await VT_52(this.emu.CPU, this.emu.memo, tnum, adr);
                         }
                         this.terms.set(adr, trmn);
+                        break;
+                    case 'vc8e': // VC8-E point plotter
+                        if (this.vc8) { console.error('VC8E already connected'); break; }
+                        await loadScript('vc8_e.js');
+                        const tnm = document.getElementsByClassName('tab-content').length,
+                              eprms = [undefined, undefined];
+                        if (parms.length > 2 && pi(parms[2])) {
+                            eprms[0] = sys_tab; eprms[1] = sys;
+                        }
+                        this.vc8 = await VC_8E(this.emu.CPU, this.emu.memo, tnm, ...eprms);
                         break;
                     default: console.error(`unknown device: ${parms[1]}`); break;
                 }
