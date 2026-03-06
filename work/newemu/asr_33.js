@@ -110,6 +110,7 @@ function TxtMonitor(scr_elem, color, bckg, width, bellclr = null, buf = 10000, c
         html;                  // inner HTML buffer
     const str_len = width - 1, // max line length
           kbd = [],            // keyboard buffer
+          buffer = [],         // display buffer
     bell = () => {
         if (bellclr === null) return;
         scr_elem.style.background = bellclr;
@@ -130,29 +131,43 @@ function TxtMonitor(scr_elem, color, bckg, width, bellclr = null, buf = 10000, c
         html[cur_pos++] = String.fromCharCode(ccode);
         if (line_len++ >= str_len) newLine(true);
     },
-    display = ccode => {
-        if (ccode === 0) return;
-        if (ccode === 0x07) { bell(); return; }
+    update = () => {
         html = scr_elem.innerHTML
                 .replaceAll('&amp;', '&').replaceAll('&lt;', '<').replaceAll('&gt;', '>')
                 .split('');
         if (cur_pos === html.length - 1) html.length--; // remove cursor
         if (saved !== null) html[savedp] = saved;       // restore char under cursor
-        switch (ccode) {
-            case 0x0a: newLine(false); break;
-            case 0x0d: carRetn(); break;
-            case 0x7f: ccode = 0x5c;                    // replase DEL with \
-            default: outChar(ccode); break;
+        for (let i = 0, n = buffer.length; i < n; i++) {
+            const ccode = buffer[i];
+            switch (ccode) {
+                case 0: break;
+                case 0x07: bell(); break;
+                case 0x0a: newLine(false); break;
+                case 0x0d: carRetn(); break;
+                case 0x7f: ccode = 0x5c;                // replase DEL with \
+                default: outChar(ccode); break;
+            }
         }
         if (cur_pos < html.length) {                    // save char under cursor
             saved = html[cur_pos]; savedp = cur_pos;
         }
         else saved = null;
         html[cur_pos] = cursor;                         // set cursor
-        if (html.length > buf) html = html.slice(width);
+        if (html.length > buf && cur_pos > width) {     // limit display size
+            html = html.slice(width);
+            cur_pos -= width;                           // adjust cursor pos
+            if (saved) savedp -= width;
+        }
         scr_elem.innerHTML = html.join('')
                 .replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
         scr_elem.scrollTop = scr_elem.scrollHeight;     // auto scroll
+    },
+    display = ccode => {
+        buffer.push(ccode);
+        if (buffer.length === 1) queueMicrotask(() => {
+            update();
+            buffer.length = 0;
+        });
     };
     scr_elem.innerHTML = cursor;
     return {kbd, display};
