@@ -46,20 +46,21 @@ function Type30(scr, tab) {
           data = idata.data, len = data.length,
           pixs = new Uint32Array(data.buffer),
     cvt = n => (n > 511) ? (n - 511) / 2 | 0 : 256 + (n / 2 | 0),
-    dot = (x, y) => pixs[cvt(y) * 512 + cvt(x)] = 0xff01ff07,
+    dot = (x, y) => pixs[cvt(y) * 512 + cvt(x)] = 0xffffff07, // 1-st color
     update = () => {
         if (!tab.checked) return; // no update for inactive tab
         let draw = false;
         for (let i = 3; i < len; i += 4) {
             const val = data[i];
             if (val > 0) {
-                data[i] = (val === 255) ? 254 : (val > 31) ? val - 32 : 0;
+                data[i] = (val === 255) ? 254 : (val > 15) ? val - 16 : 0;
+                if (val === 222) data[i - 1] = 0x01;          // 2-nd color
                 if (!draw) draw = true;
             }
         }
         if (draw) canvas.putImageData(idata, 0, 0);
     };
-    setInterval(update, 40);
+    setInterval(update, 20);
     return {dot};
 }
 
