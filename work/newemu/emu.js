@@ -84,6 +84,10 @@ class Emulator12 extends Emulator {    // override for 12-bit mode
         }
         return length;
     }
+    to6bitASCII(word) {
+        const chrs = '@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_ !"#$%&\'()*+,-./0123456789:;<=>?';
+        return (chrs[word >>> 6] ?? '.') + (chrs[word & 0x3f] ?? '.');
+    }
     printMem(a, lines = 16, mem, logger = console.log) { // redefine for octal
         if (mem === undefined) mem = this.memo;
         logger(`Addr     0    1    2    3    4    5    6    7  6bit             7bit     3x8`);
@@ -93,15 +97,14 @@ class Emulator12 extends Emulator {    // override for 12-bit mode
                 const c = mem.rd(a + j);
                 if (c === undefined) break;
                 s += `${fmt(c)} `;
-                chr = c >> 6 & 0o77; s2 += (chr >= 0x20) ? String.fromCharCode(chr) : '.';
-                chr = c & 0o77; s2 += (chr >= 0x20) ? String.fromCharCode(chr) : '.';
+                s2 += this.to6bitASCII(c);
                 chr = c & 0x7f; s3 += (chr >= 0x20) ? String.fromCharCode(chr) : '.';
                 if (j % 2 === 0) {
                     chr = c & 0x7f; s4 += (chr >= 0x20) ? String.fromCharCode(chr) : '.';
-                    tmp = c & 0x300;
+                    tmp = c & 0x700;
                 } else {
                     chr = c & 0x7f; s4 += (chr >= 0x20) ? String.fromCharCode(chr) : '.';
-                    chr = tmp >> 4 | (chr & 0xf00) >> 8;
+                    chr = tmp >> 4 | (c & 0xf00) >> 8;
                     s4 += (chr >= 0x20) ? String.fromCharCode(chr) : '.';
                 }
             }
