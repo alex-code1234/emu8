@@ -1,0 +1,395 @@
+/ SNOWFLAKE FOR PDP-8 / VC8E
+/ ADAPTED FROM PDP-1 CLASSIC
+
+*20                     / SHARED VARIABLES
+
+IO,      0              / PDP-1 IO REGISTER
+CXY,     CXYL           / CXY SUB REF
+T1,      0
+T2,      0
+X,       5432           / X0
+Y,       3567           / Y0
+P1,      T1A
+P2,      T1E
+T3,      0
+T4,      0
+Q1,      0
+Q2,      0
+DXY2,    DXYL           / DXY CONT. REF
+
+DXY,     0              / REFLECTION
+         CLA CLL
+         TAD   T2
+         DCA   OPB
+         TAD I P2
+         JMS   ADSHOVF  / AC = (*P2 + T2) >> 1
+         DCA   T2
+         TAD   T1
+         DCA   OPB
+         TAD I P1
+         JMS   ADSHOVF  / AC = (*P1 + T1) >> 1
+         DCA   T1
+         TAD   T1
+         CLL RAR
+         DCA   T3       / T3 = T1 >> 1
+         TAD   T2
+         CLL RAR
+         DCA   T4       / T4 = T2 >> 1
+         TAD   T3       / T1 >> 1
+         CLL RAR        / T1 >> 2
+         TAD   T3       / T1 >> 1 + T1 >> 2
+         TAD   T1       / T1 + T1 >> 1 + T1 >> 2
+         CLL RAR        / (T1 + T1 >> 1 + T1 >> 2) >> 1
+         DCA   Q1
+         TAD   T4       / T2 >> 1
+         CLL RAR        / T2 >> 2
+         TAD   T4       / T2 >> 1 + T2 >> 2
+         TAD   T2       / T2 + T2 >> 1 + T2 >> 2
+         CLL RAR        / (T2 + T2 >> 1 + T2 >> 2) >> 1
+         DCA   Q2
+         TAD   Q1
+         TAD   T4
+         DCA   IO       / IO = Q1 + T4
+         TAD   T3
+         CIA            / -T3
+         TAD   Q2       / AC = Q2 - T3
+         JMS   DRAW     / DRAW INITIAL DOT
+         JMS I DXY2     / DRAW REFLECTED DOTS
+         JMP I DXY
+
+ADSHOVF, 0              / AC = (AC + OPB) >> 1 OVF
+         TAD   OPB      / AC = AC + OPB
+         DCA   TMP      / SAVE SUM RESULT
+         TAD   TMP
+         AND   SGNM     / EXTRACT SIGN
+         SZA            / POSITIVE?
+         JMP   OVF      / NO, OVERFLOW
+         TAD   TMP      / YES, AC = SUM >> 1
+         CLL RAR
+         JMP   DONE
+OVF,     CLA            / OVERFLOW, CLEAR AC
+         TAD   SGNM
+         DCA   OPB      / OPB = 4000
+         TAD   TMP      / SUM
+         JMS   XOROP    / AC = SUM XOR 4000
+         DCA   OPB      / OPB = SUM XOR 4000
+         TAD   TMP      / SUM
+         CLL CML RAR    / AC = SUM >> 1 WITH HIGH BIT
+         JMS   OROP     / AC = (SUM >> 1) OR OPB
+DONE,    JMP I ADSHOVF
+
+XOROP,   0              / AC = AC XOR OPB
+         DCA   TMP
+         TAD   TMP
+         AND   OPB
+         CIA
+         CLL RAL
+         TAD   TMP
+         TAD   OPB
+         JMP I XOROP
+
+OROP,    0              / AC = AC OR OPB
+         CMA
+         DCA   TMP
+         TAD   OPB
+         CMA
+         AND   TMP
+         CMA
+         JMP I OROP
+
+DISD=    6052
+DILX=    6053
+DILY=    6054
+DIXY=    6055
+
+DRAW,    0              / DISPLAY DOT
+         DCA   TMP      / SAVE AC
+         TAD   TMP
+         CLL RAR
+         CLL RAR
+         DILX           / X = AC >> 2
+         CLA
+         TAD   IO
+         CLL RAR
+         CLL RAR
+         DILY           / Y = IO >> 2
+         CLA CLL
+         TAD   TMP      / RESTORE AC
+         DISD           / READY?
+         JMP   .-1      / NO, WAIT
+         DIXY           / DISPLAY
+         JMP I DRAW
+
+OPB,     0
+SGNM,    4000
+TMP,     0
+
+*200                    / START AT OCTAL 200
+
+START,   JMS I CXY      / INIT DATA
+         DCA I P1       / *P1 = AC
+         TAD   IO
+         DCA I P2       / *P2 = IO
+         ISZ   P1       / P1++
+         ISZ   P2       / P2++
+         TAD   P2
+         CIA            / -P2
+         TAD   T2EADR   / P2 == &T2E?
+         SZA            / YES, CLEAR LINK AND EXIT LOOP
+         JMP   START    / NO, CONTINUE
+WORK,    TAD I P1       / MAIN LOOP
+         DCA   T1       / T1 = *P1
+         TAD I P2
+         DCA   T2       / T2 = *P2
+PASS1,   TAD   P1       / P1--
+         TAD   M1
+         DCA   P1
+         TAD   P2       / P2--
+         TAD   M1
+         DCA   P2
+         TAD   P2
+         CIA            / -P2
+         TAD   T2AADR   / P2 == &T2A?
+         SNA            / NO, CONTINUE PASS1
+         JMP   CONT1    / YES, EXIT
+         JMS   DXY      / DRAW
+         DCA I P1       / *P1 = AC
+         TAD   IO
+         DCA I P2       / *P2 = IO
+         JMP   PASS1
+CONT1,   JMS   DELAY    / PAUSE DRAWING
+         TAD I P1
+         DCA   T1       / T1 = *P1
+         TAD I P2
+         DCA   T2       / T2 = *P2
+PASS2,   ISZ   P1       / P1++
+         ISZ   P2       / P2++
+         TAD   P2
+         CIA            / -P2
+         TAD   T2E1ADR  / P2 == &T2E - 1?
+         SNA            / NO, CONTINUE PASS2
+         JMP   CONT2    / YES, EXIT
+         JMS   DXY      / DRAW
+         DCA I P1       / *P1 = AC
+         TAD   IO
+         DCA I P2       / *P2 = IO
+         JMP   PASS2
+CONT2,   JMS   DELAY    / PAUSE DRAWING
+         ISZ   C1       / ++C1 == 0?
+         JMP   CONT3    / NO, JUMP TO CONT3
+         JMS I CXY      / YES, INIT NEW LOOP
+         DCA I T1AADR   / *T1A = AC
+         TAD   IO
+         DCA I T2AADR   / *T2A = IO
+         JMS I CXY
+         DCA I T1E1ADR  / *(T1E - 1) = AC
+         TAD   IO
+         DCA I T2E1ADR  / *(T2E - 1) = IO
+         JMS I CXY
+         DCA I T1MADR   / *T1M = AC
+         TAD   IO
+         DCA I T2MADR   / *T2M = IO
+         TAD I T1MADR   / C1 = -(AC & 074)
+         AND   C1MASK
+         CIA            / -AC
+         SZA            / C1 == 0?
+         JMP   CONTFX   / NO, CONTINUE
+         TAD   C10      / YES, LOAD INITIAL C1
+CONTFX,  DCA   C1
+         JMP   WORK
+CONT3,   TAD   X
+         DCA I T1MADR   / *T1M = X
+         TAD   Y
+         DCA I T2MADR   / *T2M = Y
+         JMP   WORK
+
+T2EADR,  T2E            / &T2E
+C1,      7740           / -040
+M1,      7777           / -1
+T2AADR,  T1E            / &T2A, SAME AS &T1E
+T2E1ADR, T2E-1          / &T2E - 1
+T1MADR,  T1M            / &T1M
+T2MADR,  T2M            / &T2M
+T1AADR,  T1A            / &T1A
+T1E1ADR, T1E-1          / &T1E - 1
+C1MASK,  0074
+C10,     7740           / INITIAL C1 VALUE
+
+DELAY,   0              / DELAY PROCESSING
+         CLA
+         TAD   DOUTV
+         DCA   DOUT
+DL1,     TAD   DINNV
+         DCA   DINN
+DL2,     ISZ   DINN
+         JMP   DL2
+         ISZ   DOUT
+         JMP   DL1
+         JMP I DELAY
+
+DINNV,   7000
+DOUTV,   7766
+DINN,    0
+DOUT,    0
+
+DXYL2,   0              / DXY PART 3
+         CLA
+         TAD   T2
+         CIA
+         DCA   IO       / IO = -T2
+         TAD   T1       / AC = T1
+         JMS   DRAW
+         CIA            / AC = -AC
+         JMS   DRAW
+         DCA   TMP
+         TAD   T2
+         DCA   IO       / IO = T2
+         TAD   TMP
+         JMS   DRAW
+         CIA            / AC = -AC
+         JMS   DRAW
+         JMP I DXYL2
+
+*400                    / MATH SUBS
+
+CXYL,    0              / CONVOLUTION
+         CLA CLL
+         TAD   X
+         JMS   MULTL
+         3643
+         CLA CLL
+         TAD   IO
+         DCA   X        / X = IO
+         TAD   Y
+         JMS   MULTL
+         3643
+         DCA   TEMP1    / SAVE AC
+         TAD   TEMP1
+         TAD   X
+         DCA   X        / X = X + AC
+         TAD   IO
+         DCA   Y        / Y = IO
+         TAD   TEMP1    / RESTORE AC
+         JMS   RCL4SL
+         JMP I CXYL
+
+RCL4SL,  0              / PDP-1 RCL 4S; IN: AC+IO, OUT: AC+IO
+         CLL
+         DCA   TEMP1    / SAVE HIGH
+         TAD   TEMP1
+         AND   RCLMSK   / KEEP TOP 4 BITS
+         BSW            / SWAP 6 BITS
+         RTR            / MOVE TO BOTTOM
+         DCA   TEMP2    / HIGH BITS TO WRAP TO LOW
+         TAD   IO
+         AND   RCLMSK   / KEEP TOP 4 BITS
+         BSW
+         RTR
+         DCA   TEMP3    / WRAP AROUND BITS FOR HIGH
+         TAD   IO       / 4 BIT LEFT SHIFT ON LOW
+         AND   RCLLSK   / CLEAR TOP 4 BITS
+         RTL
+         RTL
+         TAD   TEMP2
+         DCA   IO
+         TAD   TEMP1    / 4 BIT LEFT SHIFT ON HIGH
+         AND   RCLLSK
+         RTL
+         RTL
+         TAD   TEMP3
+         JMP I RCL4SL
+
+MULTL,   0              / MULTIPLY; IN: AC+INLINE, OUT: AC+IO
+         CLL
+         SPA            / TEST FOR NEGATIVE MULTIPLIER
+         CMA CML IAC
+         DCA   IO       / STORE MULTIPLIER
+         DCA   TEMP1
+         TAD I MULTL
+         SNA            / TEST FOR ZERO MULTIPLICAND
+         JMP   MPSN+2
+         SPA            / TEST FOR NEGATIVE MULTIPLICAND
+         CMA CML IAC
+         DCA   TEMP2    / STORE MULTIPLICAND
+         TAD   THIR
+         DCA   TEMP3
+MP4,     TAD   IO       / MULTIPLY LOOP PROPER
+         RAR
+         DCA   IO
+         TAD   TEMP1
+         SZL            / TEST IF MULTIPLICAND SHOULD BE ADDED
+         TAD   TEMP2
+         CLL RAR
+         DCA   TEMP1
+         ISZ   TEMP3    / TEST FOR END OF LOOP
+         JMP   MP4
+         TAD   IO
+    CLL / TO MAKE EXACT COPY OF JS CODE (WRONG)
+         RAR
+MPSN,    SZL
+         JMP   COMP
+         DCA   IO
+         TAD   TEMP1
+MPZ,     ISZ   MULTL    / EXIT
+         JMP I MULTL
+COMP,    CMA CLL IAC    / COMPLEMENT PRODUCT
+         DCA   IO
+         TAD   TEMP1
+         CMA
+         SZL
+         IAC
+         JMP   MPZ
+
+RCLMSK,  7400           / HIGH 4 BITS MASK
+RCLLSK,  0377           / LOW 8 BITS MASK
+TEMP1,   0
+TEMP2,   0
+TEMP3,   0
+THIR,    7764           / ELEVEN IN DECIMAL
+DXY3,    DXYL2          / DXY CONT. 2 REF
+
+DXYL,    0              / DXY PART 2
+         CIA            / AC = -AC
+         JMS   DRAW
+         CIA            / AC = -AC
+         DCA   TEMP1
+         TAD   IO
+         CIA
+         DCA   IO       / IO = -IO
+         TAD   TEMP1
+         JMS   DRAW
+         CIA            / AC = -AC
+         JMS   DRAW
+         CLA
+         TAD   T4
+         CIA
+         TAD   Q1
+         DCA   IO       / IO = Q1 - T4
+         TAD   Q2
+         TAD   T3       / AC = Q2 + T3
+         JMS   DRAW
+         CIA            / AC = -AC
+         JMS   DRAW
+         DCA   TEMP1
+         TAD   IO
+         CIA
+         DCA   IO       / IO = -IO
+         TAD   TEMP1
+         JMS   DRAW
+         CIA            / AC = -AC
+         JMS   DRAW
+         JMS I DXY3     / FINISH DRAWING
+         JMP I DXYL
+
+*600                    / DATA AREA
+
+T1A,     0;0;0;0;0;0;0;0;0;0;0;0;0;0;0;0;0;0;0;
+T1M,     0;0;0;0;0;0;0;0;0;0;0;0;0;0;0;0;0;0;0;0;
+         0;0;0;0;0;0;0;0;0;0;0;0;0;0;0;0;0;
+T1E,     0;0;0;0;0;0;0;0;0;0;0;0;0;0;0;0;0;0;0;0;
+         0;0;0;0;0;0;0;
+T2M,     0;0;0;0;0;0;0;0;0;0;0;0;0;0;0;0;0;0;0;0;
+         0;0;0;0;0;0;0;0;0;
+T2E,     0
+
+$                       / END OF PROGRAM
