@@ -103,7 +103,7 @@ function RX01fs(emu) {
             begin += ~(data12[6] - 1) & 0o7777;
             ofs += 2;
         }
-        while (true) {
+        while (ofs < 256) {
             const name = (emu.to6bitASCII(data12[ofs++]) +
                           emu.to6bitASCII(data12[ofs++]) +
                           emu.to6bitASCII(data12[ofs++]) + '.' +
@@ -120,6 +120,7 @@ function RX01fs(emu) {
                 if (tmp === 0o7777) break;
                 begin += ~(tmp - 1) & 0o7777;
             }
+            else if (tmp === 0o5752 && data12[ofs + 1] === 0o3047) break;
         }
         return {'head0': data12[0], 'begin': data12[1], 'head3': data12[3], entries};
     },
@@ -243,6 +244,28 @@ function PDP8(mon, trm) {
                   0o7402, 0o7402, 0o7402, 0o7402, 0o6751, 0o4053, 0o3002, 0o2050,
                   0o5047, 0o0000, 0o6753, 0o5033, 0o6752, 0o5453, 0o7004, 0o6030],
           emu = mon.emu,
+    loadPAL = str => { // load PAL listing
+        const mem = emu.memo, regs = mem.CPU.cpu.regs, MAXMEM = 32768, sif = regs[IF],
+              data = str.split('\n'),
+        wm = (a, v) => { regs[IF] = a >> 12; mem.wr(a & 0o7777, v); };
+        let ma, vv;
+        for (let i = 0, n = data.length; i < n; i++) {
+            const s = data[i];
+            if (s.length < 11) continue;
+            try {
+                ma = pi(s.substring(0, 5));
+                vv = pi(s.substring(7, 11));
+            } catch {
+                continue;
+            }
+            wm(ma, vv);
+        }
+        regs[IF] = sif;
+    },
+    currAddr = () => {
+        const regs = emu.CPU.cpu.regs;
+        return `${fmt(regs[IF], 1)}${fmt(regs[PC], 4)} `;
+    },
     memset = (addr, data12) => {
         for (let i = 0, n = data12.length; i < n; i++) emu.memo.wr(addr++, data12[i]);
     },
@@ -265,15 +288,24 @@ function PDP8(mon, trm) {
         emu.stop();
         console.log(res);
     },
-    step = async stop => {
-        mon.prepareStop(stop);
-        await emu.CPU.run();
+    debug = code => {
+        loadPAL(code);
+        emu.CPU.cpu.reset(); emu.CPU.cpu.regs[PC] = 0o0200;
+        return currAddr();
+    },
+    step = async (stop = null) => {
+        if (stop) {
+            mon.prepareStop(stop);
+            await emu.CPU.run();
+        }
+        else emu.CPU.cpu.step();
+        return currAddr();
     };
     let coreM = null, coreR;
-    return {init, compile, step};
+    return {init, compile, debug, step};
 }
 
-function Control(cntnr) {
+function Control(cntnr, mon) {
     addStyle(`
 .control {
     position: absolute; top: 0px; left: 50%; width: 50%; height: 10%; z-order: 500;
@@ -292,9 +324,10 @@ class IDEMon extends Monitor {
     constructor(emu, editor, rx8, trm) {
         super(emu);
         this.editor = editor;
+        this.mon12 = new Monitor12(emu);
         this.rx8 = rx8;
         this.rx01 = RX01fs(emu);
-        this.pdp8 = PDP8(new Monitor12(emu), trm);
+        this.pdp8 = PDP8(this.mon12, trm);
         this.prg = undefined; this.debugging = false;
     }
     async handler(parms, cmd) {
@@ -355,15 +388,23 @@ class IDEMon extends Monitor {
                 tmp = this.prg.substring(0, this.prg.indexOf('.'));
                 tmp = this.rx01.read(tmp + '.ls');
                 this.editor.setEditing(false);
-                this.editor.setText(this.rx01.fromTxt(tmp));
-                this.editor.setLine('00200 ');
+                tmp = this.rx01.fromTxt(tmp);
+                this.editor.setText(tmp);
+                this.editor.setLine(this.pdp8.debug(tmp));
                 this.debugging = true;
+                break;
+            case 'step':
+                if (!this.debugging) { console.error('not debugging'); break; }
+                this.editor.setLine(await this.pdp8.step(parms[1]));
                 break;
             case 'quit':
                 if (!this.debugging) { console.error('not debugging'); break; }
                 this.editor.setEditing(true);
                 this.editor.setText(this.rx01.fromTxt(this.rx01.read(this.prg)));
                 this.debugging = false;
+                break;
+            case 'stop': case 'd': case 'x': case 'l': case 'cls':
+                await this.mon12.handler(parms, cmd);
                 break;
             default: console.error(`unknown command: ${cmd}`); break;
         } } catch (e) { console.error(e.stack); }
@@ -375,12 +416,13 @@ async function main() {
     document.getElementById('sys_tab').remove();
     document.getElementById('system').remove();
     await Promise.all([
-        loadScript('../../emu/github/emu8/js/disks.js'),
+        loadScript('../../js/disks.js'),
         loadScript('pdp_8e.js'), loadScript('rx01.js'), loadScript('asr_33.js'),
         loadScript('emu.js'),
         loadScript('editor.js')
     ]);
-    const editor = await Editor(document.getElementsByClassName('tab-content').length),
+    const tabNum = document.getElementsByClassName('tab-content').length,
+          editor = await Editor(tabNum),
           mem = KM8_E(1),
           cpu = new GenCpu12(mem),
           rx8 = RX01dev(cpu),
@@ -388,9 +430,9 @@ async function main() {
           asr = initTerm(cpu.cpu, 0o03, trm),
           emu = new PDP8EEmu(cpu, mem),
           mon = new IDEMon(emu, editor, rx8, trm),
-          pnl = Control(document.querySelector('div.tabbed div.tab-content:nth-of-type(2) div'));
+          pnlSel = `div.tabbed div.tab-content:nth-of-type(${tabNum + 1}) div`,
+          pnl = Control(document.querySelector(pnlSel), mon);
     trm.setDevKbd(asr[1]);
-    await mon.exec('disk temp/rx01_test.img');
     term.setPrompt('> ');
     while (true) await mon.exec(await term.prompt());
 }
