@@ -1,12 +1,14 @@
 'use strict';
 
-function EditorImpl(cntnr, lang) {
+function EditorImpl(tab, cntnr, lang) {
     if (typeof cntnr === 'string') cntnr = document.getElementById(cntnr);
     const view = document.createElement('code'),
           opts = document.createElement('pre'),
           text = document.createElement('textarea'),
           line = document.createElement('span'),
+          deferred = [],
     setLineTop = selStart => {
+        if (!tab.checked) { deferred.push([setLineTop, [selStart]]); return; }
         lscroll = opts.scrollTop;
         const cl = text.value.substr(0, selStart).split('\n').length - 1;
         let top = cl * lheight, cnd;
@@ -20,32 +22,39 @@ function EditorImpl(cntnr, lang) {
         line.style.top = cnd + 'px';
         line.style.display = 'inline-block';
     },
-    setEditing = mode => {
-        if (editing === mode) return;
-        editing = mode;
+    doEditing = () => {
+        if (!tab.checked) { deferred.push([doEditing, []]); return; }
         if (editing) {
             line.style.display = 'none';
             text.style.display = 'inline-block';
             text.scrollLeft = opts.scrollLeft;
             text.scrollTop = opts.scrollTop;
-            text.focus();
+            activateTxt();
         } else {
             text.style.display = 'none';
             if (lheight === null) {
                 lheight = parseFloat(getComputedStyle(line).lineHeight);
                 maxhght = parseInt(opts.clientHeight) - lheight;
             }
-            setLineTop(text.selectionStart);
+            setLineTop(0);
         }
+    },
+    setEditing = mode => {
+        if (editing === mode) return;
+        editing = mode;
+        doEditing();
+    },
+    activateTxt = () => {
+        if (!tab.checked) { deferred.push([activateTxt, []]); return; }
+        text.setSelectionRange(0, 0);
+        text.focus();
     },
     setText = txt => {
         text.value = txt;
         view.textContent = text.value + '~';
         Prism.highlightElement(view);
-        if (editing) {
-            text.setSelectionRange(0, 0);
-            text.focus();
-        }
+        if (editing) activateTxt();
+        else setLineTop(0);
     },
     getText = () => text.value,
     setLine = val => {
@@ -54,6 +63,14 @@ function EditorImpl(cntnr, lang) {
         if (i < 0) return false;
         setLineTop(i);
         return true;
+    },
+    adjust = () => opts.style.height = text.style.height = cs.height,
+    init = () => {
+        if (!tab.checked) { deferred.push([init, []]); return; }
+        text.style.top = line.style.top = '0px';
+        text.style.left = line.style.left = '0px';
+        opts.style.width = text.style.width = line.style.width = cs.width;
+        adjust();
     };
     let editing = true, updid = null, updsc = null, lheight = null, maxhght, lscroll;
     text.oninput = e => {
@@ -89,14 +106,16 @@ function EditorImpl(cntnr, lang) {
     opts.appendChild(line);
     cntnr.classList.add('editor');
     cntnr.appendChild(opts);
-    text.style.top = line.style.top = '0px';
-    text.style.left = line.style.left = '0px';
-    const cs = getComputedStyle(cntnr),
-          agjust = () => opts.style.height = text.style.height = cs.height;
-    opts.style.width = text.style.width = line.style.width = cs.width;
-    agjust();
     cntnr.appendChild(text);
-    onresize = e => agjust();
+    const cs = getComputedStyle(cntnr);
+    init();
+    tab.addEventListener('change', e => {
+        if (tab.checked && deferred.length > 0) {
+            for (const e of deferred) e[0].apply(null, e[1]);
+            deferred.length = 0;
+        }
+    });
+    addEventListener('resize', e => adjust());
     return {setText, getText, setEditing, setLine};
 }
 
@@ -157,9 +176,8 @@ ${theme.syntax}                                                    /* syntax hig
     `);
     const tab = addTab('editor', 'EDITOR', tnum, false),
           div = document.createElement('div');
-    document.getElementById('editor').checked = true; // tab must be active
     tab.style.padding = '0'; tab.style.opacity = '1.0';
     div.style.width = '100%'; div.style.height = '89vh';
     tab.appendChild(div);
-    return EditorImpl(div, 'pal');
+    return EditorImpl(document.getElementById('editor'), div, 'pal');
 }
