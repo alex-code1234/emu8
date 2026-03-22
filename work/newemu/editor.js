@@ -34,7 +34,7 @@ function EditorImpl(tab, cntnr, lang) {
             text.style.display = 'none';
             if (lheight === null) {
                 lheight = parseFloat(getComputedStyle(line).lineHeight);
-                maxhght = parseInt(opts.clientHeight) - lheight;
+                maxhght = parseInt(opts.style.height) - lheight;
             }
             setLineTop(0);
         }
@@ -66,7 +66,7 @@ function EditorImpl(tab, cntnr, lang) {
     },
     adjust = () => {
         opts.style.height = text.style.height = cs.height;
-        if (!editing) maxhght = parseInt(opts.clientHeight) - lheight;
+        if (!editing) maxhght = parseInt(opts.style.height) - lheight;
     },
     init = () => {
         if (!tab.checked) { deferred.push([init, []]); return; }
