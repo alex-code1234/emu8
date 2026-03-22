@@ -64,7 +64,10 @@ function EditorImpl(tab, cntnr, lang) {
         setLineTop(i);
         return true;
     },
-    adjust = () => opts.style.height = text.style.height = cs.height,
+    adjust = () => {
+        opts.style.height = text.style.height = cs.height;
+        if (!editing) maxhght = parseInt(opts.clientHeight) - lheight;
+    },
     init = () => {
         if (!tab.checked) { deferred.push([init, []]); return; }
         text.style.top = line.style.top = '0px';
