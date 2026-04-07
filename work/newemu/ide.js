@@ -300,24 +300,72 @@ function PDP8(mon, trm) {
         }
         else emu.CPU.cpu.step();
         return currAddr();
-    };
+    },
+    status = () => emu.CPU.cpu.cpuStatus();
     let coreM = null, coreR;
-    return {init, compile, debug, step};
+    return {init, compile, debug, step, status};
 }
 
 function Control(cntnr, mon) {
     addStyle(`
 .control {
-    position: absolute; top: 0px; left: 50%; width: 50%; height: 10%; z-order: 500;
-    background-color: var(--surface);
+    position: absolute; top: 0px; right: 0px; z-order: 500;
+    background-color: var(--surface); padding: 5px;
+}
+.command.button:active {
+    background-color: #eeeeee80;
+}
+.command.flt { float: left; }
+.command.button.mrg { margin-left: 5px; }
+#contnt {
+    width: 100%; margin-top: 3px; font-size: 16px;
 }
     `);
-    const div = document.createElement('div');
+    const div = document.createElement('div'),
+    debcom = async (cmd, txt = '') => {
+        await mon.exec(`${cmd} ${txt}`);
+        const lg = console._log;
+        console._log = document.getElementById('contnt');
+        try {
+            console.clear();
+            await mon.exec('status');
+        } finally {
+            console._log = lg;
+        }
+    };
     div.className = 'control surface';
     div.innerHTML = `
-<button class="command button">test</button>
+<span class="command button" style="float: right;" id="con_mode">&#10063;</span>
+<div style="width: 100%; display: none;">
+<span class="command button flt" id="con_stop">&#8856;</span><br/><br/>
+<input type="text" class="command flt" id="con_stpv" value=""/>
+<span class="command button flt mrg" id="con_over">&#8631;</span>
+<span class="command button flt mrg" id="con_step">&#8628;</span><br/><br/>
+<pre id="contnt"></pre>
+</div>
     `;
     cntnr.appendChild(div);
+    document.getElementById('con_mode').onclick = e => {
+        if (e.target.innerHTML === '\u2190') {
+            e.target.innerHTML = '&#10063;';
+            e.target.parentNode.querySelector('div').style.display = 'none';
+            mon.exec('quit');
+        } else {
+            if (!mon.debugging && mon.prg) {
+                e.target.innerHTML = '&#8592;';
+                e.target.parentNode.querySelector('div').style.display = 'block';
+            }
+            debcom('debug');
+        }
+    };
+    document.getElementById('con_stop').onclick = e => debcom('stop');
+    document.getElementById('con_over').onclick = e => {
+        const inp = document.getElementById('con_stpv'),
+              txt = inp.value;
+        inp.value = '';
+        debcom('step', txt);
+    };
+    document.getElementById('con_step').onclick = e => debcom('step');
 }
 
 class IDEMon extends Monitor {
@@ -384,6 +432,7 @@ class IDEMon extends Monitor {
                 this.rx01.DSK.drive.set(this.rx8.getDsk(0), 0);
                 break;
             case 'debug':
+                if (this.debugging) { console.error('debugging'); break; }
                 if (this.prg === undefined) { console.error('no program'); break; }
                 tmp = this.prg.substring(0, this.prg.indexOf('.'));
                 tmp = this.rx01.read(tmp + '.ls');
@@ -396,6 +445,9 @@ class IDEMon extends Monitor {
             case 'step':
                 if (!this.debugging) { console.error('not debugging'); break; }
                 this.editor.setLine(await this.pdp8.step(parms[1]));
+                break;
+            case 'status':
+                console.log(this.pdp8.status().replaceAll('|', '\n'));
                 break;
             case 'quit':
                 if (!this.debugging) { console.error('not debugging'); break; }
