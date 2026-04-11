@@ -432,8 +432,8 @@ colorsVGA = (color, bckgr = '#282828') => [
     '#555555', '#5555ff', '#55ff55', '#55ffff', '#ff5555', '#ff55ff', '#ffff55', '#ffffff'
 ],
 createCon = async (canvas, color, font = 'CP437', width = 80, height = 24, bckgr = '#282828',
-        fmap) => {         // optional font mapping
-    let settings = {'COLORS': colorsVGA(color, bckgr)};
+        font1 = null, fmap) => { // optional font1 and font mapping
+    let settings = {'COLORS': colorsVGA(color, bckgr), 'FONT_G1': font1};
     if (font === 'VT220') settings = {
         ...settings, 'FONT_WIDTH': 10, 'FONT_HEIGHT': 20, 'FONT_G0': 'VT220'
     };
