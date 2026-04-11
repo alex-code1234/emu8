@@ -332,7 +332,9 @@ async function VT_100(screen, {
             f = COLORS[fg]; b = COLORS[bg];
             ff = toRGB(f); bb = toRGB(b);
             cout(ccode);
-        }
+        },
+        loadFont,
+        'setFont': ft => font = isNaN(ft) ? ft : (ft === 0) ? font0 : font1 ? font1 : font
     };
 }
 
