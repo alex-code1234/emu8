@@ -431,11 +431,14 @@ colorsVGA = (color, bckgr = '#282828') => [
     gSVar(bckgr), '#0000aa', '#00aa00', '#00aaaa', '#aa0000', '#aa00aa', '#aa5500', gSVar(color),
     '#555555', '#5555ff', '#55ff55', '#55ffff', '#ff5555', '#ff55ff', '#ffff55', '#ffffff'
 ],
-createCon = async (canvas, color, font = 'CP437', width = 80, height = 24, bckgr = '#282828') => {
+createCon = async (canvas, color, font = 'CP437', width = 80, height = 24, bckgr = '#282828',
+        fmap) => {         // optional font mapping
     let settings = {'COLORS': colorsVGA(color, bckgr)};
-    if (font === 'VT220') settings = {...settings, 'FONT_WIDTH': 10, 'FONT_HEIGHT': 20, 'FONT_G0': 'VT220'};
+    if (font === 'VT220') settings = {
+        ...settings, 'FONT_WIDTH': 10, 'FONT_HEIGHT': 20, 'FONT_G0': 'VT220'
+    };
     settings = {...settings, 'SCR_WIDTH': width, 'SCR_HEIGHT': height};
-    return await VT_100(canvas, settings);
+    return await VT_100(canvas, settings, fmap);
 },
 gSVar = str => {
     if (str.startsWith('var(')) {

@@ -41,7 +41,7 @@ async function VT_100(screen, {
     FONT_WIDTH = 9, FONT_HEIGHT = 16, FONT_OFFSET = 4,
     SCR_WIDTH = 80, SCR_HEIGHT = 25,
     FONT_G0 = 'CP437', FONT_G1 = null, AA = false        // anti alias
-} = {}) {
+} = {}, fmap = i => i) {                                 // font mapping fnc
     if (typeof screen === 'string')
         screen = document.getElementById(screen);
     const canvas = screen.getContext('2d'),
@@ -262,7 +262,7 @@ async function VT_100(screen, {
         canvas.fillStyle = '#ffffff';
         let x = FONT_WIDTH, y = FONT_HEIGHT, midx = chsize;
         for (let i = 1; i < 256; i++) {
-            canvas.fillText(String.fromCharCode(i), x, y - FONT_OFFSET);
+            canvas.fillText(String.fromCharCode(fmap(i)), x, y - FONT_OFFSET);
             const d = canvas.getImageData(x, y - FONT_HEIGHT, FONT_WIDTH, FONT_HEIGHT).data;
             for (let k = 0, j = 0; j < chsize; k += 4, j++) {
                 const dr = d[k], dg = d[k + 1], db = d[k + 2], da = d[k + 3],
@@ -332,8 +332,7 @@ async function VT_100(screen, {
             f = COLORS[fg]; b = COLORS[bg];
             ff = toRGB(f); bb = toRGB(b);
             cout(ccode);
-        },
-        loadFont
+        }
     };
 }
 
