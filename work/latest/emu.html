@@ -329,8 +329,7 @@ class SoftKbd {
                     break;
             }
         };
-        document.onkeydown = e => {
-            if (e.target.tagName === 'INPUT') return;
+        kbd_elem['data-inp'].onkeydown = e => {
             switch (e.key) {
                 case 'Shift': this.fs_shift = true; break;
                 case 'Control': this.fs_ctrl = true; break;
@@ -338,8 +337,7 @@ class SoftKbd {
             }
             e.preventDefault();
         };
-        document.onkeyup = e => {
-            if (e.target.tagName === 'INPUT') return;
+        kbd_elem['data-inp'].onkeyup = e => {
             switch (e.key) {
                 case 'Shift': this.fs_shift = false; break;
                 case 'Control': this.fs_ctrl = false; break;
@@ -515,6 +513,7 @@ ${css}
     `);
     tab.style.backgroundColor = 'var(--background)';
     tab.innerHTML = `
+<input type='text' id='inp_${pi}' style='position: absolute; left: 40%; top: 70px; z-index: -1;'/>
 <canvas id='scr_${pi}'></canvas>
 <div class='keyboard kbd_${pf}' id='kbd_${pi}'>${kbd}</div>
 <div class='keyboard kbd_${pf}' id='con_${pi}'>
@@ -528,7 +527,9 @@ ${con}
     `;
     const scr_elem = document.getElementById(`scr_${pi}`),
           kbd_elem = document.getElementById(`kbd_${pi}`),
-          con_elem = document.getElementById(`con_${pi}`);
+          con_elem = document.getElementById(`con_${pi}`),
+          inp = document.getElementById(`inp_${pi}`);
+    kbd_elem['data-inp'] = inp;
     con_elem['data-ks'] = ks;
     con_elem['data-scr'] = scr_elem;
     con_elem['data-kbd'] = kbd_elem;
@@ -537,6 +538,7 @@ ${con}
     screen.orientation.addEventListener('change', e => {
         setTimeout(() => updateElm(con_elem, true), 100);
     });
+    scr_elem.addEventListener('click', e => inp.focus());
     return [scr_elem, kbd_elem, con_elem];
 },
 updateElm = (elem, top) => {
