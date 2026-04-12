@@ -330,21 +330,23 @@ class SoftKbd {
             }
         };
         document.onkeydown = e => {
-            if (e.target !== this.kbd_elem) return;
+            if (e.target.tagName === 'INPUT') return;
             switch (e.key) {
                 case 'Shift': this.fs_shift = true; break;
                 case 'Control': this.fs_ctrl = true; break;
                 case 'Alt': this.fs_alt = true; break;
             }
+            e.preventDefault();
         };
         document.onkeyup = e => {
-            if (e.target !== this.kbd_elem) return;
+            if (e.target.tagName === 'INPUT') return;
             switch (e.key) {
                 case 'Shift': this.fs_shift = false; break;
                 case 'Control': this.fs_ctrl = false; break;
                 case 'Alt': this.fs_alt = false; break;
                 default: this.kbdHandler(e, false); break;
             }
+            e.preventDefault();
         };
         this.kbd_elem = kbd_elem;
         this.con = con;
