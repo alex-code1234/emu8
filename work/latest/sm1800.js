@@ -208,6 +208,7 @@ function SM_1800_2001(memo) {
         active = false;   // active
     const
     tick = () => {
+        if (!active) return;
         counter = (counter - 1) & 0xffff;
         if (counter === 0x0000) {
             active = false; // stop timer
@@ -218,8 +219,7 @@ function SM_1800_2001(memo) {
     read = num => {
         switch (num) {
             case 0x60: // timer value
-            case 0x64: // timer state
-                let val = (num === 0x60) ? value : counter;
+                let val = value;
                 switch (us2) {
                     case 0: val = 0x00; active = false; break; // stop timer
                     case 1: val = val & 0xff; break;
@@ -230,6 +230,7 @@ function SM_1800_2001(memo) {
                         break;
                 }
                 return val;
+            case 0x64: return (ie ? 0x00 : 0x10) | (counter ? 0x00 : 0x01);
         }
     },
     write = (num, val) => {
