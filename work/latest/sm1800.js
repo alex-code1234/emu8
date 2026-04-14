@@ -56,7 +56,7 @@ class SM_1803 extends MemIO {
                 this.cfg = v; this.mm = (v & 0x10) ? 1 : 0;
                 break;
             case 0xd1: // clear power failure bit 7
-                this.p03 &= 0x7f;
+                if (v & 0x80) this.p03 &= 0x7f;
                 break;
             default:
                 const module = this.portHnds.get(p);
