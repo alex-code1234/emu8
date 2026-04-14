@@ -53,7 +53,8 @@ class SM_1803 extends MemIO {
             case 0x01: // console mode
                 break;
             case 0x03: // memory map and IRQ mask
-                this.cfg = v; this.mm = (v & 0x10) ? 1 : 0;
+                this.cfg = v;
+                if (v & 0x40) this.mm = (v & 0x10) ? 1 : 0; // bits 6 and 4
                 break;
             case 0xd1: // clear power failure bit 7
                 if (v & 0x80) this.p03 &= 0x7f;
