@@ -500,6 +500,7 @@ createUI = (
 .sec_${pf}_left { grid-template-columns: repeat(${sk}, calc(${ks} / 2)); }
 .key_${pf} { border: calc(${ks} / 30) solid var(--onbackground); border-radius: ${br};
              font-size: calc(${ks} / 3.5); }
+.kbd_${pf}_vert { width: calc(${ks} + ${ks} / 10) !important; }
 .sec_${pf}_vert { grid-template-rows: repeat(${crs}, calc(${ks} / 1.36)); grid-gap: calc(${ks} / 10);
                   grid-template-columns: repeat(2, calc(${ks} / 2)); }
 ${css}
@@ -516,7 +517,7 @@ ${css}
 <input type='text' id='inp_${pi}' style='position: absolute; left: 40%; top: 70px; z-index: -1;'/>
 <canvas id='scr_${pi}'></canvas>
 <div class='keyboard kbd_${pf}' id='kbd_${pi}'>${kbd}</div>
-<div class='keyboard kbd_${pf}' id='con_${pi}'>
+<div class='keyboard kbd_${pf}_vert' id='con_${pi}'>
     <div class='section sec_${pf}_vert'>
         <div class='key i key_${pf}'>&#x2588</div>
         <div class='key i key_${pf}'>&#x25a6</div>
@@ -530,7 +531,6 @@ ${con}
           con_elem = document.getElementById(`con_${pi}`),
           inp = document.getElementById(`inp_${pi}`);
     kbd_elem['data-inp'] = inp;
-    con_elem['data-ks'] = ks;
     con_elem['data-scr'] = scr_elem;
     con_elem['data-kbd'] = kbd_elem;
     con_elem.onclick = conElm_click;
@@ -542,17 +542,16 @@ ${con}
     return [scr_elem, kbd_elem, con_elem];
 },
 updateElm = (elem, top) => {
-    let sw = window.innerWidth, sh = window.innerHeight, tp = '55px', gap = 25;
+    let tp = '55px', gap = '10px';
     if (document.fullscreenElement) {
-        sw = screen.width; sh = screen.height; tp = '5px'; gap = 20;
+        tp = '5px'; gap = '5px';
     }
     if (top) { // set full screen toolbar
         elem.style.top = tp;
-        elem.style.left = `${sw - gap - parseInt(elem['data-ks'])}px`;
+        elem.style.right = gap;
     } else {   // set soft keyboard
-        const rts = getComputedStyle(elem);
-        elem.style.top = `${sh - parseInt(rts.height)}px`;
-        elem.style.left = `${sw - parseInt(rts.width)}px`;
+        elem.style.bottom = '5px';
+        elem.style.right = '5px';
     }
 },
 conElm_click = async e => {
@@ -567,7 +566,7 @@ conElm_click = async e => {
                 await document.exitFullscreen();
                 scr_elem.style.width = saved_wdx; scr_elem.style.height = saved_hgh;
                 kbd_elem.style.position = 'relative';
-                kbd_elem.style.left = '0px'; kbd_elem.style.top = '0px';
+                kbd_elem.style.bottom = '0px'; kbd_elem.style.right = '0px';
                 kbd_elem.style.display = 'grid';
                 updateElm(elem, true);
             } else {

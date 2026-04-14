@@ -558,7 +558,7 @@ async function main() {
         addTab('emul', 'EMULATOR', 1, true),
         'emul', 'emu', '36px', 35, 5, 'calc(36px / 10)', '800px', '480px', `
 .ksp { background-color: #989898a0; color: #ffffff; }
-.sec_emul_right { grid-template-columns: repeat(5, calc(36px / 2)); }
+.sec_emul_right { grid-template-columns: repeat(4, calc(36px / 2)); }
 .sp9 { grid-column: span 9; }
 .sp14 { grid-column: span 14; }
         `, `
