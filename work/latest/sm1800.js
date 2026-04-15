@@ -1,6 +1,6 @@
 'use strict';
 
-// emu.html?js=sm1800.js&timer=0..1&mon=0..1&run=0..1&os=spo|cpm|dos
+// emu.html?js=sm1800.js&timer=0..1&ptp=0..1&mon=0..1&run=0..1&os=spo|cpm|dos
 // base system (table version), includes:
 // sm 1800.2201.xx - CPU module; xx = 01 - MONID 1.0, xx = 03 - MONID 1.3
 // sm 1800.2202.01 - system control module
@@ -640,7 +640,8 @@ async function main() {
           emu = new Emulator(cpu, mem, 0),
           mon = new SMMonitor(emu),
           kbd = new SM_1800_7201_in(kbd_elem, con, con_elem);
-    mem.add(SM_1800_6202(mem), [0x20, 0x21]);                       // tape reader/puncher
+    if (getNum('ptp', 'expected: 0 - no, 1 - yes'))                 // tape reader/puncher
+        mem.add(SM_1800_6202(mem), [0x20, 0x21]);
     if (getNum('timer', 'expected: 0 - no, 1 - yes'))
         mem.add(SM_1800_2001(mem), [0x60, 0x63, 0x64]);             // timer
     const monid = getNum('mon', 'expected: 0 - 1.0, 1 - 1.3');
@@ -688,6 +689,6 @@ mem.ram.set([
 //], 0x1000);
 //await mon.exec('r sm1800/sm_timer.hex 1'); // test timer module
     if (getNum('run', 'expected: 0 - no, 1 - yes')) mon.exec('g');
-    term.setPrompt('> ');                             // set terminal
+    term.setPrompt('> ');                                           // set terminal
     while (true) await mon.exec(await term.prompt());
 }
