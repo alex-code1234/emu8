@@ -1,5 +1,7 @@
 'use strict';
 
+// emu.html?js=i4004.js&run=0..1&os=test|intel|calc
+
 function Cpu(memo) {
     let rA, fCY, test, sp, cmd, dcm, rr, cycles, rom_a, ram_c, ram_r, ram_a,
         wpm_e, wpm_n, wpm_h;
@@ -1015,7 +1017,7 @@ input[type='range'] { accent-color: grey; }`, `
     if (os !== 'intel' && os !== 'calc' && os !== 'test')
         throw new Error(`invalid os: ${os}`);
     let elem = null;
-    if (scr_elem && os === 'intel') {
+    if (os === 'intel') {
         elem = document.createElement('pre'); elem.id = scr_elem.id; elem.className = 'scr_asr';
         scr_elem.replaceWith(elem);
     }
@@ -1039,7 +1041,7 @@ input[type='range'] { accent-color: grey; }`, `
         await mon.exec('r 0 i4004/4004_mon.hex 1');
         mem.active = 1; await mon.exec('r 0 i4004/4004_asm.hex 1'); mem.active = 0;
     }
-    
+    if (getNum('run', 'expected: 0 - no, 1 - yes')) mon.exec('g');
     term.setPrompt('> ');
     while (true) await mon.exec(await term.prompt());
 }
