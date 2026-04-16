@@ -176,10 +176,11 @@ function TxtMonitor(scr_elem, color, bckg, width, bellclr = null, buf = 10000, c
 async function ASR_33(cpu, memo, tnum, addr = 0o03) {
     let [scr_elem, kbd_elem, con_elem] = createUI(
             addTab(`asr33${addr}`, `ASR-33[${fmt(addr, 2)}]`, tnum, true),
-            'asr', `asr${tnum}`, '45px', 26, 5, '20px', '704px', '480px', `
+            'asr', `asr${tnum}`, '45px', 26, 5, '20px', '708px', '480px', `
+@font-face { font-family: 'Teletype'; src: url('pdp8/Teletype33.ttf'); }
 .smkey { font-size: 10px; }
 .sp_asr { grid-column: span 8; }
-.scr_asr { overflow: auto; font: bold 16px Courier; }
+.scr_asr { overflow: auto; font: bold 16px Teletype; }
 `, `
 <div class='section sec_asr sec_asr_left'>
     <div class='sp'></div><div class='key key_asr'><span>!</span><span>1</span></div>
