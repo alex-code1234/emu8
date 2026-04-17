@@ -908,7 +908,7 @@ async function main() {
     const os = URL_OPTS.get('os') ?? 'test',
           [scr_elem, kbd_elem, con_elem] = (os === 'intel') ? createUI(
               addTab('emul', 'EMULATOR', 1, true),
-              'asr', 'asr1', '45px', 26, 5, '20px', '718px', '480px', `
+              'asr', 'asr1', '45px', 26, 5, '20px', '738px', '480px', `
 @font-face { font-family: 'Teletype'; src: url('pdp8/Teletype33.ttf'); }
 .smkey { font-size: 10px; }
 .sp_asr { grid-column: span 8; }
