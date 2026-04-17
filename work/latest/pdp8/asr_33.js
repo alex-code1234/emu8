@@ -235,6 +235,7 @@ async function ASR_33(cpu, memo, tnum, addr = 0o03) {
     <div class='sp5'></div><div class='sp4'></div><div class='key key_asr sp_asr'>&nbsp;</div>
 </div>`);
     const elem = document.createElement('pre'); elem.id = scr_elem.id; elem.className = 'scr_asr';
+    elem.addEventListener('click', e => kbd_elem['data-inp'].focus());
     scr_elem.replaceWith(elem);
     const con = TxtMonitor(elem, '#3d3c3a', '#fffade', 72, '#ddfade');
     return new ASR33(cpu.cpu, addr, kbd_elem, con, con_elem);

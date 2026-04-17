@@ -1019,6 +1019,7 @@ input[type='range'] { accent-color: grey; }`, `
     let elem = null;
     if (os === 'intel') {
         elem = document.createElement('pre'); elem.id = scr_elem.id; elem.className = 'scr_asr';
+        elem.addEventListener('click', e => kbd_elem['data-inp'].focus());
         scr_elem.replaceWith(elem);
     }
     const con = (os === 'intel') ? TxtMonitor(elem, '#3d3c3a', '#fffade', 72, '#ddfade') :
