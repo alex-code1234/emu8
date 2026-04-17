@@ -65,7 +65,7 @@ input[type='checkbox'] {                /* check box */
 }
 .tabbed [type='radio'] { display: none; }
 .tabs {
-    padding: 0px 0px;                                     /* tab bar height (first number) */
+    padding: 2px 0px;                                     /* tab bar height (first number) */
     display: flex; align-items: stretch; list-style: none; background-color: var(--surface);
     overflow-x: auto;
 }
@@ -344,6 +344,7 @@ class SoftKbd {
                 case 'Alt': this.fs_alt = false; break;
                 default: this.kbdHandler(e, false); break;
             }
+            e.target.value = '';
             e.preventDefault();
         };
         this.kbd_elem = kbd_elem;

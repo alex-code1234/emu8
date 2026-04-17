@@ -368,7 +368,7 @@ async function main() {
     let loads = [
         loadScript('../../emu/github/emu8/js/js8086.js'),
         loadScript('../../emu/github/emu8/js/disks.js'),
-        loadScript('../../emu/github/emu8/8086/chipset.js'),
+        loadScript('pcxt/chipset.js'),
         loadFile('pcxt/basic.bin', false),
         loadFile('pcxt/bios2.bin', false),
         loadFile('pcxt/ibm_ega.bin', false)
