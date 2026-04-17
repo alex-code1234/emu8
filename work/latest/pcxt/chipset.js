@@ -243,7 +243,7 @@ function Intel8253(_pic) {
 
 // Programmable Peripheral Interface (PPI)
 function Intel8255(_pic) {
-    const KBD_INIT_DELAY_MS = 250;
+    const KBD_INIT_DELAY_MS = 350; // BIOS error 301 fix
     const CLK2_TIMER_FLIP_CNT = 60;
 
     const pic = _pic;
@@ -392,7 +392,7 @@ function Intel8259() {
                 icw[icwStep++] = val;
             else {
                 imr = val;
-                if (val === 0) // BIOS fix (see pcjs)
+                if (val === 0) // BIOS error 101 fix (see pcjs)
                     setTimeout(0, () => ___imr = val);
                 else
                     ___imr = val;
