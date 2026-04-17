@@ -664,8 +664,8 @@ async function main() {
             await mon.exec('disk 1 sm1800/cpma.cpm');
         }
     else if (os === 'dos') {                                        // SM DOS-1800
-        await mon.exec('disk 0 sm1800/dos1copy.bin');
-        await mon.exec('disk 1 sm1800/dos2copy.bin');
+        await mon.exec('disk 0 sm1800/DOS1COPY.bin');
+        await mon.exec('disk 1 sm1800/DOS2COPY.bin');
     }
     else if (os !== null) console.error(`invalid os: ${os}`);
 /*mem.add({'write': (p, v) => {              // patch to run CP/M with MONID 1.3 and FDC SM5615
