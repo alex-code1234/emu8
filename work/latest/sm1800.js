@@ -551,8 +551,8 @@ class SMMonitor extends Monitor {
 
 async function main() {
     let loads = [
-        loadScript('../../emu/github/emu8/js/js8080.js'),
-        loadScript('../../emu/github/emu8/js/disks.js')
+        loadScript('js/js8080.js'),
+        loadScript('js/disks.js')
     ];
     const [scr_elem, kbd_elem, con_elem] = createUI(
         addTab('emul', 'EMULATOR', 1, true),

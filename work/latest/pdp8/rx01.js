@@ -189,7 +189,7 @@ function RX01dev(CPU) { // RX8E/RX01 disk drive
 }
 
 async function RX01(cpu, memo, tab_ref, tab) {
-    await loadScript('../../emu/github/emu8/js/disks.js');
+    await loadScript('js/disks.js');
     let tmo = null;                   // timeout updater id
     const dev = RX01dev(cpu),         // monitored device
           leds = [],                  // device LEDs

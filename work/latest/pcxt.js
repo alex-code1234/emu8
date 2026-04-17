@@ -366,8 +366,8 @@ class IBMMon extends Monitor {
 
 async function main() {
     let loads = [
-        loadScript('../../emu/github/emu8/js/js8086.js'),
-        loadScript('../../emu/github/emu8/js/disks.js'),
+        loadScript('js/js8086.js'),
+        loadScript('js/disks.js'),
         loadScript('pcxt/chipset.js'),
         loadFile('pcxt/basic.bin', false),
         loadFile('pcxt/bios2.bin', false),
