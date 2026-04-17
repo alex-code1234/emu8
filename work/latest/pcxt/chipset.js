@@ -243,7 +243,7 @@ function Intel8253(_pic) {
 
 // Programmable Peripheral Interface (PPI)
 function Intel8255(_pic) {
-    const KBD_INIT_DELAY_MS = 1550; // BIOS error 301 fix
+    const KBD_INIT_DELAY_MS = 50; // BIOS error 301 fix
     const CLK2_TIMER_FLIP_CNT = 60;
 
     const pic = _pic;
