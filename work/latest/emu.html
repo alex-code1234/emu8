@@ -275,7 +275,7 @@ class JsShell {
 }
 
 class SoftKbd {
-    constructor(kbd_elem, con, con_elem = null) {
+    constructor(kbd_elem, con, con_elem = null, touch = false) {
         this.fs_shift = false;
         this.fs_ctrl = false;
         this.fs_alt = false;
@@ -283,7 +283,20 @@ class SoftKbd {
         const shfts = kbd_elem.getElementsByClassName('kshft'),
               ctrls = kbd_elem.getElementsByClassName('kctrl'),
               alts = kbd_elem.getElementsByClassName('kalt');
-        kbd_elem.onclick = e => {
+        if (touch) {
+            const touchHandler = (e, down) => {
+                let elem = e.target;
+                if (elem.tagName === 'SPAN') elem = elem.parentNode;
+                elem.style.borderColor = down ? 'var(--keypressed)' : 'var(--onbackground)';
+                const key = elem.innerText.replace('\n', '');
+                this.down = down;
+                this.kbdHandler({key}, true);
+                return false;
+            };
+            kbd_elem.ontouchstart = e => touchHandler(e, true);
+            kbd_elem.ontouchend = e => touchHandler(e, false);
+        }
+        else kbd_elem.onclick = e => {
             let elem = e.target, tmp;
             if (elem.tagName === 'SPAN') elem = elem.parentNode;
             const key = elem.innerText.replace('\n', '');
@@ -335,6 +348,10 @@ class SoftKbd {
                 case 'Control': this.fs_ctrl = true; break;
                 case 'Alt': this.fs_alt = true; break;
             }
+            if (touch) {
+                this.down = true;
+                this.kbdHandler(e, false);
+            }
             e.preventDefault();
         };
         kbd_elem['data-inp'].onkeyup = e => {
@@ -342,7 +359,11 @@ class SoftKbd {
                 case 'Shift': this.fs_shift = false; break;
                 case 'Control': this.fs_ctrl = false; break;
                 case 'Alt': this.fs_alt = false; break;
-                default: this.kbdHandler(e, false); break;
+                default: if (!touch) this.kbdHandler(e, false); break;
+            }
+            if (touch) {
+                this.down = false;
+                this.kbdHandler(e, false);
             }
             e.target.value = '';
             e.preventDefault();
