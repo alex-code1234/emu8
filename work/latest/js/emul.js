@@ -307,16 +307,16 @@ class Emulator {
         this.debug_regs(this.dbgw.regs);
         this.debug_watch(this.dbgw.watch);
     }
-    debug(h, show = true) {
+    debug(h, show = true, hr = 116) {
         if (show) {
             if (this.dbgw !== null) { console.error('debug active'); return; }
             const x = window.innerWidth - this.D_DCW - 17 - this.D_DRW - 17 - 5,
                   y = 5;
             this.dbgw = console.open(x, y, this.D_DCW, h + 17,
                     'var(--dbgcolor)', 'var(--dbgbckgrnd)');
-            this.dbgw.regs = console.open(x + this.D_DCW + 17, y, this.D_DRW, 116,
+            this.dbgw.regs = console.open(x + this.D_DCW + 17, y, this.D_DRW, hr,
                     'var(--dbgcolor)', 'var(--dbgbckgrnd)');
-            this.dbgw.watch = console.open(x + this.D_DCW + 17, y + 116 + 17, this.D_DRW, h - 116,
+            this.dbgw.watch = console.open(x + this.D_DCW + 17, y + hr + 17, this.D_DRW, h - hr,
                     'var(--dbgcolor)', 'var(--dbgbckgrnd)');
             if (this.memo.scope) { // requested scope
                 this.dbgw.scope = console.open(x, y + h + 34, this.D_DCW + this.D_DRW + 33, 80);
@@ -491,10 +491,11 @@ class Keyboard {
 }
 
 class Monitor {
-    constructor(emu, debug_height = 450, logger = console.log) {
+    constructor(emu, debug_height = 450, logger = console.log, dbg_regs_height = 116) {
         this.emu = emu;
         this.addr = 0;
         this.debug_height = debug_height;
+        this.dbg_regs_height = dbg_regs_height;
         this.logger = logger;
         this.parser = new RegExp('([a-z]+)([!<>=]+)([\.0-9a-f]+)$', 'i');
         this.find = null;
@@ -538,10 +539,10 @@ class Monitor {
                 }
                 break;
             case 'debug':
-                this.emu.debug(this.debug_height, true);
+                this.emu.debug(this.debug_height, true, this.dbg_regs_height);
                 break;
             case 'quit':
-                this.emu.debug(this.debug_height, false);
+                this.emu.debug(this.debug_height, false, this.dbg_regs_height);
                 break;
             case 'refresh':
                 if (this.emu.dbgw === null) { console.error('debug not active'); break; }
