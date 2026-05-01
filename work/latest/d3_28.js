@@ -58,6 +58,59 @@ function Display(scr) {
     return {kbd, display, clear};
 }
 
+function Tape() {
+    let to_last, to_data, to_bitc, to_sigc,
+        ti_data, ti_mask, ti_last, ti_bit, ti_bits, ti_ticks,
+        pos = 0, moving = false, writing = false;
+    const media = [], parity = [1, 0, 0, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1, 0, 0, 1],
+    read = ticks => {
+        if (!moving || writing) return 0x00;
+        if (ticks < ti_ticks) return ti_bit;
+        if (ti_mask === 0) {
+            if (pos >= media.length) return 0x00;
+            const tmp = media[pos++];
+            ti_data = tmp << 1 | parity[tmp & 0x0f] ^ parity[tmp >> 4 & 0x0f];
+            ti_mask = 0x100; ti_bits = 0;
+        }
+        if (ti_bits === 0) {
+            ti_last = (ti_data & ti_mask) ? 7 : 1;
+            ti_bits = 4;
+        }
+        while (ti_bits-- > 0) {
+            ti_bit = ti_last & 0x1;
+            ti_last >>= 1;
+            ti_ticks += 390;
+            if (ticks < ti_ticks) break;
+        }
+        if (ti_bits === 0) ti_mask >>= 1;
+        return ti_bit;
+    },
+    write = (bit, ticks) => {
+        if (bit & 0x20) {
+            moving = false, writing = false;
+            return;
+        }
+        if (bit & 0x10) {
+            moving = true; writing = (bit & 0x01) !== 0;
+            if (writing) to_last = to_data = to_bitc = to_sigc = 0;
+            else { ti_ticks = ticks + 10; ti_bit = 0; ti_mask = 0; }
+            return;
+        }
+        if (!writing) return;
+        to_last <<= 1; to_last |= bit;
+        if (++to_sigc < 4) return; // 0101 (1) or 0100 (0)
+        const dat = to_last & 0x01;
+        to_last = 0; to_sigc = 0;
+        if (++to_bitc === 9) {     // ignore parity bit
+            media[pos++] = to_data;
+            to_data = 0; to_bitc = 0;
+        } else {
+            to_data <<= 1; to_data |= dat;
+        }
+    };
+    return {read, write, media, 'position': v => (v === undefined) ? pos : pos = v};
+}
+
 class Emulator_D3_128 extends Emulator {
     constructor(cpu, mem) {
         super(cpu, mem, 0);
@@ -78,13 +131,12 @@ class Emulator_D3_128 extends Emulator {
 }
 
 class Memo_D3_128 {
-    constructor(con) {
+    constructor(con, tape) {
         this.ram = new Uint8Array(0x10000);
-        this.ram2 = new Uint8Array(0x10000);
         this.rom = new Array(8192);
         this.rom.fill(0);
         this.CPU = null;
-        this.con = con;
+        this.con = con; this.tape = tape;
     }
     rd(a) {
         const res = this.ram[a]; this.ram[a] = 0; // destructive read
@@ -97,11 +149,17 @@ class Memo_D3_128 {
         return this.rom[a];
     }
     input(p) {
-        if (p === 0x00) return (this.con.kbd.length > 0) ? this.con.kbd.shift() : 0x00;
-        return 0x00;
+        switch (p) {
+            case 0x00: return (this.con.kbd.length > 0) ? this.con.kbd.shift() : 0x00;
+            case 0x01: return this.tape.read(this.CPU.cpu.ticks());
+            default: return 0x00;
+        }
     }
     output(p, v) {
-        if (p === 0x00) this.con.display(v, (this.CPU.cpu.getD() & 0x4) !== 0);
+        switch (p) {
+            case 0x00: this.con.display(v, (this.CPU.cpu.getD() & 0x4) !== 0); break;
+            case 0x01: this.tape.write(v, this.CPU.cpu.ticks()); break;
+        }
     }
     loadROM(dat, binary = true) {
         if (binary) {
@@ -140,12 +198,12 @@ function Cpu(memo) { // 15ВМ128-018
     let S, T, U, V, KA, KB, CA, CB, GIOA, GIOB, IOB, D, L, M, N, RA, RB,
         CC, ALU, SC, Q, OFL, ERR, KBD, TMR, DIN, DOT, RBS, CURRENT, PREV,
         JL, JH, JAD, ST, KK, MOP, BD, BC, AC, AOP, ZO, BI, AI,
-        JMP = null;
+        JMP = null, cycles = 0;
     const reset = () => {
         S = T = U = V = KA = KB = CA = CB = GIOA = GIOB = D = L = M = N = RA = RB = 0b0000;
         IOB = 0b000;
         CC = ALU = SC = Q = OFL = ERR = KBD = TMR = DIN = DOT = RBS = 0b0;
-        JMP = null;
+        JMP = null; cycles = 0;
         setPC(0b00000000000);
     },
     decode = () => {
@@ -444,15 +502,14 @@ function Cpu(memo) { // 15ВМ128-018
             case 0x6: if (lat_sc) CURRENT |= 0x1; break;
         }
         if (JMP !== null) { CURRENT = JMP; JMP = null; }
-        decode();
+        decode(); cycles++;
         return true;
     },
     setJMP = v => JMP = v & 0x7ff,
-    setD = v => D = v & 0xf,
-    getD = () => D;
+    setD = v => D = v & 0xf;
     return {
         reset, disassembleInstruction, disasmMC, setRegisters, cpuStatus, getPC, setPC, step,
-        setJMP, setD, getD
+        setJMP, setD, 'getD': () => D, 'ticks': () => cycles
     };
 }
 
@@ -540,7 +597,10 @@ class Monitor_D3_128 extends Monitor {
     }
     async handler(parms, cmd) {
         try { switch (cmd) {
-            
+            case 'tape':
+//                this.emu.memo.tape.position(0);
+console.log(this.emu.memo.tape.media.map(e => fmt(e)));
+                break;
             default: await super.handler(parms, cmd); break;
         } } catch (e) { console.error(e.stack); }
     }
@@ -650,8 +710,8 @@ async function main() {
     elem.id = scr_elem.id; elem.className = 'scr_wng';
     elem.addEventListener('click', e => kbd_elem['data-inp'].focus());
     scr_elem.replaceWith(elem);
-    const con = Display(elem),
-          mem = new Memo_D3_128(con),
+    const con = Display(elem), tape = Tape(),
+          mem = new Memo_D3_128(con, tape),
           cpu = new GenCpu(mem, 0),
           emu = new Emulator_D3_128(cpu, mem),
           mon = new Monitor_D3_128(emu),
