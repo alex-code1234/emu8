@@ -137,6 +137,7 @@ class Memo_D3_128 {
         this.rom.fill(0);
         this.CPU = null;
         this.con = con; this.tape = tape;
+        this.kbd = null;
     }
     rd(a) {
         const res = this.ram[a]; this.ram[a] = 0; // destructive read
@@ -159,6 +160,7 @@ class Memo_D3_128 {
         switch (p) {
             case 0x00: this.con.display(v, (this.CPU.cpu.getD() & 0x4) !== 0); break;
             case 0x01: this.tape.write(v, this.CPU.cpu.ticks()); break;
+            case 0x02: if (this.kbd) this.kbd.update(v); break;
         }
     }
     loadROM(dat, binary = true) {
@@ -203,6 +205,7 @@ function Cpu(memo) { // 15ВМ128-018
         S = T = U = V = KA = KB = CA = CB = GIOA = GIOB = D = L = M = N = RA = RB = 0b0000;
         IOB = 0b000;
         CC = ALU = SC = Q = OFL = ERR = KBD = TMR = DIN = DOT = RBS = 0b0;
+        memo.output(0x02, 0x00);
         JMP = null; cycles = 0;
         setPC(0b00000000000);
     },
@@ -337,7 +340,8 @@ function Cpu(memo) { // 15ВМ128-018
                 case 'iob': IOB = n & 0x7; break;
                 case 'cc': CC = n & 0x1; break; case 'alu': ALU = n & 0x1; break;
                 case 'sc': SC = n & 0x1; break; case 'q': Q = n & 0x1; break;
-                case 'ofl': OFL = n & 0x1; break; case 'err': ERR = n & 0x1; break;
+                case 'ofl': OFL = n & 0x1; memo.output(0x02, OFL << 1 | ERR); break;
+                case 'err': ERR = n & 0x1; memo.output(0x02, OFL << 1 | ERR); break;
                 case 'kbd': KBD = n & 0x1; break; case 'tmr': TMR = n & 0x1; break;
                 case 'din': DIN = n & 0x1; break; case 'dot': DOT = n & 0x1; break;
                 case 'rbs': RBS = n & 0x1; break; case 'pc': setPC(n & 0x7ff); break;
@@ -467,9 +471,9 @@ function Cpu(memo) { // 15ВМ128-018
             case 0x9: KA = KB = 0b0000; KBD = OFL = ERR = 0b0; break;
             case 0xa: S = (S & 0xe) | (ALU ? 0x0 : 0x1); break;
             case 0xb: S = (S & 0xd) | (ALU ? 0x2 : 0x0); break;
-            case 0xc: OFL = 1; break;
+            case 0xc: OFL = 1; memo.output(0x02, 0x02 | ERR); break;
             case 0xd: S = 0b0000; break;
-            case 0xe: ERR = 1; break;
+            case 0xe: ERR = 1; memo.output(0x02, OFL << 1 | 0x01); break;
         }
         switch (MOP) {
             case 0x0: RA = zbus; wrmem(); break;
@@ -483,7 +487,12 @@ function Cpu(memo) { // 15ВМ128-018
             case 0x1: CURRENT |= 0x2; break;
             case 0x2: if (lat_s & 0x2) CURRENT |= 0x2; break;
             case 0x3: if (lat_s & 0x8) CURRENT |= 0x2; break;
-            case 0x4: if (OFL) { CURRENT |= 0x2; OFL = 0; } break;
+            case 0x4:
+                if (OFL) {
+                    CURRENT |= 0x2; OFL = 0;
+                    memo.output(0x02, 0x00 | ERR);
+                }
+                break;
             case 0x5: if (CC) CURRENT |= 0x2; break;
             case 0x6:
                 tmp = memo.input(0x00);                         // keyboard
@@ -501,7 +510,10 @@ function Cpu(memo) { // 15ВМ128-018
             case 0x5: if (lat_q) CURRENT |= 0x1; break;
             case 0x6: if (lat_sc) CURRENT |= 0x1; break;
         }
-        if (JMP !== null) { CURRENT = JMP; JMP = null; }
+        if (JMP !== null) {
+            if (JMP === 0x000) memo.output(0x02, 0x00);
+            CURRENT = JMP; JMP = null;
+        }
         decode(); cycles++;
         return true;
     },
@@ -519,6 +531,8 @@ class Kbd_D3_128 extends SoftKbd {
         this.cpu = cpu;
         this.keys = kbd_elem.getElementsByClassName('key');
         this.high4 = 0;
+        this.ofl = document.getElementById('wng_OFL');
+        this.err = document.getElementById('wng_ERR');
     }
     switchKeyClass(num, dval) {
         if (!this.keys[num].classList.contains('ivkey')) return null;
@@ -589,6 +603,12 @@ class Kbd_D3_128 extends SoftKbd {
             default: console.warn(e.key); return null;
         }
     }
+    update(errs) {
+        if (errs & 0x02) this.ofl.classList.add('sgnon');
+        else this.ofl.classList.remove('sgnon');
+        if (errs & 0x01) this.err.classList.add('sgnon');
+        else this.err.classList.remove('sgnon');
+    }
 }
 
 class Monitor_D3_128 extends Monitor {
@@ -625,13 +645,18 @@ async function main() {
 .sp24 { grid-column: span 24; }
 .sp6 { grid-column: span 6; }
 .rsp2 { grid-row: span 2; }
+.signal { width: 18px; height: 18px; border: 1px solid var(--onbackground); border-radius: 10px;
+          float: right; margin-right: 9px; text-align: center; font-weight: 100; }
+.sgnon { background-color: #ffd500; }
 `, `
 <div class='section sec_wng sec_wng_left'>
     <div class='sp8'></div><div class='key key_wng'>Run</div>
     <div class='key key_wng ivkey'>Learn</div>
     <div class='key key_wng ivkey'><span>Learn&</span><span>Print</span></div>
     <div class='key key_wng ivkey'><span>List</span><span>Prgram</span></div>
-    <div class='sp24'></div>
+    <div class='sp24'>
+        <div id='wng_ERR' class='signal'>M</div><div id='wng_OFL' class='signal'>P</div>
+    </div>
     <div class='key key_wng ivkey'>80</div><div class='key key_wng ivkey'>40</div>
     <div class='key key_wng ivkey'>20</div><div class='key key_wng ivkey'>10</div>
     <div class='key key_wng'>00</div><div class='key key_wng'>01</div>
@@ -716,6 +741,7 @@ async function main() {
           emu = new Emulator_D3_128(cpu, mem),
           mon = new Monitor_D3_128(emu),
           kbd = new Kbd_D3_128(kbd_elem, con, con_elem, cpu.cpu);
+    mem.kbd = kbd;
 console.log(mem.loadROM(await loadFile('d3_28/wang720c.rom', false)));
 //mem.loadROM(await loadFile('d3_28/pel3_065_001__rom/pel3_065_001__rom.txt', true), false));
     cpu.cpu.reset();
