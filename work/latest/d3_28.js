@@ -111,6 +111,27 @@ function Tape() {
     return {read, write, media, 'position': v => (v === undefined) ? pos : pos = v};
 }
 
+function CN_24(con) {
+    const xlat = [
+'-',  'y',  ' ',  '\0', 'q',  'p',  '=',  'j',  '\t', '/',  '|',  '\\', ',',  ';',  'f',  'g',
+'w',  's',  '`',  '~',  'i',  '\'', '.',  '\0', '\r', 'o',  '\n', '\0', 'a',  'r',  'v',  'm',
+'b',  'h',  '\0', '\0', 'k',  'e',  'n',  't',  '\0', 'l',  '\0', '\0', 'c',  'd',  'u',  'x',
+'9',  '0',  '\0', '\0', '6',  '5',  '2',  'z',  '\0', '4',  '\0', '\0', '8',  '7',  '3',  '1',
+'_',  'Y',  ' ',  '\0', 'Q',  'P',  '+',  'J',  '\t', '?',  '|',  '\\', ',',  ':',  'F',  'G',
+'W',  'S',  '`',  '~',  'I',  '"',  '.',  '\0', '\r', 'O',  '\n', '\0', 'A',  'R',  'V',  'M',
+'B',  'H',  '\0', '\0', 'K',  'E',  'N',  'T',  '\0', 'L',  '\0', '\0', 'C',  'D',  'U',  'X',
+'(',  ')',  '\0', '\0', '\0', '%',  '@',  'Z',  '\0', '$',  '\0', '\0', '*',  '&',  '#',  '!'
+    ],
+    ready = () => 0x01,
+    write = v => {
+        if ((v >> 8) !== 0x01) return;
+        v = xlat[v & 0x7f].charCodeAt(0);
+        con.display(v);
+        if (v === 13) con.display(10);
+    };
+    return {ready, write};
+}
+
 class Emulator_D3_128 extends Emulator {
     constructor(cpu, mem) {
         super(cpu, mem, 0);
@@ -138,6 +159,7 @@ class Memo_D3_128 {
         this.CPU = null;
         this.con = con; this.tape = tape;
         this.kbd = null;
+        this.asr = null;
     }
     rd(a) {
         const res = this.ram[a]; this.ram[a] = 0; // destructive read
@@ -153,6 +175,7 @@ class Memo_D3_128 {
         switch (p) {
             case 0x00: return (this.con.kbd.length > 0) ? this.con.kbd.shift() : 0x00;
             case 0x01: return this.tape.read(this.CPU.cpu.ticks());
+            case 0x03: return this.asr ? this.asr.ready() : 0x00;
             default: return 0x00;
         }
     }
@@ -161,6 +184,7 @@ class Memo_D3_128 {
             case 0x00: this.con.display(v, (this.CPU.cpu.getD() & 0x4) !== 0); break;
             case 0x01: this.tape.write(v, this.CPU.cpu.ticks()); break;
             case 0x02: if (this.kbd) this.kbd.update(v); break;
+            case 0x03: if (this.asr) this.asr.write(v); break;
         }
     }
     loadROM(dat, binary = true) {
@@ -447,7 +471,10 @@ function Cpu(memo) { // 15ВМ128-018
                 TMR = 0;
                 memo.output(0x01, 0x20);                        // tape
                 break;
-            case 0xe: GIOA = KA; GIOB = KB; break;
+            case 0xe:
+                GIOA = KA; GIOB = KB;
+                memo.output(0x03, IOB << 8 | GIOA << 4 | GIOB); // external device
+                break;
         }
         switch (ZO) {
             case 0x0: S = zbus; break;
@@ -480,7 +507,10 @@ function Cpu(memo) { // 15ВМ128-018
             case 0x1: RB = zbus; wrmem(); break;
             case 0x2: case 0x4: rdmem(); CA = RA; CB = RB; break;
             case 0x3: case 0x5: rdmem(); break;
-            case 0x6: KB = (KB & 0xe) | RBS; break;
+            case 0x6:
+                RBS = memo.input(0x03) & 0x1;                   // external device;
+                KB = (KB & 0xe) | RBS;
+                break;
         }
         PREV = CURRENT; CURRENT = JAD << 2;
         switch (JH) {
@@ -616,10 +646,44 @@ class Monitor_D3_128 extends Monitor {
         super(emu, undefined, undefined, 220);
     }
     async handler(parms, cmd) {
+        let tmp;
         try { switch (cmd) {
             case 'tape':
-//                this.emu.memo.tape.position(0);
-console.log(this.emu.memo.tape.media.map(e => fmt(e)));
+                if (parms.length < 2) {
+                    if (this.emu.memo.tape.media.length === 0) console.log('tape empty');
+                    else downloadFile('tape.dat', new Uint8Array(this.emu.memo.tape.media));
+                    break;
+                }
+                tmp = parms[1];
+                switch (tmp) {
+                    case 'empty':
+                        this.emu.memo.tape.media.length = 0;
+                        this.emu.memo.tape.position(0);
+                        break;
+                    case 'rewind': this.emu.memo.tape.position(0);
+                    case 'pos': console.log(this.emu.memo.tape.position()); break;
+                    default:
+                        const tdata = await loadFile(tmp, false);
+                        this.emu.memo.tape.media.length = 0;
+                        this.emu.memo.tape.position(0);
+                        this.emu.memo.tape.media.push(...tdata);
+                        break;
+                }
+                console.log(this.emu.memo.tape.media.length);
+                break;
+            case 'asr':
+                if (this.emu.memo.asr !== null) { console.log('already connected'); break; }
+                await loadScript('pdp8/asr_33.js');
+                tmp = addTab('wout', 'ASR-33', 2, false);
+                addStyle(`
+@font-face { font-family: 'Teletype'; src: url('pdp8/Teletype33.ttf'); }
+.scr_wasr { overflow: auto; font: bold 16px Teletype;
+            width: 738px; height: 480px; margin: auto; display: block; }
+                `);
+                const ascr = document.createElement('pre');
+                ascr.className = 'scr_wasr';
+                tmp.appendChild(ascr);
+                this.emu.memo.asr = CN_24(TxtMonitor(ascr, '#3d3c3a', '#fffade', 72, '#ddfade'));
                 break;
             default: await super.handler(parms, cmd); break;
         } } catch (e) { console.error(e.stack); }
