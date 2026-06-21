@@ -3,6 +3,7 @@
 class GenCpu {
     constructor(memo, type) {
         this.CPU_INSTR_CNT = 10240; // ~8.4MHz for 8080 and Z80, ~4Mhz for 8086, ~12MHz for 6502
+        this.CPU_FREQ_MHZ = 0;      // CPU frequency in MHz (0 - no throttling)
         this.HLT_STOP = true;       // stop CPU on HLT (must be false for MP/M)
         this.STOP = -1;             // stop address
         this.STOP_REGS = [];        // register values on stop
@@ -63,24 +64,50 @@ class GenCpu {
     async run() {
         this.RUN = true;
         let print = true, res;
-        do {
-            for (let i = 0; i < this.CPU_INSTR_CNT; i++) { // number of instructions not cycles!
-                try { res = this.cpu.step(); }
-                catch(exc) {
-                    console.error(exc);
-                    this.RUN = false;
-                    break;
-                }
-                if (!res || (this.STOP >= 0 && this.cpu.getPC() === this.STOP && this.chkRegs())) {
-                    if (res) { console.info('STOP'); this.STOP = -1; this.STOP_REGS.length = 0; }
-                    else if (!this.HLT_STOP) break;
-                    else console.info('HALT');
-                    this.RUN = false;
-                    print = false;
-                    break;
-                }
-                if (!this.RUN) break;
+        const obj = this,
+        oneStep = () => {
+            try { res = obj.cpu.step(); }
+            catch(exc) {
+                console.error(exc);
+                obj.RUN = false;
+                return false;
             }
+            if (!res || (obj.STOP >= 0 && obj.cpu.getPC() === obj.STOP && obj.chkRegs())) {
+                if (res) { console.info('STOP'); obj.STOP = -1; obj.STOP_REGS.length = 0; }
+                else if (!obj.HLT_STOP) return false;
+                else console.info('HALT');
+                obj.RUN = false;
+                print = false;
+                return false;
+            }
+            return obj.RUN;
+        };
+        if (this.CPU_FREQ_MHZ > 0) {
+            let lastTime = 0, lastCycles = this.cpu.cycles, frameT = 1000 / 60,
+                target = (this.CPU_FREQ_MHZ * 1000000) / 60;
+            return new Promise((resolve, reject) => {
+                const dynamicClockLoop = ts => {
+                    let delta = ts - lastTime, count = 0;
+                    lastTime = ts;
+                    if (delta > 100) delta = 100;
+                    const cycles = Math.floor((delta / frameT) * target);
+                    while (count < cycles) {
+                        if (!oneStep()) break;
+                        count += obj.cpu.cycles - lastCycles;
+                        lastCycles = obj.cpu.cycles;
+                    }
+                    if (obj.RUN) requestAnimationFrame(dynamicClockLoop);
+                    else {
+                        if (print) console.info('stopped');
+                        resolve();
+                    }
+                };
+                requestAnimationFrame(dynamicClockLoop);
+            });
+        }
+        do {
+            for (let i = 0; i < this.CPU_INSTR_CNT; i++) // number of instructions not cycles!
+                if (!oneStep()) break;
             await delay(0);
         } while (this.RUN);
         if (print) console.info('stopped');
