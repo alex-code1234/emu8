@@ -64,132 +64,37 @@ class SpecCpu extends GenCpu {
 }
 
 // Speaker interface
-async function Speaker(volume = 0.03, filter = [15000, 50, 0.1], canvas = null) {
-    function constructor() {                            // AudioWorkletProcessor constructor
-        _super();                                       // super call, fixed during class generation
-        this.ticks = [];                                // data buffer
-        this.value = 0.5;                               // sample value 50%
-        this.sample = 48000.0 / 2000000.0;              // sampling ratio (48kHz - audio, 2MHz - CPU)
-        this.prevCycle = 0;
-        this.port.onmessage = e => {                    // message handler
-            const data = e.data;
-            for (let i = 0, length = data.length; i < length; i++) { // preprocess data
-                const cycle = data[i];                               // calc audio half wave length
-                let hwlen = Math.round((cycle - this.prevCycle) * this.sample) | 0;
-                if (hwlen < 1) hwlen = 1; else if (hwlen > 1024) hwlen = 1024;
-                this.ticks.push(hwlen);                              // save in buffer
-                this.prevCycle = cycle;                              // remember cycle
-            }
-        };
-    }
-    function process(inps, outs, parms) {               // AudioWorkletProcessor process method
-        const out = outs[0][0];                         // mono output
-        let i = 0;
-        while (i < out.length) {                        // fill in outputs
-            if (this.ticks.length === 0) {                           // no data in buffer
-                out[i++] = 0;                                        // no signal
-                continue;
-            }
-            let cnt = this.ticks[0];                    // number of samples
-            while (cnt-- > 0) {
-                out[i++] = this.value;                               // output signal
-                if (i >= out.length) break;                          // finished samples buffer
-            }
-            if (cnt > 0) {                              // samples batch not done
-                this.ticks[0] = cnt;                    // remember rest
-                break;
-            }
-            this.ticks.shift();                         // remove processed data
-            this.value = -this.value;                   // switch value sign for second half
-        }
-        return true;
-    }
-    if (!(await navigator.mediaDevices.getUserMedia({'audio': true})))
-        return null;                                    // audio disabled, no speaker
-    const p1 = ('' + constructor).substring(9).replace('_super', 'super'),
-          p2 = ('' + process).substring(9),
-          p3 = 'registerProcessor("audio-speaker", AP);',
-          blob = new Blob([
-              `class AP extends AudioWorkletProcessor {${p1}${p2}} ${p3}`
-          ], {type: 'text/javascript'}),                // AudioWorkletProcessor code
-          url = URL.createObjectURL(blob),
-          cntx = new AudioContext();                    // audio context
-    await cntx.audioWorklet.addModule(url);             // register AudioWorkletProcessor
-    let graph = null, points, ctx2,                     // audio visualization
-        prevBit = 0, buff = [], bckg = null;
-    const proc = new AudioWorkletNode(cntx, 'audio-speaker'), // AudioWorkletProcessor node
-          gain = cntx.createGain(),                     // speaker volume node
-    start = async () => {                               // start audio
-        await cntx.resume(); if (graph) draw();
+async function Speaker(volume = 0.1) {
+    if (!(await navigator.mediaDevices.getUserMedia({'audio': true}))) return null;
+    const freq = 2000000,
+          cntx = new AudioContext(),
+          buff = cntx.createBuffer(1, 1, 48000),
+          gain = new GainNode(cntx, {'gain': 0}),
+          srcn = new AudioBufferSourceNode(cntx, {'loop': true, 'buffer': buff}),
+    start = async () => {
+        await cntx.resume();
     },
-    stop = async () => {                                // stop audio
+    stop = async () => {
         await cntx.suspend();
     },
-    destroy = async () => {                             // free resources
-        await cntx.close(); URL.revokeObjectURL(url);
-    },
-    timer = () => {                                     // timer func
-        proc.port.postMessage(buff);                    // send data buffer
-        bckg = null; buff = [];                         // prepare next transfer
-    },
-    tick = (bit, cycles) => {                           // speaker interface, prepare audio
-        if (bit ^ prevBit) {                            // bit changed, process
-            buff.push(cycles);                          // save data
-            if (bckg !== null) clearTimeout(bckg);      // re-schedule timeout
-            bckg = setTimeout(timer, 1);                // send in 1ms (~2.6ms audio cycle)
-//if (buff.length === 1) queueMicrotask(() => {
-//    proc.port.postMessage(buff);
-//    buff.length = 0;
-//});
+    tick = (bit, cycles) => {
+        if (init) {
+            init = false;
+            ticks = cycles;
+            time = cntx.currentTime;
         }
-        prevBit = bit;                                  // remember bit
-    },
-    setPointAttrs = (wdt, bgd, fgd) => {                // set canvas attributes
-        ctx2.lineWidth = wdt; ctx2.fillStyle = bgd; ctx2.strokeStyle = fgd;
-    },
-    drawPoints = (pts, clear) => {                      // update canvas
-        const length = pts.length,
-              width = ctx2.canvas.width, height = ctx2.canvas.height,
-              height2 = (height / 2) | 0, width2 = width / length;
-        if (clear) ctx2.fillRect(0, 0, width, height);  // clear view
-        let x = 0;
-        ctx2.beginPath();                               // draw points
-        for (let i = 0; i < length; i++) {
-            const y = ((pts[i] / 128.0) * height2) | 0;
-            if (i === 0) ctx2.moveTo(x, y); else ctx2.lineTo(x, y);
-            x += width2;
-        }
-        ctx2.lineTo(width, height2);
-        ctx2.stroke();
-    },
-    draw = () => {                                      // update audio visualization
-        if (cntx.state !== 'running') return;           // audio not active, no update
-        graph.getByteTimeDomainData(points);            // get data from analyser node
-        drawPoints(points, true);
-        requestAnimationFrame(draw);                    // schedule next update
+        time += (cycles - ticks) / freq;
+        ticks = cycles;
+        const drift = time - cntx.currentTime;
+        if (drift < 0 || drift > 0.1) time -= drift;
+        gain.gain.setValueAtTime(bit ? volume : 0, time);
     };
-    stop();                                             // initially suspended
-    gain.connect(cntx.destination);                     // connect audio nodes
-    let middle = gain;
-    if (canvas) {                                       // visualization requested
-        graph = cntx.createAnalyser();                  // create analyser node
-        points = new Uint8Array(graph.frequencyBinCount); // and data buffer
-        graph.connect(middle); middle = graph;          // include into node chain
-        if (typeof canvas === 'string') canvas = document.getElementById(canvas);
-        ctx2 = canvas.getContext('2d');
-        setPointAttrs(2, '#000000', '#008000');         // set draw parameters
-    }
-    if (filter) {                                       // create hi-lo-q filter
-        const flt = cntx.createBiquadFilter();
-        flt.frequency.value = filter[0]; flt.type = 'lowpass'; flt.Q.value = filter[2];
-        flt.connect(middle);
-        const flt2 = cntx.createBiquadFilter();
-        flt2.frequency.value = filter[1]; flt2.type = 'highpass'; flt2.Q.value = filter[2];
-        flt2.connect(flt); middle = flt2;
-    }
-    proc.connect(middle);
-    gain.gain.value = volume;                           // set audio volume
-    return {start, stop, destroy, tick, setPointAttrs, drawPoints};
+    let init = true, ticks, time;
+    buff.getChannelData(0)[0] = 1.0;
+    gain.connect(cntx.destination);
+    srcn.connect(gain);
+    srcn.start();
+    return {start, stop, tick};
 }
 
 class SpecKbd extends SoftKbd {
@@ -520,8 +425,8 @@ async function main() {
           //ccb = cf04,       // 4 colors (for ryumik's test)
           //ccb = cf08,       // 8 colors (for lode runner)
           //ccb = cf16,       // 16 colors (for RamFOS)
-          spk = undefined,  // no speaker
-          //spk = await Speaker(undefined, undefined, undefined),
+          //spk = undefined,  // no speaker
+          spk = await Speaker(undefined, undefined),
           rmds = 0,         // no RAM disks
           //rmds = 1,         // for MXOS
           //rmds = 8,         // for RamFOS
@@ -626,6 +531,7 @@ async function main() {
           mon = new SpecMonitor(emu),
           kbd = new SpecKbd(kbd_elem, con, con_elem, mxkb);
     mem.kbd = kbd.ports;
+    cpu.CPU_FREQ_MHZ = 2.0;  // for speaker
     await mon.exec('r c000 spec/SPEC.ROM');
 /*    await mon.exec('m 100 3e 91 32 03 ff 3e fb 32 01 ff 3a 02 ff 2f e6 03 47 3a 00 ' + // kbd test
                    'ff 2f e6 34 b0 c9 cd 00 01 21 00 00 22 fc 8f cd 15 c8 c3 19 01');  // G119*/
