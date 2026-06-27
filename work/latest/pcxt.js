@@ -375,7 +375,7 @@ async function main() {
     ];
     const [scr_elem, kbd_elem, con_elem] = createUI(
         addTab('emul', 'EMULATOR', 1, true),
-        'emul', 'emu', '36px', 36, 6, 'calc(36px / 10)', '800px', '480px', `
+        'emul', 'emu', '36px', 36, 6, 'calc(36px / 10)', '720px', '480px', `
 .sec_emul_right { grid-template-columns: repeat(6, calc(36px / 2)); }
         `, `
 <div class='section sec_emul sec_emul_left'>
