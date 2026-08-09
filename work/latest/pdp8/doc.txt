@@ -1,0 +1,66 @@
+Monitor commands:
+-----------------
+<Enter> - execute CPU one step
+x [reg/flg val ...] - print/set CPU registers/flags, where
+    l|ac|pc|mq|sr|if|df|ib|sf - registers
+    ie|ir|ii|uif|gt|uf|ub - flags
+g [adr] [- stop*] - start CPU from adr or current to stop address
+step [adr*] - step CPU till adr or next instruction
+debug - start interactive debugger
+quit - exit interactive debugger
+refresh - update interactive debugger UI
+wadd adr [adr ...] - add memory adr to debugger`s watch panel
+wrem adr [adr ...] - remove memory adr from debugger`s watch panel
+d [adr] - dump memory from address adr or current
+l [adr] - disassemble memory from address adr or current
+m adr b [b ...] - modify memory from address adr with values b
+r [a=200] fn [h=0] - load file fn to memory at address a; h=1 - hex file
+w a1 a2 - get block of memory from address a1 to a2 inclusive
+cls - clear terminal
+find [val ...] - find sequence of values in memory or continue search
+stop - stop emulation
+* - address[;breakpoints], where breakpoints is , delimited values:
+    [_] template cond value, where
+        _ - memory value breakpoint
+        template - address for memory or substring from CPU state
+        cond - operation < > == != <= >=
+        value - .. can be used as placeholder to compare 2 last digits of 4-digit value
+    no spaces between parts
+tape fn - load binary tape file fn
+tse [1|0] - set TSE (time sharing enabled) flag
+core [fn] - save octal core dump or load from file fn
+type term start|alogin|login|fn - automated keyboard input, where
+    term - terminal address
+    start - TSS8 init
+    alogin - TSS8 admin login
+    login - TSS8 library login
+    fn - text file with keystrokes, new lines should be \r\n
+tss8copy term fn - TSS8 copy external file fn to disk
+os8copy term fn - OS8 copy external file fn to disk
+pal fn - load PAL listing file fn
+test name - run tests, where name is:
+    ascii - print ASCII example
+    ascii_int - print ASCII example using interrupt
+    d0ab|d0bb|d0gc|d0fc|d0cc*|d1fb**|d1eb|d0db|d0eb|d0jc|dhmca*** - MAINDEC tests, where
+        * - patched to ignore carry flag for MAINDEC addition simulator
+        ** - requires 8K memory
+        *** - requires additional parameter - TSE flag
+    vc8e - point plotter test, if additional parameter 1 is passed - snowflake program,
+           else random patterns program (change SR register to change pattern)
+rx01 drv [fn] - download or upload (disk image file fn) RX01 disk data for drive drv 0|1
+rs08 [fn] - download or upload (disk image file fn) RS08 disk data
+conn dev [adr] - connect device dev (with address adr for terminals), where dev is:
+    rx01 - RX8E/RX01 disk drive
+    rs08 - RF08/RS08 fixed head disk
+    kc8e - KC8-E front panel
+    asr - ASR-33 terminal with paper tape reader and puncher, address is 03 (main)
+    vt - VT-52 CRT terminal, address is 40 (second)
+    vc8e - VC8-E point plotter, if adr=1 create separate tab, else add to system tab
+
+URL parameters:
+---------------
+fields=0..7 - additional memory fields
+terms=0..3 - terminals configuration, 0:asr+asr, 1:asr+vt, 2:vt+asr, 3:vt+vt
+fpanel=0..2 - 0:hidden, 1:last, 2:first in system tab
+run=0..1 - run flag, 0:load only, 1:load and run
+os=os8|tss8|edu20|focal
