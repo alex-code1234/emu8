@@ -212,7 +212,7 @@ class Monitor12 extends Monitor {      // override for 12-bit mode
                 this.addr = this.emu.printMem(this.findidx - 1, undefined, undefined, this.logger);
                 break;
             case 'sadr': case 'sadd': case 'srem': case 'swdt':
-            case 'spts': console.warn('not supported'); break;
+            case 'spts': case 'esc': console.warn('not supported'); break;
             default: await super.handler(parms, cmd); break;
         }
     }

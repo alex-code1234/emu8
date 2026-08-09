@@ -79,7 +79,8 @@ async function VC_8E(cpu, memo, tnum, tab_ref, tab) {
         [scr_elem] = createUI(
             addTab('vc8e', 'VC-8E', tnum, true),
             'vc8', 'vc81', '36px', 1, 1, '4px', '700px', '700px',
-            '#kbd_vc81 { visibility: hidden; display: none; }', ''
+            '#kbd_vc81 { visibility: hidden; display: none; }' +
+            '#scr_vc81 { background: #000000; }', ''
         );
         tab_ref = document.getElementById('vc8e');
     }
