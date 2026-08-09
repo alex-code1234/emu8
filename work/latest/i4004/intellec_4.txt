@@ -1,0 +1,243 @@
+The Intel Intellec-4 (and the subsequent MOD 40) features a Resident System Monitor in PROM that
+provides a suite of interactive commands for program development, debugging, and memory management.
+These commands allow you to manipulate RAM, program PROMs, and interface with peripherals like
+teletypes or paper tape readers.
+
+Monitor PROM Command List
+
+The standard Intellec-4 monitor typically includes the following single-letter commands:
+B (Dump BPNF):       Dumps memory in BPNF (Begin-Positive-Negative-Finish) format, commonly used for
+                     early PROM programmers.
+D (Dump Hex):        Displays memory contents in a human-readable hexadecimal format.
+E (Print Empty Hex): Prints an empty Intel HEX record.
+I (Invert):          Inverts the data in memory.
+J (Select High-Speed Reader): Switches the input source to the high-speed paper tape reader.
+K (Select Teleprinter): Switches the input/output console to a standard teleprinter (TTY).
+L (Load BPNF):       Loads data into memory from a BPNF-formatted source.
+M (Copy Memory):     Copies a block of memory from one location to another.
+N (Print NULs):      Prints 64 NUL characters (typically used to provide a "leader" for paper tapes).
+P (Program PROM):    Writes the contents of memory into an installed PROM (via the imm6-76 programmer
+                     module).
+R (Read Intel HEX):  Reads data in Intel HEX format into system RAM.
+S (Show/Edit Byte):  Displays a specific memory byte and allows the user to modify it.
+T (Load PROM):       Reads the contents of a PROM into system RAM for verification or editing.
+W (Write Intel HEX): Dumps memory contents to the output device in Intel HEX format.
+
+System Context
+
+Hardware Compatibility: These commands primarily interact with the imm6-28 RAM module (4K bytes) and
+                        the imm4-72 RAM control module.
+Front Panel Interaction: The Control Console augments these commands by displaying the data bus,
+                        instruction cycle status, and active RAM banks during execution.
+Bootstrap Mode:         If you run a program while the system is in BOOTSTRAP mode, results may be
+                        unpredictable; standard operation requires the monitor to be active for
+                        reliable loading.
+
+The Intel Intellec-4 Resident System Monitor accepts single-letter commands followed by hexadecimal
+arguments separated by commas [1.6]. All command entries must be terminated with a Carriage Return
+(CR).
+
+Command Syntax and Parameters
+
+CommandSyntax    Parameters
+B (Dump BPNF)    B<start>,<end>
+Dumps memory from <start> to <end> in BPNF format, used for paper tape production.
+
+D (Dump Hex)     D<start>,<end>
+Displays memory from <start> to <end> in hexadecimal. Starts a new line every 16 bytes.
+
+I (Invert)       I<start>,<end>
+Inverts (ones-complement) all data in the specified RAM range.
+
+L (Load BPNF)    L<start>,<end>
+Loads BPNF data into RAM from the current input device. <end> is often redundant but defines the
+limit.
+
+M (Copy Memory)  M<src_s>,<src_e>,<dest>
+Copies the range from <src_s> to <src_e> to the memory starting at <dest>.
+
+P (Program PROM) P<src_s>,<src_e>,<prom>
+Writes RAM data (<src_s> to <src_e>) into a PROM starting at address <prom>.
+
+S (Show/Edit)    S<address>
+Displays byte at <address> followed by a hyphen. Type new hex value and press CR, or press CR only
+to keep current value.
+
+T (Load PROM)    T<dest>
+Reads the entire content (256 bytes) of the installed PROM into RAM starting at <dest>.
+
+W (Write Hex)    W<start>,<end>
+Outputs memory data in standard Intel HEX format for paper tape punches.
+
+Special Case Commands
+
+These commands generally ignore any following parameters but still require a CR to execute [1.6]:
+E (Empty Record): Prints an empty Intel HEX record (:00) to signal the end of a paper tape read.
+J (Select High-Speed): Switches the monitor to read from the high-speed paper tape reader module.
+K (Select TTY): Switches input/output back to the standard Teleprinter (default).
+N (NUL Feed): Prints 64 NUL characters to provide "leader" or "trailer" space on a paper tape.
+
+Operational Notes
+
+Addresses: All parameters are 1 to 3 hex digits (representing 12-bit addresses for the 4004's 4K
+space).
+Empty Arguments: In comma-separated commands (like D,9), an empty argument is treated as zero.
+Input Correction: If you make a typo, enter a character the monitor doesn't recognize (like a
+lowercase letter) to force an error. It will print an asterisk (*) and return to the prompt [1.6].
+
+Working with the Resident Assembler on the Intel Intellec-4 is a "multi-pass" process that involves
+switching between the System Monitor and the Assembler program itself. Unlike modern compilers, it
+does not reside in permanent memory; it must be loaded from paper tape into RAM each time you use it.
+
+Workflow Overview
+
+The Intellec-4 assembler is a three-pass assembler. You must run your source code tape through the
+reader three separate times to get a full result.
+
+Preparation: Use a Teletype (TTY) in "off-line" mode to punch your assembly source code onto a paper
+tape.
+Loading the Assembler: Start in the System Monitor. Load the Assembler paper tape into RAM using the
+monitor's R (Read Intel HEX) command. Once loaded, toggle the console switches to select RAM for
+execution and start the program.
+Pass 1 (Symbol Table): Feed your source code tape into the reader. The assembler reads the tape to
+build an internal symbol table (labels and addresses). No output is generated yet.
+Pass 2 (Listing): Rewind and feed the source tape again. The assembler prints the source code
+alongside the generated hexadecimal codes and any detected errors to the console.
+Pass 3 (Object Tape): Rewind and feed the source tape a final time. The assembler punches the final
+object program tape (in Intel HEX or BPNF format) which can then be re-loaded by the Monitor for
+execution or PROM burning.
+
+Key Requirements
+
+Memory: Requires at least 4K of RAM to hold both the assembler program and the symbol table.
+Hardware: Usually requires a Teletype (TTY) or high-speed paper tape reader for input and a punch
+for output.
+Directives: You must use assembler directives like ORG (to set the starting address) and END (to
+signal the end of the tape) within your source code.
+
+Operator Tips
+
+Skip Pass 2: If you don't need a printed listing, you can often skip Pass 2 and go straight to Pass 3
+to save time.
+Error Correction: If errors are flagged during Pass 1 or 2, you must fix the source tape (usually by
+re-punching a new one) before proceeding to Pass 3.
+
+While the Intellec-4 Resident Assembler is technically a three-pass assembler, it is often described
+as a two-pass type because the listing pass (Pass 2) is optional and can be skipped if you only want
+the final object code.
+
+The Two Key Technical Passes
+
+In a "two-pass" configuration, the process is streamlined to resolve symbolic references and generate
+code:
+Pass 1: Symbol Generation
+Action: The assembler reads the source paper tape to identify all labels (e.g., START:, LOOP:).
+Result: It builds a Symbol Table in the system's RAM (typically using the imm6-28 module). This table
+maps every label to a specific 12-bit memory address so the assembler knows where to jump later.
+Output: No machine code is produced yet, but syntax errors are flagged on the console.
+Pass 2: Object Code Generation
+Action: You rewind the source tape and feed it through a second time.
+Result: The assembler now translates the assembly mnemonics (like LDM or JUN) into binary machine
+code. It uses the Symbol Table from Pass 1 to fill in the actual addresses for any labels.
+Output: It generates the final Object Program Tape (in Intel HEX or BPNF format) which you can later
+load into the system for execution using the Monitor.
+
+Why Two Passes?
+
+The 4004 architecture requires a second pass because of forward references. If your code says JUN END
+at the beginning, but the END label isn't defined until the last line, a single-pass assembler
+wouldn't know which address to insert. Pass 1 finds the address of END so Pass 2 can complete the
+instruction.
+
+Operation Summary
+
+Phase    Input        Purpose                 Required Hardware
+Pass 1   Source Tape  Build Symbol Table      Paper Tape Reader
+Pass 2   Source Tape  Generate Machine Code   Reader & Paper Tape Punch
+
+Pro Tip: If your Intellec-4 has limited RAM, the size of your program is restricted by the number of
+symbols the assembler can store in memory during Pass 1.
+
+The original Intel 4004 Resident Assembler uses a specific set of directives to control the assembly
+process and define data.
+
+Core Assembler Directives
+
+Directive    Syntax                Purpose
+ORG          ORG <address>         Origin: Sets the assembler's location counter to the specified
+                                   address. All following code will be assembled starting at this
+                                   memory location.
+EQU          <label> EQU <value>   Equate: Assigns a permanent numeric value or address to a symbolic
+                                   label.
+END          END                   End of Tape: Signals the physical end of the source program for a
+                                   given pass.
+
+Usage Examples
+
+Setting the Origin (ORG)
+The 4004 uses 12-bit addresses. Use ORG to position your code in a specific RAM or PROM bank.
+assembly
+    ORG 000H    ; Start assembling at the very beginning (address 0)
+START: LDM 5    ; Load 5 into accumulator
+    ...
+    ORG 100H    ; Skip to address 0x100 for the next section
+TABLE: DB 01H   ; Define data at this new address
+
+Defining Constants (EQU)
+EQU is used to make your code more readable by replacing hardcoded numbers with descriptive names.
+assembly
+TTY_PORT EQU 2  ; Assign value 2 to label TTY_PORT
+COUNT    EQU 15 ; Assign value 15 to label COUNT
+
+    LDM COUNT   ; Assembler treats this as LDM 15
+
+Assembler Syntax Rules
+
+Labels: Must start in column 1 and typically end with a colon (e.g., LOOP:).
+Mnemonics: Instructions (like JMS, FIM) must be indented by at least one space or tab.
+Comments: Any text following a semicolon (;) is ignored by the assembler and used for documentation.
+Numbers:
+Hexadecimal: End with H (e.g., 0FFH).
+Decimal: Default, or end with D (e.g., 255).
+Binary: End with B (e.g., 1101B).
+
+A complete source program for the Intellec-4 must be formatted specifically to ensure the assembler
+correctly identifies labels, instructions, and the end of the tape during its passes.
+Example: LED Blink Source Program
+This simple routine loads a value and sends it to an output port.
+assembly
+; ******************************************
+; INTELLEC-4 EXAMPLE PROGRAM
+; ******************************************
+
+PORT_A  EQU  0H       ; Define Output Port 0
+VAL     EQU  0AH      ; Constant value to display (1010)
+
+        ORG  000H     ; Start assembly at address 0
+
+START:  LDM  VAL      ; Load the accumulator with 10 (0AH)
+        WRR           ; Write ACC to the selected RAM output port
+        JUN  START    ; Jump back to START (infinite loop)
+
+        END           ; Crucial: Signals the end of Pass 1, 2, and 3
+
+Formatting Requirements
+
+Columns:
+Column 1: Reserved for Labels (e.g., START:).
+Column 2+: Reserved for Mnemonics (e.g., LDM) and Directives (e.g., ORG).
+           You must use a space or tab before the instruction.
+Delimiters: Use a space between the instruction and its operand (e.g., LDM 5). Use a comma to
+            separate multiple operands (e.g., FIM P0, 255).
+The END Directive: The assembler will not stop reading the paper tape until it sees END. Without it,
+                   the assembler may keep reading "garbage" or blank leader at the end of the tape
+                   and report errors.
+Case Sensitivity: Most original versions of the resident assembler require uppercase mnemonics and
+                  hex letters.
+
+Preparing the Tape
+
+When punching this to paper tape via a Teletype:
+Punch about 6 inches of NULs (all holes blank) at the start for a leader.
+Type the code exactly as formatted above.
+Punch another 6 inches of NULs at the end for a trailer.
