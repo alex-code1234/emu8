@@ -34,7 +34,9 @@ type term start|alogin|login|fn - automated keyboard input, where
     start - TSS8 init
     alogin - TSS8 admin login
     login - TSS8 library login
-    fn - text file with keystrokes, new lines should be \r\n
+    fn - text file with keystrokes, new lines should be \r\n (\n is removed)
+ptp term [flag] - get ASR-33 low speed puncher tape or switch the puncher on/off (flag=1|0)
+ptr term fn - set ASR-33 low speed reader tape from file fn
 tss8copy term fn - TSS8 copy external file fn to disk
 os8copy term fn - OS8 copy external file fn to disk
 pal fn - load PAL listing file fn

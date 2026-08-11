@@ -333,7 +333,7 @@ class PDP8EMon extends Monitor12 {     // system monitor
         }
     }
     async handler(parms, cmd) {
-        let tmp;
+        let tmp, tmp2;
         try { switch (cmd) {
             case 'tape':     // load binary tape
                 if (parms.length < 2) { console.error('missing fname'); break; }
@@ -372,6 +372,35 @@ class PDP8EMon extends Monitor12 {     // system monitor
                         await this.sendstr(kbd, txt.replaceAll('\n', ''));
                         break;
                 }
+                break;
+            case 'ptp':      // low speed PTP
+                if (parms.length < 2) { console.error('missing addr [flag=1|0]'); break; }
+                tmp = this.getTerm(parms[1]);
+                if (tmp.ptr_ptp === undefined) { console.error('not ASR-33 terminal'); break; }
+                if (parms.length < 3) {
+                    tmp2 = tmp.ptr_ptp[1];
+                    if (tmp2 !== null) {
+                        tmp.ptr_ptp[1] = '';
+                        downloadFile('ptp.txt', new Uint8Array(
+                            tmp2.split('').map(c => c.charCodeAt(0))
+                        ));
+                    }
+                    break;
+                }
+                tmp2 = parms[2];
+                if (tmp2 !== '1' && tmp2 !== '0') {
+                    console.error('invalid parameter [1|0]'); break;
+                }
+                tmp.ptr_ptp[1] = (tmp2 === '1') ? '' : null;
+                console.log(tmp2);
+                break;
+            case 'ptr':      // low speed PTR
+                if (parms.length < 3) { console.error('missing addr fname'); break; }
+                tmp = this.getTerm(parms[1]);
+                if (tmp.ptr_ptp === undefined) { console.error('not ASR-33 terminal'); break; }
+                tmp2 = await loadFile(parms[2], true);
+                await this.sendstr(tmp, tmp2, 50);
+                console.log(tmp2.length);
                 break;
             case 'tss8copy': // TSS8 copy external file to disk
             case 'os8copy':  // OS8 copy external file to disk
