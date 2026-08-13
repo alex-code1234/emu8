@@ -621,6 +621,26 @@ await this.exec('tse 0'); await this.exec('x pc 200 sr 4001');
                     default: console.error(`unknown device: ${parms[1]}`); break;
                 }
                 break;
+            case 'pal8':
+                if (parms.length < 2) { console.error('missing fname'); break; }
+                if (this.comp === undefined) {
+                    await loadScript('pdp8/os8comp.js');
+                    this.comp = await initCOMP('../newemu/temp/rx01_test.img');
+                }
+                tmp = await loadFile(parms[1], true);
+                tmp2 = parms[1].match(/([^/]+?)(\.[^.]*$|$)/);
+                if (tmp2 === null || tmp2.length < 3) {
+                    console.error(`invalid fname: ${parms[1]}`); break;
+                }
+                tmp = tmp.replaceAll('\r\n', '\n');
+                this.comp.write(tmp2[1] + tmp2[2].substr(0, 3), tmp);
+                tmp = await this.comp.compile(`pal8 ${tmp2[1]},${tmp2[1]}<${tmp2[1]}/h`);
+                tmp2 = this.comp.read(tmp2[1] + '.ls');
+                if (tmp.split('\r\n')[1] !== '') { // error
+                    console.error(tmp2); break;
+                }
+                console.log(this.emu.loadPAL(tmp2));
+                break;
             default: await super.handler(parms, cmd); break;
         } } catch (e) { console.error(e.stack); }
     }
