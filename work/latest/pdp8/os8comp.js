@@ -271,8 +271,7 @@ function OS8(emu, trm) {  // OS-8 emulator
 
 async function initCOMP(disk_img) {
     await Promise.all([
-        loadScript('js/disks.js'),
-        loadScript('pdp8/pdp_8e.js'), loadScript('pdp8/rx01.js'), loadScript('pdp8/asr_33.js')
+        loadScript('js/disks.js'), loadScript('pdp8/rx01.js'), loadScript('pdp8/asr_33.js')
     ]);
     const mem = KM8_E(1),
           cpu = new GenCpu12(mem),
