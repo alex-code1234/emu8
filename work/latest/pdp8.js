@@ -245,7 +245,8 @@ class PDP8EEmu extends Emulator12 {    // emulator
         return length;
     }
     saveCore() {                       // generate octal core dump
-        const mem = this.memo, regs = mem.CPU.cpu.regs, MAXMEM = 32768, sif = regs[IF],
+        const mem = this.memo, regs = mem.CPU.cpu.regs, sif = regs[IF],
+              MAXMEM = mem.RAM ? 4096 * mem.RAM.length : 4096,
         rm = a => { regs[IF] = a >> 12; return mem.rd(a & 0o7777); };
         let str = '', ma = 0;
         do {
@@ -266,8 +267,8 @@ class PDP8EEmu extends Emulator12 {    // emulator
         return str;
     }
     loadCore(str) {                    // load octal core dump
-        const mem = this.memo, regs = mem.CPU.cpu.regs, MAXMEM = 32768, sif = regs[IF],
-              data = str.split('\n'),
+        const mem = this.memo, regs = mem.CPU.cpu.regs, sif = regs[IF], data = str.split('\n'),
+              MAXMEM = mem.RAM ? 4096 * mem.RAM.length : 4096,
         wm = (a, v) => { regs[IF] = a >> 12; mem.wr(a & 0o7777, v); };
         mem.clear();
         let count = 0, ma;
@@ -278,14 +279,17 @@ class PDP8EEmu extends Emulator12 {    // emulator
             const d = s.split(' ');
             if (d.length !== 9 || !d[0].endsWith(':')) throw new Error(`invalid core format: ${s}`);
             ma = pi(d[0].substring(0, d[0].length - 1));
-            for (let j = 1; j < 9; j++) wm(ma++, pi(d[j]));
+            for (let j = 1; j < 9; j++) {
+                if (ma >= MAXMEM) throw new Error(`max memory ${MAXMEM}`);
+                wm(ma++, pi(d[j]));
+            }
         }
         regs[IF] = sif;
         return count * 8;
     }
     loadPAL(str) {                     // load PAL listing
-        const mem = this.memo, regs = mem.CPU.cpu.regs, MAXMEM = 32768, sif = regs[IF],
-              data = str.split('\n'),
+        const mem = this.memo, regs = mem.CPU.cpu.regs, sif = regs[IF], data = str.split('\n'),
+              MAXMEM = mem.RAM ? 4096 * mem.RAM.length : 4096,
         wm = (a, v) => { regs[IF] = a >> 12; mem.wr(a & 0o7777, v); };
         let count = 0, ma, vv;
         for (let i = 0, n = data.length; i < n; i++) {
@@ -297,6 +301,7 @@ class PDP8EEmu extends Emulator12 {    // emulator
             } catch {
                 continue;
             }
+            if (ma >= MAXMEM) throw new Error(`max memory ${MAXMEM}`);
             wm(ma, vv);
             count++;
         }
