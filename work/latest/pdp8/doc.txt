@@ -58,7 +58,9 @@ conn dev [adr] - connect device dev (with address adr for terminals), where dev 
     asr - ASR-33 terminal with paper tape reader and puncher, address is 03 (main)
     vt - VT-52 CRT terminal, address is 40 (second)
     vc8e - VC8-E point plotter, if adr=1 create separate tab, else add to system tab
-pal8 fn - compile PAL file fn using PAL8 compiler for OS8
+pal8 fn [flag=0|1] - compile PAL file fn using PAL8 compiler for OS8,
+    if flag=0 (default) print listing if error or upload code if success,
+    if flag=1 download listing file
 
 URL parameters:
 ---------------

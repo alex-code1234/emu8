@@ -622,7 +622,7 @@ await this.exec('tse 0'); await this.exec('x pc 200 sr 4001');
                 }
                 break;
             case 'pal8':
-                if (parms.length < 2) { console.error('missing fname'); break; }
+                if (parms.length < 2) { console.error('missing fname [flag=0|1]'); break; }
                 if (this.comp === undefined) {
                     await loadScript('pdp8/os8comp.js');
                     this.comp = await initCOMP('../newemu/temp/rx01_test.img');
@@ -635,10 +635,16 @@ await this.exec('tse 0'); await this.exec('x pc 200 sr 4001');
                 tmp = tmp.replaceAll('\r\n', '\n');
                 this.comp.write(tmp2[1] + tmp2[2].substr(0, 3), tmp);
                 tmp = await this.comp.compile(`pal8 ${tmp2[1]},${tmp2[1]}<${tmp2[1]}/h`);
-                tmp2 = this.comp.read(tmp2[1] + '.ls');
-                if (tmp.split('\r\n')[1] !== '') { // error
-                    console.error(tmp2); break;
+                const lstn = `${tmp2[1]}.ls`;
+                tmp2 = this.comp.read(lstn);
+                if (parms.length > 2) {
+                    const dlf = parms[2];
+                    if (dlf !== '1' && dlf !== '0') {
+                        console.error('invalid parameter [1|0]'); break;
+                    }
+                    if (dlf === '1') { downloadFile(lstn, tmp2); break; }
                 }
+                if (tmp.split('\r\n')[1] !== '') { console.error(tmp2); break; }
                 console.log(this.emu.loadPAL(tmp2));
                 break;
             default: await super.handler(parms, cmd); break;
