@@ -749,9 +749,8 @@ await this.exec('tse 0'); await this.exec('x pc 200 sr 4001');
             this.emu.CPU.cpu.regs[IF] = fv;
             const mval = this.emu.memo.rd(adr);
             if (mval === val) continue;
-            ln = ln.substring(0, 7) + fmt(mval, 4) + ln.substr(11);
-            // TODO: add assembly mnemonic
-            dtxt[i] = ln;
+            dtxt[i] = ln.substring(0, 7) + fmt(mval, 4) +
+                    `    ${this.emu.disassemble1(adr)[1].substr(11)}    / modified`;
             if (!update) update = true;
         }
         this.emu.CPU.cpu.regs[IF] = sif;
