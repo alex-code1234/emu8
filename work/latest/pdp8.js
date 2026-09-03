@@ -627,10 +627,29 @@ await this.exec('tse 0'); await this.exec('x pc 200 sr 4001');
                 }
                 break;
             case 'pal8':
-                if (parms.length < 2) { console.error('missing fname [flag=0|1]'); break; }
                 if (this.comp === undefined) {
                     await loadScript('pdp8/os8comp.js');
                     this.comp = await initCOMP('../newemu/temp/rx01_test.img');
+                }
+                if (parms.length < 2 ||
+                        (parms.length === 2 && (parms[1] === '0' || parms[1] === '1'))) {
+                    if (this.prg === undefined) {
+                        console.error('missing fname [flag=0|1]'); break;
+                    }
+                    tmp2 = this.prg;
+                    this.comp.write(tmp2[1] + tmp2[2].substr(0, 3), this.edit.getText());
+                    tmp = await this.comp.compile(`pal8 ${tmp2[1]},${tmp2[1]}<${tmp2[1]}/h`);
+                    tmp2 = this.comp.read(`${tmp2[1]}.ls`);
+                    if (tmp.split('\r\n')[1] !== '') { console.error(tmp2); break; }
+                    console.log(this.emu.loadPAL(tmp2));
+                    if (parms.length < 2 || parms[1] === '0') {
+                        this.edit.setEditing(false);
+                        this.edit.setText(tmp2);
+                        this.emu.CPU.cpu.reset(); this.emu.CPU.cpu.regs[PC] = 0o0200;
+                        this.edit.setLine(this.currAddr());
+                        this.edit.status.value = this.status();
+                    }
+                    break;
                 }
                 tmp = await loadFile(parms[1], true);
                 tmp2 = parms[1].match(/([^/]+?)(\.[^.]*$|$)/);
@@ -652,8 +671,65 @@ await this.exec('tse 0'); await this.exec('x pc 200 sr 4001');
                 if (tmp.split('\r\n')[1] !== '') { console.error(tmp2); break; }
                 console.log(this.emu.loadPAL(tmp2));
                 break;
+            case 'edit':
+                if (parms.length < 2) { console.error('missing fname'); break; }
+                tmp = parms[1].match(/([^/]+?)(\.[^.]*$|$)/);
+                if (tmp === null || tmp.length < 3) {
+                    console.error(`invalid fname: ${parms[1]}`); break;
+                }
+                if (this.edit === undefined) {
+                    await loadScript('js/editor.js');
+                    this.edit = await Editor(
+                        document.getElementsByClassName('tab-content').length,
+                        'pal', {
+'comment': /\/.*/,
+'keyword': /\b(?:i|tad|dca|isz|and|jms|jmp|cll|cla|sza|cia|sna|nop|hlt|bsw|rtl|rtr|spa|iac|rar|ral|szl|cma|cml|stl|snl|sma)\b/i,
+'special': /(?:\*[0-7]+)/,
+'number': /\b[0-7]+\b/,
+'variable': /\b(?:[a-zA-Z]([a-zA-Z]|[0-9])*)\b/,
+'punctuation': /[(),+-.=\[\]]/
+                        }
+                    );
+                    this.edit.input.onkeyup = async e => {
+                        if (e.key !== 'Enter') return true;
+                        let dcmd = this.edit.input.value;
+                        if (dcmd === 'quit') {
+                            this.emu.CPU.RUN = false;
+                            this.edit.setEditing(true);
+                            this.edit.setText(this.comp.read(this.prg[1] + this.prg[2].substr(0, 3)));
+                        }
+                        else if (dcmd === '' || dcmd.startsWith('step')) {
+                            if (dcmd === '') this.emu.CPU.cpu.step();
+                            else {
+                                dcmd = dcmd.substr(4).trim();
+                                if (dcmd === '') dcmd = null;
+                                this.prepareStop(dcmd);
+                                await this.emu.CPU.run();
+                            }
+                            this.edit.status.value = this.status();
+                            this.edit.setLine(this.currAddr());
+                        }
+                        this.edit.input.value = '';
+                        return false;
+                    };
+                }
+                this.edit.setEditing(true);
+                try {
+                    tmp2 = await loadFile(parms[1], true);
+                    tmp2 = tmp2.replaceAll('\r\n', '\n');
+                    this.edit.setText(tmp2);
+                } catch {}
+                this.prg = tmp;
+                break;
             default: await super.handler(parms, cmd); break;
         } } catch (e) { console.error(e.stack); }
+    }
+    currAddr() {
+        const regs = this.emu.CPU.cpu.regs;
+        return `${fmt(regs[IF], 1)}${fmt(regs[PC], 4)} `;
+    }
+    status() {
+        return this.emu.CPU.cpu.cpuStatus().replaceAll('|', ' ').substring(0, 48);
     }
 }
 
