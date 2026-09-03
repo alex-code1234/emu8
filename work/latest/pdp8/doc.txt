@@ -65,10 +65,7 @@ pal8 [fn] [flag=0|1] - if fn specified, compile PAL file fn using PAL8 compiler 
     print listing if error, if success:
         if flag=0 (default) load listing to editor for debugging,
         if flag=1 load compiled code
-    editor in debugging mode supports commands:
-        Enter - run CPU one step,
-        step [addr] - run CPU with breakpoint at address addr or current address + 1,
-        quit - stop debugging
+    editor in debugging mode supports commands: <Enter>, x, step, quit and refresh
 edit fn - open or create empty PAL file fn in editor
 
 URL parameters:

@@ -51,10 +51,11 @@ function EditorImpl(tab, cntnr, lang) {
         text.setSelectionRange(0, 0);
         text.focus();
     },
-    setText = txt => {
+    setText = (txt, update = false) => {
         text.value = txt;
         view.textContent = text.value + '~';
         Prism.highlightElement(view);
+        if (update) return;
         if (editing) activateTxt();
         else setLineTop(0);
     },

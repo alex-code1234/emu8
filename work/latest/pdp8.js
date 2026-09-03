@@ -698,8 +698,9 @@ await this.exec('tse 0'); await this.exec('x pc 200 sr 4001');
                             this.edit.setEditing(true);
                             this.edit.setText(this.comp.read(this.prg[1] + this.prg[2].substr(0, 3)));
                         }
-                        else if (dcmd === '' || dcmd.startsWith('step')) {
+                        else if (dcmd === '' || dcmd.startsWith('step') || dcmd.startsWith('x ')) {
                             if (dcmd === '') this.emu.CPU.cpu.step();
+                            else if (dcmd.startsWith('x ')) await this.exec(dcmd);
                             else {
                                 dcmd = dcmd.substr(4).trim();
                                 if (dcmd === '') dcmd = null;
@@ -709,6 +710,7 @@ await this.exec('tse 0'); await this.exec('x pc 200 sr 4001');
                             this.edit.status.value = this.status();
                             this.edit.setLine(this.currAddr());
                         }
+                        else if (dcmd === 'refresh') this.memchk();
                         this.edit.input.value = '';
                         return false;
                     };
@@ -730,6 +732,30 @@ await this.exec('tse 0'); await this.exec('x pc 200 sr 4001');
     }
     status() {
         return this.emu.CPU.cpu.cpuStatus().replaceAll('|', ' ').substring(0, 48);
+    }
+    memchk() {
+        const dtxt = this.edit.getText().split('\n'),
+              sif = this.emu.CPU.cpu.regs[IF];
+        let update = false;
+        for (let i = 0, count = dtxt.length; i < count; i++) {
+            let ln = dtxt[i], adr, val, fv;
+            try {
+                adr = pi(ln.substring(1, 5));
+                val = pi(ln.substring(7, 11));
+                fv = pi(ln.substring(0, 1));
+            } catch {
+                continue;
+            }
+            this.emu.CPU.cpu.regs[IF] = fv;
+            const mval = this.emu.memo.rd(adr);
+            if (mval === val) continue;
+            ln = ln.substring(0, 7) + fmt(mval, 4) + ln.substr(11);
+            // TODO: add assembly mnemonic
+            dtxt[i] = ln;
+            if (!update) update = true;
+        }
+        this.emu.CPU.cpu.regs[IF] = sif;
+        if (update) this.edit.setText(dtxt.join('\n'), true);
     }
 }
 
