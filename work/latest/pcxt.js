@@ -175,57 +175,106 @@ class IBMKbd extends SoftKbd {
     translateKey(e, soft) {
         let cde = 0, modifier = [];
         switch (e.key) {
+            case 'Escape':
             case 'Esc': cde = 0x01; break;
+            case '!': case '1':
             case '!1': cde = 0x02; break;
+            case '@': case '2':
             case '@2': cde = 0x03; break;
+            case '#': case '3':
             case '#3': cde = 0x04; break;
+            case '$': case '4':
             case '$4': cde = 0x05; break;
+            case '%': case '5':
             case '%5': cde = 0x06; break;
+            case '^': case '6':
             case '^6': cde = 0x07; break;
+            case '&': case '7':
             case '&7': cde = 0x08; break;
+            case '*': case '8':
             case '*8': cde = 0x09; break;
+            case '(': case '9':
             case '(9': cde = 0x0a; break;
+            case ')': case '0':
             case ')0': cde = 0x0b; break;
+            case '_': case '-':
             case '_-': cde = 0x0c; break;
+            case '+': case '=':
             case '+=': cde = 0x0d; break;
             case 'Backspace': cde = 0x0e; break;
             case 'Tab': cde = 0x0f; break;
+            case 'q':
             case 'Q': cde = 0x10; break;
+            case 'w':
             case 'W': cde = 0x11; break;
+            case 'e':
             case 'E': cde = 0x12; break;
+            case 'r':
             case 'R': cde = 0x13; break;
+            case 't':
             case 'T': cde = 0x14; break;
+            case 'y':
             case 'Y': cde = 0x15; break;
+            case 'u':
             case 'U': cde = 0x16; break;
+            case 'i':
             case 'I': cde = 0x17; break;
+            case 'o':
             case 'O': cde = 0x18; break;
+            case 'p':
             case 'P': cde = 0x19; break;
+            case '{': case '[':
             case '{[': cde = 0x1a; break;
+            case '}': case ']':
             case '}]': cde = 0x1b; break;
             case 'Enter': cde = 0x1c; break;
+            case 'a':
             case 'A': cde = 0x1e; break;
+            case 's':
             case 'S': cde = 0x1f; break;
+            case 'd':
             case 'D': cde = 0x20; break;
+            case 'f':
             case 'F': cde = 0x21; break;
+            case 'g':
             case 'G': cde = 0x22; break;
+            case 'h':
             case 'H': cde = 0x23; break;
+            case 'j':
             case 'J': cde = 0x24; break;
+            case 'k':
             case 'K': cde = 0x25; break;
+            case 'l':
             case 'L': cde = 0x26; break;
+            case ':': case ';':
             case ':;': cde = 0x27; break;
+            case '"': case '\'':
             case '"\'': cde = 0x28; break;
+            case '~': case '`':
             case '~`': cde = 0x29; break;
+            case '|': case '\\':
             case '|\\': cde = 0x2b; break;
+            case 'z':
             case 'Z': cde = 0x2c; break;
+            case 'x':
             case 'X': cde = 0x2d; break;
+            case 'c':
             case 'C': cde = 0x2e; break;
+            case 'v':
             case 'V': cde = 0x2f; break;
+            case 'b':
             case 'B': cde = 0x30; break;
+            case 'n':
             case 'N': cde = 0x31; break;
+            case 'm':
             case 'M': cde = 0x32; break;
+            case '<': case ',':
             case '<,': cde = 0x33; break;
+            case '>': case '.':
             case '>.': cde = 0x34; break;
+            case '?': case '/':
             case '?/': cde = 0x35; break;
+            case ' ':
             case 'Space': cde = 0x39; break;
             case 'F1': cde = 0x3b; break;
             case 'F2': cde = 0x3c; break;
@@ -240,14 +289,21 @@ class IBMKbd extends SoftKbd {
             case 'F11': cde = 0x57; break;
             case 'F12': cde = 0x58; break;
             case 'Home': cde = 0x47; break;
+            case 'PageUp':
             case 'PgUp': cde = 0x49; break;
             case 'End': cde = 0x4f; break;
+            case 'PageDown':
             case 'PgDn': cde = 0x51; break;
             case 'Insert': cde = 0x52; break;
+            case 'Delete':
             case 'Del': cde = 0x53; break;
+            case 'ArrowLeft':
             case '\u2190': cde = 0x4b; break;
+            case 'ArrowUp':
             case '\u2191': cde = 0x48; break;
+            case 'ArrowRight':
             case '\u2192': cde = 0x4d; break;
+            case 'ArrowDown':
             case '\u2193': cde = 0x50; break;
         }
         if (cde > 0) {
