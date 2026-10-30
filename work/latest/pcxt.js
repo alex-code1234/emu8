@@ -89,6 +89,38 @@ async function IBMIO(con) {
             setTimeout(result.vcu, 300);
         },
         'int': type => {
+            if (type === 0x33) {          // mouse support
+                const regs = result.CPU.cpu.getRegs(),
+                      resp = {},
+                      fnc = regs.ah << 8 | regs.al;
+                switch (fnc) {
+                    case 0: resp.ah = resp.al = 0xff; resp.bh = 0; resp.bl = 2; break;
+                    case 3:
+                        resp.bh = 0; resp.bl = btns;
+                        resp.ch = (posX & 0xff00) >> 8; resp.cl = posX & 0x00ff;
+                        resp.dh = (posY & 0xff00) >> 8; resp.dl = posY & 0x00ff;
+                        if (btns) {       // button pressed delay
+                            count++;
+                            if (count > 9) btns = 0;
+                        }
+                        break;
+                    case 4: posX = regs.ch << 8 | regs.cl; posY = regs.dh << 8 | regs.dl; break;
+                    case 7: minX = regs.ch << 8 | regs.cl; maxX = regs.dh << 8 | regs.dl; break;
+                    case 8: minY = regs.ch << 8 | regs.cl; maxY = regs.dh << 8 | regs.dl; break;
+                    case 12: case 20:
+                        mask = regs.ch << 8 | regs.cl;
+                        seg = regs.es; offs = regs.dh << 8 | regs.dl;
+                        if (fnc === 20) {
+                            resp.ch = (mask & 0xff00) >> 8; resp.cl = mask & 0x00ff;
+                            resp.es = seg & 0xffff;
+                            resp.dh = (offs & 0xff00) >> 8; resp.dl = offs & 0x00ff;
+                        }
+                        break;
+                    case 21: resp.bh = resp.bl = 0; break;
+                }
+                result.CPU.cpu.setRegs(resp);
+                return true;
+            }
             if (type === 0x2f) {          // enable FreeDOS loading
                 const regs = result.CPU.cpu.getRegs(),
                       resp = {};
@@ -162,6 +194,47 @@ async function IBMIO(con) {
             crtc = crt;                   // display control
             result.ppi = kbd;             // keyboard control
         }
+    };
+    const call1 = async (resp, stop) => { // mouse support
+        result.CPU.cpu.setRegs(resp);     // call handler
+        result.CPU.STOP = stop;           // intercept return
+        await result.CPU.run();
+    },
+    callfar = async () => {               // handler processing
+        result.CPU.RUN = false; await delay(0);
+        const resp = {},                  // save CPU state
+              regs = result.CPU.cpu.getRegs(),
+              stop = (regs.cs << 4) + regs.ip;
+        resp.sp = regs.sp - 4 & 0xffff;   // push cs, ip
+        let adr = (regs.ss << 4) + resp.sp;
+        ram[adr++] = regs.ip & 0x00ff; ram[adr++] = (regs.ip & 0xff00) >> 8;
+        ram[adr++] = regs.cs & 0x00ff; ram[adr] = (regs.cs & 0xff00) >> 8;
+        resp.cs = seg; resp.ip = offs;    // jump to handler
+        resp.ah = 0; resp.bh = 0;         // constant mouse data
+        resp.ch = (posX & 0xff00) >> 8; resp.cl = posX & 0x00ff;
+        resp.dh = (posY & 0xff00) >> 8; resp.dl = posY & 0x00ff;
+        resp.si = 0; resp.di = 0;
+        resp.al = 3; resp.bl = btns;      // notify position change and button down
+        await call1(resp, stop);
+        btns = 0;                         // button up
+        resp.al = 4; resp.bl = btns;      // notify button up
+        await call1(resp, stop);
+        result.CPU.cpu.setRegs(regs);     // restore CPU state
+        result.CPU.run();                 // continue
+    };
+    let minX = 0, maxX = 639,             // mouse data
+        minY = 0, maxY = 199, posX = 320, posY = 100, btns = 0, count = 0,
+        mask = 0, seg = 0, offs = 0;      // functions 0C and 14 data
+    con.canvas.canvas.onmousedown = async e => { // intercept mouse click
+        const rect = e.target.getBoundingClientRect(),
+              relX = (e.clientX - rect.left) / rect.width,
+              relY = (e.clientY - rect.top) / rect.height;
+        let x = Math.floor(relX * 640),   // mouse driver expects 640x200 resolution
+            y = Math.floor(relY * 200);
+        if (x < minX) x = minX; if (x > maxX) x = maxX;
+        if (y < minY) y = minY; if (y > maxY) y = maxY;
+        posX = x; posY = y; btns = 1; count = 0;
+        if (mask & 7) await callfar();    // if handler set
     };
     return result;
 }
