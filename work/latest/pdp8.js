@@ -716,12 +716,17 @@ await this.exec('tse 0'); await this.exec('x pc 200 sr 4001');
                     };
                 }
                 this.edit.setEditing(true);
+                this.efname = parms[1]; // save file name
                 try {
-                    tmp2 = await loadFile(parms[1], true);
+                    tmp2 = await loadFile(this.efname, true);
                     tmp2 = tmp2.replaceAll('\r\n', '\n');
                     this.edit.setText(tmp2);
                 } catch {}
                 this.prg = tmp;
+                break;
+            case 'fedt':
+                if (this.edit === undefined) { console.error('no editor'); break; }
+                downloadFile(this.efname, this.edit.getText());
                 break;
             default: await super.handler(parms, cmd); break;
         } } catch (e) { console.error(e.stack); }
