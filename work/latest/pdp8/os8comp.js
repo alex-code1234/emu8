@@ -38,6 +38,7 @@ function Terminal() {     // automated screen/keyboard interface
 function RX01fs(emu) {    // direct access to RX01 file system
     const BUF = new Uint8Array(128), mmm = ArrMemo(BUF),
           DSK = Disk(77, 26, 128, 1, 0x10000, null),
+    toNeg = v => (~v + 1) & 0o7777,
     toBUF = data12 => {
         let i = 0, count = 0, part = 0;
         while (count < 96) {
@@ -98,37 +99,32 @@ function RX01fs(emu) {    // direct access to RX01 file system
         return res;
     },
     fromDir = data12 => {
-        const entries = [];
-        let begin = data12[1],
-            ofs = 5;
-        if (data12[5] === 0) {
-            begin += ~(data12[6] - 1) & 0o7777;
-            ofs += 2;
-        }
-        while (ofs < 256) {
-            const name = (emu.to6bitASCII(data12[ofs++]) +
-                          emu.to6bitASCII(data12[ofs++]) +
-                          emu.to6bitASCII(data12[ofs++]) + '.' +
-                          emu.to6bitASCII(data12[ofs++]))
-                      .replaceAll('@', ''),
-                  date = data12[ofs++],
-                  size = ~(data12[ofs++] - 1) & 0o7777;
-            entries.push({name, date, size, begin});
-            begin += size;
-            let tmp = data12[ofs];
-            if (tmp === 0) {
-                ofs++;
-                tmp = data12[ofs++];
-                if (tmp === 0o7777) break;
-                begin += ~(tmp - 1) & 0o7777;
+        const entries = [],
+              total = toNeg(data12[0]), beg = data12[1], ext = toNeg(data12[4]);
+        let begin = data12[1], ofs = 5, files = 0;
+        while (files++ < total) {
+            const entry = {begin}, w1 = data12[ofs];
+            if (w1 === 0) { // empty slot
+                entry.name = null; ofs++;
+            } else {        // regular slot
+                entry.name = (emu.to6bitASCII(data12[ofs++]) +
+                        emu.to6bitASCII(data12[ofs++]) +
+                        emu.to6bitASCII(data12[ofs++]) + '.' +
+                        emu.to6bitASCII(data12[ofs++])).replaceAll('@', '');
+                if (ext) {
+                    entry.ext = [];
+                    for (let i = 0; i < ext; i++) entry.ext.push(data12[ofs++]);
+                }
             }
-            else if (tmp === 0o5752 && data12[ofs + 1] === 0o3047) break;
+            entry.size = toNeg(data12[ofs++]);
+            entries.push(entry);
+            begin += entry.size;
         }
-        return {'head0': data12[0], 'begin': data12[1], 'head3': data12[3], entries};
+        return {'begin': beg, ext, entries};
     },
     toDir = dir => {
         const data12 = new Array(0o400),
-        toNeg = v => (~v + 1) & 0o7777,
+              len = dir.entries.length, beg = dir.begin, ext = dir.ext,
         chrs = '@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_ !"#$%&\'()*+,-./0123456789:;<=>?',
         to2Ch = s => {
             const p = s.indexOf('.'),
@@ -142,24 +138,22 @@ function RX01fs(emu) {    // direct access to RX01 file system
             data12[idx++] = to12(name.substring(4, 6));
             data12[idx++] = to12(ext);
         };
-        let begin = dir.begin, idx = 5;
-        data12[1] = begin; data12[2] = 0o0000; data12[4] = 0o7777;
-        for (let i = 0, n = dir.entries.length; i < n; i++) {
+        let idx = 5;
+        for (let i = 0; i < len; i++) {
+            if (idx >= 0o400 - (5 + ext)) throw new Error('directory full');
             const entry = dir.entries[i];
-            if (entry.begin !== begin) {
-                const diff = entry.begin - begin;
-                data12[idx++] = 0o0000; data12[idx++] = toNeg(diff);
-                begin += diff
+            if (entry.name) {       // regular slot
+                to2Ch(entry.name);
+                if (ext)
+                    for (let i = 0; i < ext; i++) data12[idx++] = entry.ext[i];
             }
-            to2Ch(entry.name);
-            data12[idx++] = entry.date;
+            else data12[idx++] = 0; // empty slot
             data12[idx++] = toNeg(entry.size);
-            begin += entry.size;
         }
-        data12[idx++] = 0o0000; data12[idx++] = 0o7777;
-        let count = 1;
-        while (idx < 0o0400) data12[idx++] = (count++ % 2) ? 0o5752 : 0o3047;
-        data12[0] = dir.head0; data12[3] = dir.head3;
+        while (idx < 256)
+            if (idx % 2) data12[idx++] = 0o5752;
+            else data12[idx++] = 0o3047;
+        data12[0] = toNeg(len); data12[1] = beg; data12[4] = toNeg(ext);
         return data12;
     },
     fromTxt = data12 => {
@@ -197,37 +191,46 @@ function RX01fs(emu) {    // direct access to RX01 file system
             }
         throw new Error(`not found: ${fn}`);
     },
-    write = (fn, data12) => {
+    write = (fn, data12, extd = [0, 0, 0]) => {
+        const BMAX = 494,
+              dir = fromDir(block12(1)), len = dir.entries.length,
+              dleng = data12.length, size = dleng / 256,
+        split = () => {
+            dir.entries.splice(eidx + 1, 0, { // insert empty slot after entry
+                'name': null, 'begin': entry.begin + size, 'size': entry.size - size
+            });
+            entry.size = size;                // adjust entry size
+        },
+        addext = add => {
+            if (dir.ext)
+                entry.ext = add ? extd.slice(0, dir.ext) : undefined;
+        };
         fn = fn.toUpperCase();
-        const BMAX = 494, EMAX = 32, dleng = data12.length,
-              dir = fromDir(block12(1)), size = dleng / 256,
-              len = dir.entries.length;
-        let entry, gap = true,
-            eidx = dir.entries.findIndex(e => e.name.toUpperCase() === fn);
-        if (eidx < 0) { // new file, find gap
-            if (len >= EMAX) throw new Error('directory full');
-            entry = {'name': fn, 'date': 0, size};
-        } else {        // modified file
+        let entry = null,
+            eidx = dir.entries.findIndex(e => e.name?.toUpperCase() === fn);
+        if (eidx >= 0) {      // modified file
             entry = dir.entries[eidx];
-            if (entry.size >= size) gap = false; // update in place
-            else dir.entries.splice(eidx, 1);    // find gap
-            entry.size = size;
-        }
-        if (gap) {      // find gap to fit new/modified entry
-            let begin = dir.begin, idx = 0, found = false;
-            while (idx < len) {
-                const ent = dir.entries[idx];
-                if (ent.begin !== begin) {
-                    const diff = ent.begin - begin;
-                    if (diff >= entry.size) { found = true; break; }
-                    begin += diff
-                }
-                begin += ent.size;
-                idx++;
+            if (entry.size < size) {             // gap is smaller, make empty
+                entry.name = null; addext(false);
+                entry = null;                    // not found
             }
-            entry.begin = begin;
-            if (found) dir.entries.splice(idx, 0, entry);
-            else dir.entries.push(entry);
+            else if (entry.size > size) split(); // split to file and empty
+        }
+        if (entry === null) { // new file
+            eidx = dir.entries.findIndex(e => e.name === null && e.size >= size);
+            if (eidx >= 0) {  // found empty slot
+                entry = dir.entries[eidx];
+                entry.name = fn; addext(true);
+                if (entry.size > size) split();
+            } else {          // add new entry
+                entry = {'name': fn, size}; addext(true);
+                if (len) {
+                    const prev = dir.entries[len - 1];
+                    entry.begin = prev.begin + prev.size;
+                }
+                else entry.begin = dir.begin;
+                dir.entries.push(entry);
+            }
         }
         if (entry.begin + entry.size > BMAX) throw new Error('disk full');
         block12(1, toDir(dir)); // save directory
