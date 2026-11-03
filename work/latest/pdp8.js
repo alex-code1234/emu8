@@ -698,9 +698,11 @@ await this.exec('tse 0'); await this.exec('x pc 200 sr 4001');
                             this.edit.setEditing(true);
                             this.edit.setText(this.comp.read(this.prg[1] + this.prg[2].substr(0, 3)));
                         }
-                        else if (dcmd === '' || dcmd.startsWith('step') || dcmd.startsWith('x ')) {
+                        else if (dcmd === '' || dcmd.startsWith('step') ||
+                                dcmd.startsWith('x ') || dcmd === 'refresh') {
                             if (dcmd === '') this.emu.CPU.cpu.step();
                             else if (dcmd.startsWith('x ')) await this.exec(dcmd);
+                            else if (dcmd === 'refresh') this.memchk();
                             else {
                                 dcmd = dcmd.substr(4).trim();
                                 if (dcmd === '') dcmd = null;
@@ -710,7 +712,6 @@ await this.exec('tse 0'); await this.exec('x pc 200 sr 4001');
                             this.edit.status.value = this.status();
                             this.edit.setLine(this.currAddr());
                         }
-                        else if (dcmd === 'refresh') this.memchk();
                         this.edit.input.value = '';
                         return false;
                     };
@@ -753,8 +754,9 @@ await this.exec('tse 0'); await this.exec('x pc 200 sr 4001');
             this.emu.CPU.cpu.regs[IF] = fv;
             const mval = this.emu.memo.rd(adr);
             if (mval === val) continue;
-            dtxt[i] = ln.substring(0, 7) + fmt(mval, 4) +
-                    `    ${this.emu.disassemble1(adr)[1].substr(11)}    / modified`;
+            dtxt[i] = ln.substring(0, 7) + fmt(mval, 4) + '*' + ln.substring(12);
+            if (ln.charAt(22) > '9')
+                dtxt[i] = dtxt[i].padEnd(75) + ' / ' + this.emu.disassemble1(adr)[1].substr(11);
             if (!update) update = true;
         }
         this.emu.CPU.cpu.regs[IF] = sif;
