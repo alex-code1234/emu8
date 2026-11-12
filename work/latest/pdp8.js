@@ -728,6 +728,46 @@ await this.exec('tse 0'); await this.exec('x pc 200 sr 4001');
                 if (this.edit === undefined) { console.error('no editor'); break; }
                 downloadFile(this.prg[0], this.edit.getText());
                 break;
+            case '.':
+                const command = parms.slice(1), iresp = command.indexOf('resp');
+                let oscmd, resp;
+                if (iresp > 0) { oscmd = command.slice(0, iresp); resp = command[iresp + 1]; }
+                else { oscmd = command; resp = null; }
+                console.log(await this.comp.compile(oscmd.join(' '), resp));
+                break;
+            case 'dir':
+                console.log('Name       Start      Size');
+                console.log('--------------------------')
+                tmp = '';
+                console.log(this.comp.dir().reduce(
+                    (acc, e) => e.name ?
+                        acc + e.name.padEnd(10, ' ') + '   ' +
+                            e.begin.toString().padStart(3, '0') + '       ' +
+                            e.size.toString().padStart(3, '0') + '\n' :
+                        (parms[1] === '1') ?
+                            acc + '      -      ' +
+                                e.begin.toString().padStart(3, '0') + '       ' +
+                                e.size.toString().padStart(3, '0') + '\n' :
+                            acc,
+                    tmp));
+                break;
+            case 'upload':
+                if (parms.length < 2) { console.error('expected fname'); break; }
+                tmp = await loadFile(parms[1], true);
+                const fnm = parms[1].match(/([^/]+?)(\.[^.]*$|$)/);
+                if (fnm === null || fnm.length < 3) {
+                    console.error(`invalid fname: ${parms[1]}`); break;
+                }
+                tmp2 = parms.length === 2 || parms[2] !== '1';
+                if (tmp2) tmp = tmp.replaceAll('\r\n', '\n');
+                this.comp.write(fnm[1] + fnm[2].substr(0, 3), tmp, tmp2);
+                console.log(tmp.length);
+                break;
+            case 'download':
+                if (parms.length < 2) { console.error('expected fname'); break; }
+                tmp2 = parms.length === 2 || parms[2] !== '1';
+                downloadFile(parms[1], this.comp.read(parms[1], tmp2));
+                break;
             default: await super.handler(parms, cmd); break;
         } } catch (e) { console.error(e.stack); }
     }

@@ -4,19 +4,24 @@
 
 function Terminal() {     // automated screen/keyboard interface
     const kbd = [],
-    display = v => {                               // capture screen output
+    display = v => {                                            // capture screen output
         const chr = String.fromCharCode(v);
         if (enabled) console.log(chr, console.NB);
         else str += chr;
     },
-    send = async (txt, chk = null, tmo = 100) => { // send keyboard command
-        if (chk) enabled = false;
+    pushtxt = txt => {                                          // push text to kbd buffer
         txt = txt.toUpperCase();
         for (let i = 0, n = txt.length; i < n; i++) kbd.push(txt.charCodeAt(i));
         if (txt.length > 0) devkbd.setFlag(1);
-        if (chk) { // check response
+    },
+    send = async (txt, chk = null, resp = null, tmo = 100) => { // send keyboard command
+        if (chk) enabled = false;
+        pushtxt(txt);
+        if (chk) { // check output
             let count = 0, match = 0;
             while (true) {
+                if (resp !== null && str.trimEnd().endsWith('?'))
+                    pushtxt(resp); // request detected, send response
                 if (str.endsWith(chk)) { match++; if (match > 3) break; }
                 else if (match > 0) match = 0;
                 count++; if (count > tmo) break;
@@ -254,17 +259,17 @@ function OS8(emu, trm) {  // OS-8 emulator
     regset = () => {
         for (let i = 0, n = coreR.length; i < n; i++) emu.CPU.cpu.regs[i] = coreR[i];
     },
-    init = async () => { // initialze
+    init = async () => {                // initialze
         memset(0o0022, BOOT);
         emu.CPU.cpu.reset(); emu.CPU.cpu.regs[PC] = 0o0022;
         emu.CPU.run(); await trm.send('', '.'); emu.stop();        // boot
         coreM = emu.saveCore(); coreR = emu.CPU.cpu.regs.slice(0); // save core
     },
-    run = async cmd => { // execute command
+    run = async (cmd, resp = null) => { // execute command
         if (coreM === null) throw new Error('not initialized');
         emu.loadCore(coreM); regset();
         emu.CPU.run();
-        const res = await trm.send(`${cmd}\r`, '.');
+        const res = await trm.send(`${cmd}\r`, '.', resp);
         emu.stop();
         return res;
     };
@@ -292,14 +297,15 @@ async function initCOMP(disk_img) {
         const dat = rx01.read(fn);
         return txt ? rx01.fromTxt(dat) : dat;
     },
-    compile = async cmd => {
-        const res = await os8.run(cmd);
+    compile = async (cmd, resp = null) => {
+        const res = await os8.run(cmd, resp);
         rx01.DSK.drive.set(rx8.getDsk(0), 0);
         return res;
-    };
+    },
+    dir = () => rx01.fromDir(rx01.block12(1)).entries;
     trm.setDevKbd(asr[1]);
     rx8.setDsk(0, await loadFile(disk_img, false));
     await os8.init();
     rx01.DSK.drive.set(rx8.getDsk(0), 0);
-    return {write, read, compile};
+    return {write, read, compile, dir};
 }
