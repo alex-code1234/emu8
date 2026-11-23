@@ -631,45 +631,50 @@ await this.exec('tse 0'); await this.exec('x pc 200 sr 4001');
                     await loadScript('pdp8/os8comp.js');
                     this.comp = await initCOMP('../newemu/temp/rx01_test.img');
                 }
-                if (parms.length < 2 ||
-                        (parms.length === 2 && (parms[1] === '0' || parms[1] === '1'))) {
-                    if (this.prg === undefined) {
-                        console.error('missing fname [flag=0|1]'); break;
+                let pfn = undefined, pflg = 0, ptmo = 100, plp;
+                if (parms.length > 1) {
+                    pfn = parms[1];
+                    if (pfn === '0' || pfn === '1') {
+                        pflg = +pfn; pfn = undefined; plp = 2;
                     }
+                    else if (parms.length > 2) {
+                        pflg = parms[2];
+                        if (pflg !== '0' && pflg !== '1') {
+                            console.error('missing [fname] [flag=0|1 [tmo=100]]'); break;
+                        }
+                        pflg = +pflg; plp = 3;
+                    }
+                    if (parms.length > plp)
+                        ptmo = pi(parms[plp], false);
+                }
+                if (pfn === undefined) {
                     tmp2 = this.prg;
-                    this.comp.write(tmp2[1] + tmp2[2].substr(0, 3), this.edit.getText());
-                    tmp = await this.comp.compile(`pal8 ${tmp2[1]},${tmp2[1]}<${tmp2[1]}/h`);
-                    tmp2 = this.comp.read(`${tmp2[1]}.ls`);
-                    if (tmp.split('\r\n')[1] !== '') { console.error(tmp2); break; }
-                    console.log(this.emu.loadPAL(tmp2));
-                    if (parms.length < 2 || parms[1] === '0') {
-                        this.edit.setEditing(false);
-                        this.edit.setText(tmp2);
-                        this.emu.CPU.cpu.reset(); this.emu.CPU.cpu.regs[PC] = 0o0200;
-                        this.edit.setLine(this.currAddr());
-                        this.edit.status.value = this.status();
+                    tmp = this.edit.getText();
+                } else {
+                    tmp2 = pfn.match(/([^/]+?)(\.[^.]*$|$)/);
+                    if (tmp2 === null || tmp2.length < 3) {
+                        console.error(`invalid fname: ${pfn}`); break;
                     }
-                    break;
+                    tmp = await loadFile(pfn, true);
+                    tmp = tmp.replaceAll('\r\n', '\n');
                 }
-                tmp = await loadFile(parms[1], true);
-                tmp2 = parms[1].match(/([^/]+?)(\.[^.]*$|$)/);
-                if (tmp2 === null || tmp2.length < 3) {
-                    console.error(`invalid fname: ${parms[1]}`); break;
-                }
-                tmp = tmp.replaceAll('\r\n', '\n');
                 this.comp.write(tmp2[1] + tmp2[2].substr(0, 3), tmp);
-                tmp = await this.comp.compile(`pal8 ${tmp2[1]},${tmp2[1]}<${tmp2[1]}/h`);
+                tmp = await this.comp.compile(`pal8 ${tmp2[1]},${tmp2[1]}<${tmp2[1]}/h`,
+                        null, ptmo);
                 const lstn = `${tmp2[1]}.ls`;
                 tmp2 = this.comp.read(lstn);
-                if (parms.length > 2) {
-                    const dlf = parms[2];
-                    if (dlf !== '1' && dlf !== '0') {
-                        console.error('invalid parameter [1|0]'); break;
-                    }
-                    if (dlf === '1') { downloadFile(lstn, tmp2); break; }
+                if (pfn !== undefined && pflg) {
+                    downloadFile(lstn, tmp2); break;
                 }
                 if (tmp.split('\r\n')[1] !== '') { console.error(tmp2); break; }
                 console.log(this.emu.loadPAL(tmp2));
+                if (pfn === undefined && pflg === 0) {
+                    this.edit.setEditing(false);
+                    this.edit.setText(tmp2);
+                    this.emu.CPU.cpu.reset(); this.emu.CPU.cpu.regs[PC] = 0o0200;
+                    this.edit.setLine(this.currAddr());
+                    this.edit.status.value = this.status();
+                }
                 break;
             case 'edit':
                 if (parms.length < 2) { console.error('missing fname'); break; }

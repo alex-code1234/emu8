@@ -30,7 +30,7 @@ function Terminal() {     // automated screen/keyboard interface
             enabled = true;
             const res = str;
             str = '';
-            if (count > tmo) throw new Error(res);
+            if (count > tmo) throw new Error(`timeout: ${res}`);
             return res;
         }
         return null;
@@ -259,17 +259,17 @@ function OS8(emu, trm) {  // OS-8 emulator
     regset = () => {
         for (let i = 0, n = coreR.length; i < n; i++) emu.CPU.cpu.regs[i] = coreR[i];
     },
-    init = async () => {                // initialze
+    init = async () => {                           // initialize
         memset(0o0022, BOOT);
         emu.CPU.cpu.reset(); emu.CPU.cpu.regs[PC] = 0o0022;
         emu.CPU.run(); await trm.send('', '.'); emu.stop();        // boot
         coreM = emu.saveCore(); coreR = emu.CPU.cpu.regs.slice(0); // save core
     },
-    run = async (cmd, resp = null) => { // execute command
+    run = async (cmd, resp = null, tmo = 100) => { // execute command
         if (coreM === null) throw new Error('not initialized');
         emu.loadCore(coreM); regset();
         emu.CPU.run();
-        const res = await trm.send(`${cmd}\r`, '.', resp);
+        const res = await trm.send(`${cmd}\r`, '.', resp, tmo);
         emu.stop();
         return res;
     };
@@ -297,8 +297,8 @@ async function initCOMP(disk_img) {
         const dat = rx01.read(fn);
         return txt ? rx01.fromTxt(dat) : dat;
     },
-    compile = async (cmd, resp = null) => {
-        const res = await os8.run(cmd, resp);
+    compile = async (cmd, resp = null, tmo = 100) => {
+        const res = await os8.run(cmd, resp, tmo);
         rx01.DSK.drive.set(rx8.getDsk(0), 0);
         return res;
     },
