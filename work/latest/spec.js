@@ -426,7 +426,7 @@ async function main() {
           //ccb = cf08,       // 8 colors (for lode runner)
           //ccb = cf16,       // 16 colors (for RamFOS)
           //spk = undefined,  // no speaker
-          spk = await Speaker(undefined, undefined),
+          spk = await Speaker(undefined),
           rmds = 0,         // no RAM disks
           //rmds = 1,         // for MXOS
           //rmds = 8,         // for RamFOS
